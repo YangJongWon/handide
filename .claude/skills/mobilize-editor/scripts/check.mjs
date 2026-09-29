@@ -93,6 +93,12 @@ async function checkDevice(target, ctx) {
 			return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, shown };
 		}, s);
 
+	// Created before the page loads: on a first-run server the file watcher can take
+	// longer than the check waits, and a file missing from the tree fails the edit step.
+	const editName = `edit-${deviceName.replace(/W+/g, '-').toLowerCase()}.js`;
+	const editFile = { name: editName, file: ctx.workspace ? join(ctx.workspace, editName) : null };
+	if (editFile.file) writeFileSync(editFile.file, SAMPLE);
+
 	await step('layer-injected', async () => {
 		await page.goto(ctx.url, { timeout: 120_000 });
 		await page.waitForSelector('#hd-root', { timeout: 120_000 });
@@ -164,11 +170,9 @@ async function checkDevice(target, ctx) {
 		// A fresh file per device: never rewrite a file the editor may hold unsaved
 		// (that makes autosave stop on a conflict), and never let one device's edit
 		// satisfy another device's check.
-		const name = `edit-${deviceName.replace(/W+/g, '-').toLowerCase()}.js`;
-		const file = join(ctx.workspace, name);
-		writeFileSync(file, SAMPLE);
+		const { name, file } = editFile;
 		await tap('#hd-tabs [data-tab="files"]');
-		await page.waitForTimeout(2500); // file watcher picks up the new file
+		await page.waitForTimeout(1200);
 		await tap(page.locator(`${sel.parts[home]} ${sel.check.listRow}`, { hasText: name }).first());
 		await page.waitForTimeout(1500);
 		await tap('#hd-tabs [data-tab="code"]');

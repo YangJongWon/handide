@@ -16,6 +16,8 @@ import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
+import { ensureCert, lanAddresses } from './tls.mjs';
+import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LAYER_DIR = join(ROOT, 'layer');
@@ -36,7 +38,8 @@ const MIME = {
 function parseArgs(argv) {
 	const opts = {
 		port: 9000,
-		host: '127.0.0.1',
+		host: undefined, // default: LAN with automatic HTTPS; --local: this PC only
+		local: false,
 		folder: process.cwd(),
 		dataDir: join(ROOT, '.handide-data'),
 		token: process.env.HANDIDE_TOKEN || randomBytes(18).toString('base64url'),
@@ -52,6 +55,7 @@ function parseArgs(argv) {
 		const next = () => argv[++i];
 		if (a === '--port') opts.port = Number(next());
 		else if (a === '--host') opts.host = next();
+		else if (a === '--local') opts.local = true;
 		else if (a === '--folder') opts.folder = resolve(next());
 		else if (a === '--data-dir') opts.dataDir = resolve(next());
 		else if (a === '--token') opts.token = next();
@@ -65,7 +69,9 @@ function parseArgs(argv) {
 			console.log(`handide — mobile layer for VS Code
 
   --port <n>          proxy port (default 9000)
-  --host <addr>       listen address (default 127.0.0.1; use 0.0.0.0 for LAN/Tailscale)
+  (default)           open on the LAN with HTTPS and print a QR code + link for the phone
+  --local             this PC only (http://localhost), no LAN, no certificate
+  --host <addr>       listen address (default 0.0.0.0, or 127.0.0.1 with --local)
   --folder <path>     folder to open (default: cwd)
   --token <secret>    access token (default: random, or $HANDIDE_TOKEN)
   --editor <path>     editor CLI with serve-web (default: auto-detect VS Code)
@@ -337,33 +343,55 @@ function createProxy({ upstreamPort, log, tls }) {
 		socket.on('close', close);
 	});
 
-	return server;
+	if (!tls) return server;
+
+	// HTTPS and a redirect share one port: someone typing http://<ip>:<port> on the
+	// phone is sent to https:// instead of getting a dead connection. A TLS handshake
+	// starts with byte 0x16; anything else is plain HTTP.
+	const redirect = http.createServer((req, res) => {
+		res.writeHead(301, { location: `https://${req.headers.host}${req.url}` }).end();
+	});
+	return net.createServer((socket) => {
+		socket.on('error', () => socket.destroy());
+		socket.once('data', (first) => {
+			socket.pause();
+			socket.unshift(first);
+			(first[0] === 0x16 ? server : redirect).emit('connection', socket);
+			process.nextTick(() => socket.resume());
+		});
+	});
 }
 
-/** Access instructions. Phones need a secure context (https or localhost). */
-function accessLines({ host, port, token, tls }) {
+/**
+ * Prints how to connect. On the LAN the phone just scans the QR code (or opens the
+ * link); the link carries the token, which VS Code turns into a cookie.
+ */
+async function printAccess({ host, port, token, tls, selfSigned, log }) {
+	const local = host === '127.0.0.1' || host === 'localhost';
 	const scheme = tls ? 'https' : 'http';
-	const lines = [`  ${scheme}://localhost:${port}/?tkn=${token}   (this PC; Android over USB after: adb reverse tcp:${port} tcp:${port})`];
-	const lan = [];
-	if (host === '0.0.0.0' || host === '::') {
-		for (const addrs of Object.values(os.networkInterfaces())) {
-			for (const a of addrs || []) if (a.family === 'IPv4' && !a.internal) lan.push(a.address);
-		}
+	const path = `/?tkn=${encodeURIComponent(token)}`;
+	if (local) {
+		log(`  ${scheme}://localhost:${port}${path}`);
+		log(`  Android over USB: adb reverse tcp:${port} tcp:${port}, then open the link above on the phone.`);
+		log('  Drop --local to open it on the LAN with a QR code.');
+		return;
 	}
-	if (tls) {
-		for (const ip of lan) lines.push(`  https://${ip}:${port}/?tkn=${token}   (only if the certificate covers this address)`);
-		lines.push('  or the hostname your certificate was issued for, e.g. https://<machine>.<tailnet>.ts.net:' + port);
-	} else {
-		if (lan.length) {
-			lines.push(`  NOTE: http://${lan[0]}:${port} will load on a phone, but VS Code refuses to connect over plain http`);
-			lines.push('        (not a secure context). Use HTTPS instead:');
-		} else {
-			lines.push('  From a phone (needs HTTPS):');
-		}
-		lines.push(`        tailscale serve --bg ${port}   → https://<machine>.<tailnet>.ts.net/?tkn=${token}`);
-		lines.push('        or restart with --host 0.0.0.0 --cert <file> --key <file>');
+	const addrs = lanAddresses();
+	if (!addrs.length) {
+		log(`  No LAN address found. On this PC: ${scheme}://localhost:${port}${path}`);
+		return;
 	}
-	return lines;
+	const primary = `${scheme}://${addrs[0].ip}:${port}${path}`;
+	const qr = await QRCode.toString(primary, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
+	process.stdout.write(`\n${qr}\n`);
+	log(`  Scan the QR code, or open: ${primary}`);
+	for (const a of addrs.slice(1)) log(`  also: ${scheme}://${a.ip}:${port}${path}   (${a.tailscale ? 'Tailscale' : a.name})`);
+	if (selfSigned) {
+		log('  First visit shows a certificate warning (self-signed, made for this PC):');
+		log('    Android Chrome: Advanced → Proceed.  iPhone Safari: Show Details → visit this website.');
+		log(`    Certificate SHA-1: ${selfSigned}`);
+	}
+	log('  The link contains the access token: share it only with your own devices.');
 }
 
 async function main() {
@@ -390,11 +418,25 @@ async function main() {
 		await started.ready;
 	}
 
-	const tls = opts.cert && opts.key ? { cert: await readFile(opts.cert), key: await readFile(opts.key) } : undefined;
+	const host = opts.host ?? (opts.local ? '127.0.0.1' : '0.0.0.0');
+	const onlyLocal = host === '127.0.0.1' || host === 'localhost';
+	let tls;
+	let selfSigned;
+	if (opts.cert && opts.key) tls = { cert: await readFile(opts.cert), key: await readFile(opts.key) };
+	else if (!onlyLocal) {
+		const cert = await ensureCert(opts.dataDir, lanAddresses().map((a) => a.ip));
+		tls = { cert: cert.cert, key: cert.key };
+		selfSigned = cert.fingerprint;
+	}
 	const server = createProxy({ upstreamPort, log, tls });
-	server.listen(opts.port, opts.host, () => {
+	server.on('error', (err) => {
+		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
+		else log(`server error: ${err.message}`);
+		process.exit(1); // the 'exit' handler stops the editor server
+	});
+	server.listen(opts.port, host, () => {
 		log(`mobile VS Code ready. Open on your phone:`);
-		for (const line of accessLines({ ...opts, tls })) log(line);
+		printAccess({ host, port: opts.port, token: opts.token, tls, selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
 	});
 
 	// serve-web spawns its own server process; kill the whole tree so nothing is orphaned.

@@ -42,11 +42,10 @@ Scripts (all in `scripts/`, run from the repo root):
    - `verdict: compatible` → keep `companion.mode: "extension"`.
    - `verdict: uncertain | incompatible` → ask the user with AskUserQuestion, using `choices` from the JSON verbatim (labels are Korean on purpose), explaining `reasons`. Then set `layer.config.json` → `companion.mode` to the chosen id (`extension` | `builtin`), or stop on `skip`.
 3. `npm run check -- --mode <chosen mode>`. Must pass (see Workflow B on failure).
-4. Start for the phone: `npm start -- --folder <project>` and give the user the printed URL plus the right way to reach it. **The phone must load the page from HTTPS or localhost** — VS Code's connection handshake needs Web Crypto, which browsers only expose in a secure context. Plain `http://<LAN-IP>` loads the page but never connects (the layer shows a red notice explaining this).
-   - Android over USB: `adb reverse tcp:9000 tcp:9000`, open `http://localhost:9000/?tkn=...`.
-   - Anywhere (recommended): `tailscale serve --bg 9000` → `https://<machine>.<tailnet>.ts.net/?tkn=...`; the proxy can stay on 127.0.0.1.
-   - Own certificate: `--host 0.0.0.0 --cert <file> --key <file>` (e.g. from `tailscale cert`).
-   The `?tkn=` token is the only auth; never expose the port on a public network without HTTPS.
+4. Start for the phone: `npm start -- --folder <project>`. By default it listens on the LAN over HTTPS with a self-signed certificate (`proxy/tls.mjs`, kept in `.handide-data/tls`, regenerated when the PC's addresses change) and prints a **QR code + link** carrying the token; `http://` on the same port redirects to `https://`. Tell the user: scan the QR code, accept the certificate warning once (Android Chrome: Advanced → Proceed; Safari: Show Details → visit this website).
+   Why not plain http: VS Code's connection handshake needs Web Crypto, only available in a secure context (HTTPS or localhost); `http://<LAN-IP>` loads but never connects.
+   Other setups: `--local` (this PC only) + `tailscale serve --bg 9000` for a valid certificate from anywhere; `--local` + `adb reverse` for Android over USB; `--cert/--key` for their own certificate.
+   The `?tkn=` token is the only auth; never expose the port on a public network.
 5. Tell the user the one manual step: on first open, VS Code asks to trust the folder. Until they tap Trust, the companion extension (and Claude Code / Copilot) stays disabled; the layer shows a notice with a "신뢰 설정" button.
 
 ## Workflow B — VS Code updated, or `npm run check` fails
