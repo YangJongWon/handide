@@ -1,0 +1,58 @@
+{
+  // handide mobile profile. Lives only in handide's private data dir;
+  // your desktop VS Code settings are never touched.
+  // Anything VS Code can do through a setting is done here instead of CSS,
+  // because settings survive editor updates.
+
+  // Chrome: the mobile layer's bottom tab bar replaces these.
+  "workbench.activityBar.location": "hidden",
+  "workbench.statusBar.visible": false,
+  "workbench.layoutControl.enabled": false,
+  "window.commandCenter": false,
+  "window.menuBarVisibility": "hidden",
+  "chat.commandCenter.enabled": false,
+  "workbench.startupEditor": "none",
+  "workbench.tips.enabled": false,
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  // Modal editors (settings, workspace trust, ...) overflow a phone screen; open them as normal editors.
+  "workbench.editor.useModal": "off",
+
+  // Editor: one file at a time, no horizontal scrolling.
+  "workbench.editor.showTabs": "single",
+  "breadcrumbs.enabled": false,
+  "editor.wordWrap": "on",
+  "editor.minimap.enabled": false,
+  "editor.fontSize": 14,
+  "editor.lineHeight": 22,
+  "editor.folding": false,
+  "editor.glyphMargin": false,
+  "editor.lineNumbersMinChars": 3,
+  "editor.lineDecorationsWidth": 6,
+  "editor.stickyScroll.enabled": false,
+  "editor.overviewRulerLanes": 0,
+  "editor.scrollbar.verticalScrollbarSize": 6,
+  "editor.hover.delay": 1200,
+  "workbench.tree.indent": 12,
+
+  // Reviewing agent changes on a narrow screen.
+  "diffEditor.renderSideBySide": false,
+  "diffEditor.useInlineViewWhenSpaceIsLimited": true,
+
+  // Phones lose connections; do not lose edits.
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1500,
+
+  "terminal.integrated.fontSize": 13,
+  // The terminal sends keystrokes to the shell first; let the layer's tab and key
+  // commands through so the bottom bars keep working while the terminal has focus.
+  "terminal.integrated.commandsToSkipShell": [
+    "handide.tab",
+    "workbench.action.toggleMaximizedPanel",
+    "workbench.action.quickOpen",
+    "workbench.action.showCommands",
+    "workbench.action.files.save",
+    "undo",
+    "redo",
+    "actions.find"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$comment": "Single source of truth for layer→VS Code wiring. mobile.js presses `modifiers+key`; the proxy writes the matching keybindings into the companion extension. Tabs go through the extension's `handide.tab` command (one full-screen area per tab). Actions call official command IDs directly.",
+  "modifiers": "ctrl+alt+shift",
+  "tabs": {
+    "code": "F1",
+    "files": "F2",
+    "search": "F3",
+    "git": "F4",
+    "terminal": "F5",
+    "chat": "F6"
+  },
+  "actions": {
+    "quickOpen": { "key": "F7", "command": "workbench.action.quickOpen" },
+    "commandPalette": { "key": "F8", "command": "workbench.action.showCommands" },
+    "save": { "key": "F9", "command": "workbench.action.files.save" },
+    "undo": { "key": "F10", "command": "undo" },
+    "redo": { "key": "F11", "command": "redo" },
+    "find": { "key": "F12", "command": "actions.find" },
+    "toggleMaximizedPanel": { "key": "F13", "command": "workbench.action.toggleMaximizedPanel" }
+  }
+}

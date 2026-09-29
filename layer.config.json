@@ -1,0 +1,9 @@
+{
+  "$comment": "Personal layout of your mobile VS Code. Edit by hand or ask the mobilize-editor skill (e.g. 'add an Alt key', 'put Terminal first').",
+  "breakpoint": 900,
+  "tabs": ["files", "code", "search", "git", "chat", "terminal"],
+  "accessoryKeys": ["esc", "tab", "ctrl", "left", "up", "down", "right", "undo", "input", "palette"],
+  "inputSheet": true,
+  "companion": { "mode": "extension" },
+  "agentHub": { "mode": "undecided" }
+}

@@ -1,0 +1,26 @@
+{
+  "$comment": "Every VS Code internal DOM hook the layer depends on. Internal = not an API, may change between editor releases. When `npm run check` fails after an update, fix names here (the mobilize-editor skill does this).",
+  "testedWith": { "editor": "VS Code", "version": "1.138.0" },
+  "workbench": ".monaco-workbench",
+  "banner": ".part.banner",
+  "parts": {
+    "sidebar": ".part.sidebar",
+    "editor": ".part.editor",
+    "panel": ".part.panel",
+    "auxiliarybar": ".part.auxiliarybar"
+  },
+  "textInputs": ".monaco-editor .native-edit-context, .monaco-editor textarea.inputarea, .xterm-helper-textarea, .monaco-inputbox input, .monaco-inputbox textarea",
+  "dialog": ".monaco-dialog-box",
+  "dialogButtons": ".monaco-dialog-box .dialog-buttons",
+  "modalEditor": ".monaco-modal-editor-block",
+  "quickInput": ".quick-input-widget",
+  "check": {
+    "$comment": "Only used by the automated check to confirm each tab shows the right view.",
+    "listRow": ".monaco-list-row",
+    "editorLine": ".part.editor .view-line",
+    "cursor": ".part.editor .cursor",
+    "searchView": ".search-view",
+    "terminal": ".xterm",
+    "scmTitle": "Source Control"
+  }
+}

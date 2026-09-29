@@ -1,0 +1,19 @@
+{
+  "name": "handide",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Mobile layer for the real VS Code: serves your installed VS Code to a phone browser with a touch-first UI, without forking it.",
+  "type": "module",
+  "scripts": {
+    "start": "node proxy/server.mjs",
+    "check": "node .claude/skills/mobilize-editor/scripts/check.mjs",
+    "compat": "node .claude/skills/mobilize-editor/scripts/compat.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

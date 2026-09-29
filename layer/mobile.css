@@ -1,0 +1,248 @@
+/* handide mobile layer. Only active under html.hd-mobile (phones / narrow screens).
+ * Colors come from VS Code's own theme variables, so any theme works.
+ * Rules that touch VS Code DOM are marked [vscode-dom]; if an editor update breaks
+ * them, update layer/selectors.json and these rules together. */
+
+html.hd-mobile {
+	overscroll-behavior: none;
+}
+
+/* Tokens are declared on our own elements: mobile.js copies VS Code's theme
+ * variables onto them (VS Code defines those on .monaco-workbench, not :root). */
+html.hd-mobile #hd-root,
+html.hd-mobile #hd-sheet {
+	--hd-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
+	--hd-fg: var(--vscode-foreground, #ccc);
+	--hd-muted: var(--vscode-descriptionForeground, #999);
+	--hd-accent: var(--vscode-focusBorder, #0078d4);
+	--hd-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+	--hd-key-bg: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+	--hd-key-fg: var(--vscode-button-secondaryForeground, var(--hd-fg));
+	--hd-btn-bg: var(--vscode-button-background, #0078d4);
+	--hd-btn-fg: var(--vscode-button-foreground, #fff);
+	--hd-tab-h: 56px;
+	--hd-key-h: 44px;
+}
+
+/* ---------------------------------------------------------------- bars */
+
+html.hd-mobile #hd-root {
+	position: fixed;
+	left: 0;
+	right: 0;
+	top: 100%; /* overwritten by mobile.js to glue to the visible bottom */
+	/* Below VS Code's context menus (2500), quick input (2550) and dialogs (2575), which
+	 * may overlap the bottom of the screen; the bars never overlap the workbench itself. */
+	z-index: 2400;
+	display: flex;
+	flex-direction: column;
+	background: var(--hd-bg);
+	color: var(--hd-fg);
+	border-top: 1px solid var(--hd-border);
+	padding-bottom: env(safe-area-inset-bottom);
+	font-family: var(--vscode-font-family, system-ui, sans-serif);
+	user-select: none;
+	-webkit-user-select: none;
+	touch-action: manipulation;
+}
+
+html.hd-mobile #hd-root button {
+	appearance: none;
+	border: 0;
+	margin: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Accessory keys: only on typing tabs. Scrolls sideways if the user adds many keys. */
+html.hd-mobile #hd-keys {
+	display: none;
+	gap: 4px;
+	height: var(--hd-key-h);
+	padding: 6px;
+	box-sizing: border-box;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+html.hd-mobile #hd-keys::-webkit-scrollbar {
+	display: none;
+}
+html.hd-mobile #hd-root[data-typing='1'] #hd-keys,
+html.hd-mobile #hd-root[data-keyboard='1'] #hd-keys {
+	display: flex;
+}
+html.hd-mobile #hd-keys button {
+	flex: 1 0 auto;
+	min-width: 32px;
+	padding: 0 6px;
+	border-radius: 6px;
+	background: var(--hd-key-bg);
+	color: var(--hd-key-fg);
+	font-size: 14px;
+	line-height: 32px;
+}
+html.hd-mobile #hd-keys button.active {
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+}
+html.hd-mobile #hd-keys button:active {
+	filter: brightness(1.3);
+}
+
+/* Bottom tab bar. While the soft keyboard is up it shrinks to icons only, but
+ * never disappears: VS Code focuses inputs on its own (e.g. Search), and a hidden
+ * tab bar would leave no way to switch areas. */
+html.hd-mobile #hd-tabs {
+	display: flex;
+	height: var(--hd-tab-h);
+}
+html.hd-mobile #hd-root[data-keyboard='1'] #hd-tabs {
+	height: 40px;
+}
+html.hd-mobile #hd-root[data-keyboard='1'] #hd-tabs span:not(.codicon) {
+	display: none;
+}
+html.hd-mobile #hd-root[data-keyboard='1'] #hd-tabs button {
+	gap: 0;
+}
+
+/* Keyboard-only keys (e.g. hide keyboard) */
+html.hd-mobile #hd-keys .hd-kb-only {
+	display: none;
+}
+html.hd-mobile #hd-root[data-keyboard='1'] #hd-keys .hd-kb-only {
+	display: block;
+}
+html.hd-mobile #hd-tabs button {
+	flex: 1 1 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	color: var(--hd-muted);
+	font-size: 11px;
+	border-top: 2px solid transparent;
+}
+html.hd-mobile #hd-tabs button .codicon {
+	font-size: 20px;
+}
+html.hd-mobile #hd-tabs button.active {
+	color: var(--hd-fg);
+	border-top-color: var(--hd-accent);
+}
+
+/* Restricted Mode notice, insecure-context warning */
+html.hd-mobile #hd-insecure {
+	padding: 8px 12px;
+	font-size: 13px;
+	background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+	color: var(--vscode-inputValidation-errorForeground, var(--hd-fg));
+}
+html.hd-mobile #hd-insecure[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-notice {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	font-size: 13px;
+	background: var(--vscode-inputValidation-warningBackground, #5a4a00);
+	color: var(--vscode-inputValidation-warningForeground, var(--hd-fg));
+}
+html.hd-mobile #hd-notice[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-notice span {
+	flex: 1;
+}
+html.hd-mobile #hd-notice button {
+	flex: none;
+	padding: 6px 12px;
+	border-radius: 6px;
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+}
+
+/* ---------------------------------------------------------------- input sheet */
+
+html.hd-mobile #hd-sheet {
+	position: fixed;
+	left: 0;
+	right: 0;
+	top: 0;
+	z-index: 2700;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	padding-top: max(12px, env(safe-area-inset-top));
+	background: var(--hd-bg);
+	color: var(--hd-fg);
+	border-bottom: 1px solid var(--hd-border);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+html.hd-mobile #hd-sheet[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-sheet textarea {
+	width: 100%;
+	box-sizing: border-box;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 16px; /* ≥16px stops iOS from zooming the page on focus */
+	padding: 8px;
+	border-radius: 6px;
+	border: 1px solid var(--hd-border);
+	background: var(--vscode-input-background, transparent);
+	color: var(--vscode-input-foreground, var(--hd-fg));
+	resize: vertical;
+}
+html.hd-mobile .hd-sheet-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+html.hd-mobile .hd-sheet-actions button {
+	padding: 8px 18px;
+	border-radius: 6px;
+	border: 0;
+	font-size: 15px;
+	background: var(--hd-key-bg);
+	color: var(--hd-key-fg);
+}
+html.hd-mobile .hd-sheet-actions button[type='submit'] {
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+}
+
+/* ---------------------------------------------------------------- VS Code fixes [vscode-dom] */
+
+/* Dialogs (e.g. workspace trust): keep inside the screen, let buttons wrap. */
+html.hd-mobile .monaco-dialog-box {
+	width: calc(100vw - 16px) !important;
+	max-width: calc(100vw - 16px) !important;
+	min-width: 0 !important;
+	max-height: calc(100% - 16px);
+	overflow-y: auto;
+	box-sizing: border-box;
+}
+html.hd-mobile .monaco-dialog-box .dialog-buttons {
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+}
+html.hd-mobile .monaco-dialog-box .dialog-buttons .monaco-button {
+	margin: 0 !important;
+	white-space: normal;
+	max-width: 100%;
+}
+
+/* Avoid iOS focus zoom in VS Code's own inputs (quick open, search, SCM message). */
+html.hd-mobile .monaco-inputbox input,
+html.hd-mobile .monaco-inputbox textarea {
+	font-size: 16px !important;
+}
