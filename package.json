@@ -5,6 +5,9 @@
   "license": "MIT",
   "description": "Mobile layer for the real VS Code: serves your installed VS Code to a phone browser with a touch-first UI, without forking it.",
   "type": "module",
+  "bin": {
+    "handide": "proxy/server.mjs"
+  },
   "scripts": {
     "start": "node proxy/server.mjs",
     "check": "node .claude/skills/mobilize-editor/scripts/check.mjs",

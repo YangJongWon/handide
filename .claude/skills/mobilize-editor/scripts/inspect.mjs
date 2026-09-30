@@ -3,7 +3,7 @@
 //
 //   node .claude/skills/mobilize-editor/scripts/inspect.mjs
 //   node .claude/skills/mobilize-editor/scripts/inspect.mjs --find "Source Control" --find "Trust"
-//   node .claude/skills/mobilize-editor/scripts/inspect.mjs --tab files --eval "document.querySelector('.part.panel').className"
+//   node .claude/skills/mobilize-editor/scripts/inspect.mjs --tab terminal --eval "document.querySelector('.part.panel').className"
 //
 // Opens the handide page on a phone viewport (private proxy, trust granted) and prints:
 //  - each selectors.json entry: found / missing (+ count)
@@ -46,7 +46,8 @@ try {
 	console.log(`editor: ${proxy.editor}\ntrust: ${await grantTrust(page)}`);
 	await page.waitForTimeout(5000);
 	if (args.tab) {
-		await page.tap(`#hd-tabs [data-tab="${args.tab}"]`);
+		// --tab: a dock button (files, code, terminal, ai, git) or "search" (app bar).
+		await page.tap(args.tab === 'search' ? '#hd-appbar [data-act="search"]' : `#hd-dock [data-dock="${args.tab}"]`);
 		await page.waitForTimeout(1500);
 	}
 

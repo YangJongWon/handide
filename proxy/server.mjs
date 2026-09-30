@@ -13,11 +13,13 @@ import os from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
+import { createBridge } from './bridge.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,14 +59,43 @@ const MIME = {
 	'.png': 'image/png',
 };
 
+// Per-user home, like other editors keep theirs (~/.vscode, ~/.cursor): mobile profile,
+// extension, certificate, token and personal layout. HANDIDE_HOME overrides it.
+const HOME_DIR = process.env.HANDIDE_HOME || join(os.homedir(), '.handide');
+const LEGACY_DATA_DIR = join(ROOT, '.handide-data'); // before handide became a global command
+
+const USAGE = `handide — your VS Code on your phone
+
+Usage:  handide [folder] [options]      (folder defaults to the current directory)
+
+  (default)           open on the LAN with HTTPS and print a QR code + link for the phone
+  --local             this PC only (http://localhost), no LAN, no certificate
+  --port <n>          port (default 9000)
+  --host <addr>       listen address (default 0.0.0.0, or 127.0.0.1 with --local)
+  --new-token         issue a new access token (old phone links stop working)
+  --token <secret>    use this access token (default: kept in the handide home, or $HANDIDE_TOKEN)
+  --editor <path>     editor CLI with serve-web (default: auto-detect VS Code)
+  --cert <file> --key <file>  serve HTTPS with your own certificate (e.g. from "tailscale cert")
+  --data-dir <path>   handide home (default ~/.handide, or $HANDIDE_HOME)
+  --config <path>     layout config (default <handide home>/layer.config.json)
+  --reset-profile     overwrite the mobile VS Code settings with handide's defaults
+  --upstream <port>   use an already running serve-web on localhost:<port>
+
+Phones need a secure context (https, or localhost): VS Code refuses to connect
+over plain http://<LAN-IP>. The default LAN mode takes care of that. Other ways:
+  Android over USB:  handide --local, then adb reverse tcp:9000 tcp:9000 and open http://localhost:9000
+  Anywhere:          handide --local, then tailscale serve --bg 9000 → https://<machine>.<tailnet>.ts.net
+`;
+
 function parseArgs(argv) {
 	const opts = {
 		port: 9000,
 		host: undefined, // default: LAN with automatic HTTPS; --local: this PC only
 		local: false,
 		folder: process.cwd(),
-		dataDir: join(ROOT, '.handide-data'),
-		token: process.env.HANDIDE_TOKEN || randomBytes(18).toString('base64url'),
+		dataDir: undefined,
+		token: undefined,
+		newToken: false,
 		editor: undefined,
 		upstream: undefined,
 		resetProfile: false,
@@ -81,6 +112,7 @@ function parseArgs(argv) {
 		else if (a === '--folder') opts.folder = resolve(next());
 		else if (a === '--data-dir') opts.dataDir = resolve(next());
 		else if (a === '--token') opts.token = next();
+		else if (a === '--new-token') opts.newToken = true;
 		else if (a === '--editor') opts.editor = next();
 		else if (a === '--upstream') opts.upstream = Number(next());
 		else if (a === '--reset-profile') opts.resetProfile = true;
@@ -88,30 +120,41 @@ function parseArgs(argv) {
 		else if (a === '--cert') opts.cert = resolve(next());
 		else if (a === '--key') opts.key = resolve(next());
 		else if (a === '-h' || a === '--help') {
-			console.log(`handide — mobile layer for VS Code
-
-  --port <n>          proxy port (default 9000)
-  (default)           open on the LAN with HTTPS and print a QR code + link for the phone
-  --local             this PC only (http://localhost), no LAN, no certificate
-  --host <addr>       listen address (default 0.0.0.0, or 127.0.0.1 with --local)
-  --folder <path>     folder to open (default: cwd)
-  --token <secret>    access token (default: random, or $HANDIDE_TOKEN)
-  --editor <path>     editor CLI with serve-web (default: auto-detect VS Code)
-  --upstream <port>   use an already running serve-web on localhost:<port> instead of starting one
-  --data-dir <path>   private editor data dir holding the mobile profile (default .handide-data)
-  --reset-profile     overwrite mobile settings in the data dir with profile/
-  --config <path>     layer config to use instead of layer.config.json
-  --cert <file> --key <file>  serve HTTPS (e.g. from "tailscale cert")
-
-Phones need a secure context (https, or localhost): VS Code refuses to connect
-over plain http://<LAN-IP>. Ways to get one:
-  Android over USB:  adb reverse tcp:9000 tcp:9000   then open http://localhost:9000
-  Anywhere:          tailscale serve --bg 9000       then open https://<machine>.<tailnet>.ts.net
-  Own certificate:   --cert/--key (hostname must match the certificate)`);
+			console.log(USAGE);
 			process.exit(0);
+		} else if (!a.startsWith('-')) opts.folder = resolve(a);
+		else {
+			console.error(`unknown option ${a}
+
+${USAGE}`);
+			process.exit(2);
 		}
 	}
 	return opts;
+}
+
+/** Fills in the per-user defaults: handide home, persistent token, personal layout config. */
+async function resolveHome(opts) {
+	if (!opts.dataDir) {
+		const useLegacy = !existsSync(HOME_DIR) && existsSync(LEGACY_DATA_DIR);
+		opts.dataDir = useLegacy ? LEGACY_DATA_DIR : HOME_DIR;
+	}
+	await mkdir(opts.dataDir, { recursive: true });
+
+	// The token is kept so links saved on the phone keep working across restarts.
+	const tokenFile = join(opts.dataDir, 'token');
+	if (!opts.token) opts.token = process.env.HANDIDE_TOKEN;
+	if (!opts.token && !opts.newToken) opts.token = (await readFile(tokenFile, 'utf8').catch(() => '')).trim() || undefined;
+	if (!opts.token) {
+		opts.token = randomBytes(18).toString('base64url');
+		await writeFile(tokenFile, `${opts.token}\n`, { mode: 0o600 });
+	}
+
+	// Personal layout: created from handide's defaults on first run, then it is the user's.
+	if (!opts.config) {
+		opts.config = join(opts.dataDir, 'layer.config.json');
+		if (!existsSync(opts.config)) await copyFile(join(ROOT, 'layer.config.json'), opts.config);
+	}
 }
 
 /** Parses VS Code's JSON-with-comments files (comments and trailing commas). */
@@ -187,6 +230,14 @@ async function addNewProfileSettings(settingsPath) {
 	const profile = parseJsonc(await readFile(join(PROFILE_DIR, 'settings.json'), 'utf8'));
 	const current = parseJsonc(await readFile(settingsPath, 'utf8'));
 	let changed = false;
+	// Defaults handide itself changed: replaced only while the user still has the old default.
+	const UPGRADES = [['workbench.editor.showTabs', 'single']];
+	for (const [key, oldDefault] of UPGRADES) {
+		if (current[key] === oldDefault && profile[key] !== undefined && profile[key] !== oldDefault) {
+			current[key] = profile[key];
+			changed = true;
+		}
+	}
 	for (const [k, v] of Object.entries(profile)) {
 		if (!(k in current)) {
 			current[k] = v;
@@ -285,7 +336,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls }) {
+function createProxy({ upstreamPort, log, tls, bridge }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -301,6 +352,8 @@ function createProxy({ upstreamPort, log, tls }) {
 
 	const handler = async (req, res) => {
 		if (isConnectRequest(req)) return serveConnect(req, res);
+		const pathname = req.url.split('?')[0];
+		if (bridge && (pathname.startsWith('/__handide/bridge/') || pathname === '/__handide/fs')) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
@@ -421,10 +474,15 @@ ${qr}
 
 async function main() {
 	const opts = parseArgs(process.argv.slice(2));
-	if (opts.config) CONFIG_PATH = opts.config;
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
+	await resolveHome(opts);
+	CONFIG_PATH = opts.config;
+	log(`folder: ${opts.folder}`);
+	log(`handide home: ${opts.dataDir}${opts.dataDir === LEGACY_DATA_DIR ? ' (existing data from before the global command; move it to ~/.handide to switch)' : ''}`);
 	let upstreamPort = opts.upstream;
 	let child;
+	const bridge = createBridge({ token: opts.token });
+	const bridgeEnv = await bridge.listen();
 
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
@@ -437,6 +495,7 @@ async function main() {
 			token: opts.token,
 			dataDir: opts.dataDir,
 			folder: opts.folder,
+			env: bridgeEnv,
 			log: (t) => { if (process.env.HANDIDE_VERBOSE) log(t); },
 		});
 		child = started.child;
@@ -453,7 +512,7 @@ async function main() {
 		tls = { cert: cert.cert, key: cert.key };
 		selfSigned = cert.fingerprint;
 	}
-	const server = createProxy({ upstreamPort, log, tls });
+	const server = createProxy({ upstreamPort, log, tls, bridge });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);
@@ -482,7 +541,10 @@ async function main() {
 	process.on('exit', killEditor);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run when executed directly, including through the global `handide` link (a different
+// path to the same file), but not when imported by the checks.
+const invokedPath = process.argv[1] && existsSync(process.argv[1]) ? realpathSync(process.argv[1]) : null;
+if (invokedPath && invokedPath === realpathSync(fileURLToPath(import.meta.url))) {
 	main().catch((err) => {
 		console.error(`[handide] ${err.message}`);
 		process.exit(1);

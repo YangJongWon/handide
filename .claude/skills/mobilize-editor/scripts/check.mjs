@@ -95,9 +95,16 @@ async function checkDevice(target, ctx) {
 
 	// Created before the page loads: on a first-run server the file watcher can take
 	// longer than the check waits, and a file missing from the tree fails the edit step.
-	const editName = `edit-${deviceName.replace(/W+/g, '-').toLowerCase()}.js`;
+	const slug = deviceName.replace(/\W+/g, '-').toLowerCase();
+	const editName = `edit-${slug}.js`;
 	const editFile = { name: editName, file: ctx.workspace ? join(ctx.workspace, editName) : null };
 	if (editFile.file) writeFileSync(editFile.file, SAMPLE);
+	// A sub folder the folder-change step opens through the drawer's folder picker.
+	const subFolder = ctx.workspace ? { name: `sub-${slug}` } : null;
+	if (subFolder) {
+		mkdirSync(join(ctx.workspace, subFolder.name), { recursive: true });
+		writeFileSync(join(ctx.workspace, subFolder.name, 'inside.txt'), 'hello\n');
+	}
 
 	await step('layer-injected', async () => {
 		await page.goto(ctx.url, { timeout: 120_000 });
@@ -120,49 +127,106 @@ async function checkDevice(target, ctx) {
 		return { ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(', ')}` : `${Object.keys(wanted).length} found` };
 	});
 
-	// With the companion extension, Explorer/Search/SCM live in the (maximizable) panel;
-	// in builtin mode they stay in VS Code's default side bar.
-	const home = ctx.mode === 'builtin' ? 'sidebar' : 'panel';
-	const expected = { code: 'editor', files: home, search: home, git: home, terminal: 'panel', chat: 'auxiliarybar' };
-	const content = {
-		files: () => page.locator(`${sel.parts[home]} ${sel.check.listRow}`, { hasText: 'hello.js' }).count(),
-		search: () => page.locator(`${sel.parts[home]} ${sel.check.searchView}`).count(),
-		git: () => page.evaluate(([p, t]) => (document.querySelector(p)?.innerText.includes(t) ? 1 : 0), [sel.parts[home], sel.check.scmTitle]),
-		terminal: () => page.locator(`${sel.parts.panel} ${sel.check.terminal}`).count(),
+	const builtinMode = ctx.mode === 'builtin';
+	const dock = ctx.dock ?? ['files', 'code', 'terminal', 'ai', 'git'];
+	const title = () => page.locator('#hd-title-text').innerText();
+	const drawerOpen = () => page.evaluate(() => document.documentElement.classList.contains('hd-drawer-open'));
+	const shownParts = async () => {
+		const out = {};
+		for (const [name, s] of Object.entries(sel.parts)) {
+			const b = await box(s);
+			if (b?.shown) out[name] = b;
+		}
+		return out;
 	};
-	for (const tab of ctx.tabs) {
-		await step(`tab:${tab}`, async () => {
-			await tap(`#hd-tabs [data-tab="${tab}"]`);
-			await page.waitForTimeout(1800);
-			const partName = expected[tab];
-			const main = await box(sel.parts[partName]);
-			if (!main?.shown) return { ok: false, detail: `${partName} not visible` };
-			const others = [];
-			for (const [name, s] of Object.entries(sel.parts)) {
-				const b = name !== partName && (await box(s));
-				if (b?.shown) others.push(`${name} ${Math.round(b.w)}x${Math.round(b.h)}`);
+	const describe = (parts) => Object.entries(parts).map(([n, b]) => `${n} ${Math.round(b.w)}x${Math.round(b.h)}`).join(', ') || 'nothing';
+
+	// Views, driven through the UI the way a user would: [check, dock button, how, parts that must be visible, content check]
+	const content = {
+		terminal: () => page.locator(`${sel.parts.panel} ${sel.check.terminal}`).count(),
+		// builtin mode: Search and Source Control stay in VS Code's default side bar.
+		git: () => page.evaluate(([p, t]) => (document.querySelector(p)?.innerText.includes(t) ? 1 : 0), [sel.parts[builtinMode ? 'sidebar' : 'panel'], sel.check.scmTitle]),
+		search: () => page.locator(`${sel.parts[builtinMode ? 'sidebar' : 'panel']} ${sel.check.searchView}`).count(),
+	};
+	const views = [
+		['view:editor', 'code', () => tap('#hd-dock [data-dock="code"]'), ['editor']],
+		['view:terminal-dock', 'terminal', () => tap('#hd-dock [data-dock="terminal"]'), ['editor', 'panel'], 'terminal'],
+		['view:terminal-full', 'terminal', () => tap('#hd-dock [data-dock="terminal"]'), ['panel'], 'terminal'],
+		['view:ai', 'ai', () => tap('#hd-dock [data-dock="ai"]'), ['auxiliarybar']],
+		['view:git', 'git', () => tap('#hd-dock [data-dock="git"]'), ['panel'], 'git'],
+		['view:search', null, () => tap('#hd-appbar [data-act="search"]'), ['panel'], 'search'],
+		['view:editor-again', 'code', () => tap('#hd-dock [data-dock="code"]'), ['editor']],
+	];
+	for (const [name, dockName, how, want, contentKey] of views) {
+		if (dockName && !dock.includes(dockName)) continue;
+		await step(name, async () => {
+			await how();
+			await page.waitForTimeout(2500);
+			const parts = await shownParts();
+			const names = Object.keys(parts);
+			const hasContent = contentKey ? (await content[contentKey]()) > 0 : true;
+			let ok;
+			const builtinPart = contentKey === 'git' || contentKey === 'search' ? 'sidebar' : want[want.length - 1];
+			if (builtinMode) ok = names.includes(builtinPart); // builtin: the area opens, no phone layout
+			else {
+				ok = want.length === names.length && want.every((p) => names.includes(p)) && want.every((p) => parts[p].w >= vw * 0.95);
+				if (ok && want.length === 2) ok = parts.editor.bottom <= parts.panel.y + 1; // editor above the docked terminal
 			}
-			const hasContent = content[tab] ? (await content[tab]()) > 0 : true;
-			const full = main.w >= vw * 0.95 && others.length === 0;
-			const detail = `${partName} ${Math.round(main.w)}px${others.length ? `, also: ${others.join(',')}` : ''}${hasContent ? '' : ', expected view missing'}`;
-			// builtin mode only promises that the area opens, not that it fills the screen.
-			return { ok: hasContent && (ctx.mode === 'builtin' || full), detail };
+			return { ok: ok && hasContent, detail: describe(parts) + (hasContent ? '' : ', expected view missing') };
 		});
 	}
 
+	await step('drawer', async () => {
+		await tap('#hd-dock [data-dock="files"]');
+		await page.waitForTimeout(2500);
+		if (!(await drawerOpen())) return { ok: false, detail: 'drawer did not open' };
+		const row = page.locator('#hd-drawer .hd-row', { hasText: editFile.name }).first();
+		if (!(await row.count())) return { ok: false, detail: `${editFile.name} not in the tree` };
+		if (builtinMode) {
+			await tap('#hd-scrim', { x: vw - 10, y: 300 });
+			return { ok: true, detail: 'tree shown (opening files needs the companion extension)' };
+		}
+		await tap(row);
+		await page.waitForTimeout(2500);
+		const t = await title();
+		const stillOpen = await drawerOpen();
+		return { ok: t === editFile.name && !stillOpen, detail: `title "${t}", drawer ${stillOpen ? 'still open' : 'closed'}` };
+	});
+
+	await step('swipe', async () => {
+		if (!target.swipe) return { ok: true, detail: 'skipped (no swipe support)' };
+		const h = Math.round(await viewportHeight());
+		await target.swipe(page, 4, h / 2, 230, h / 2);
+		await page.waitForTimeout(900);
+		const opened = await drawerOpen();
+		await target.swipe(page, 280, h / 2, 40, h / 2);
+		await page.waitForTimeout(900);
+		const closed = !(await drawerOpen());
+		// A swipe used to leave VS Code's gesture handler thinking a finger was down,
+		// after which no tap worked: taps must still work now.
+		await tap('#hd-dock [data-dock="files"]');
+		await page.waitForTimeout(900);
+		const tapOpens = await drawerOpen();
+		await tap('#hd-scrim', { x: vw - 10, y: 300 });
+		await page.waitForTimeout(900);
+		const tapCloses = !(await drawerOpen());
+		return { ok: opened && closed && tapOpens && tapCloses, detail: `edge swipe opens ${opened}, swipe closes ${closed}, tap after swipe opens ${tapOpens}, scrim closes ${tapCloses}` };
+	});
+
 	await step('bars-layout', async () => {
+		const bar = await box('#hd-appbar');
 		const wb = await box(sel.workbench);
-		const bars = await box('#hd-root');
+		const bottom = await box('#hd-root');
 		const viewportH = Math.round(await viewportHeight());
-		const ok = wb && bars && wb.bottom <= bars.y + 1 && Math.abs(bars.bottom - viewportH) <= 2;
-		return { ok, detail: `workbench ends ${Math.round(wb?.bottom)}, bars ${Math.round(bars?.y)}-${Math.round(bars?.bottom)} of ${viewportH}` };
+		const ok = bar && wb && bottom && Math.abs(bar.y) <= 1 && wb.y >= bar.bottom - 1 && wb.bottom <= bottom.y + 1 && Math.abs(bottom.bottom - viewportH) <= 2;
+		return { ok, detail: `app bar 0-${Math.round(bar?.bottom)}, workbench ${Math.round(wb?.y)}-${Math.round(wb?.bottom)}, dock ${Math.round(bottom?.y)}-${Math.round(bottom?.bottom)} of ${viewportH}` };
 	});
 
 	await step('theme-sync', async () => {
-		const colors = await page.evaluate(() => {
-			const root = document.getElementById('hd-root');
-			return { fg: root.style.getPropertyValue('--vscode-foreground'), bg: getComputedStyle(root).backgroundColor };
-		});
+		const colors = await page.evaluate(() => ({
+			fg: document.documentElement.style.getPropertyValue('--vscode-foreground'),
+			bg: getComputedStyle(document.getElementById('hd-root')).backgroundColor,
+		}));
 		return { ok: !!colors.fg, detail: `bg ${colors.bg}` };
 	});
 
@@ -171,11 +235,20 @@ async function checkDevice(target, ctx) {
 		// (that makes autosave stop on a conflict), and never let one device's edit
 		// satisfy another device's check.
 		const { name, file } = editFile;
-		await tap('#hd-tabs [data-tab="files"]');
-		await page.waitForTimeout(1200);
-		await tap(page.locator(`${sel.parts[home]} ${sel.check.listRow}`, { hasText: name }).first());
-		await page.waitForTimeout(1500);
-		await tap('#hd-tabs [data-tab="code"]');
+		if (builtinMode) {
+			await tap('#hd-title'); // quick open
+			await page.waitForTimeout(800);
+			await page.keyboard.type(name);
+			await page.waitForTimeout(800);
+			await page.keyboard.press('Enter');
+			await page.waitForTimeout(1500);
+		} else if ((await title()) !== name) {
+			await tap('#hd-dock [data-dock="files"]');
+			await page.waitForTimeout(1500);
+			await tap(page.locator('#hd-drawer .hd-row', { hasText: name }).first());
+			await page.waitForTimeout(1500);
+		}
+		await tap('#hd-dock [data-dock="code"]');
 		await page.waitForTimeout(1500);
 		await tap(page.locator(sel.check.editorLine).first(), { x: 4, y: 4 });
 		// A tap can land after the first character; jump to the document start
@@ -206,14 +279,36 @@ async function checkDevice(target, ctx) {
 	});
 
 	await step('palette-fits', async () => {
-		await tap('#hd-keys [data-key="palette"]');
+		await tap('#hd-appbar [data-act="palette"]');
 		await page.waitForTimeout(1000);
 		const q = await box(sel.quickInput);
-		await tap('#hd-keys [data-key="esc"]');
+		await page.keyboard.press('Escape');
 		await page.waitForTimeout(400);
 		if (!q?.shown) return { ok: false, detail: 'command palette did not open' };
 		return { ok: q.x >= 0 && q.x + q.w <= vw + 1, detail: `x ${Math.round(q.x)}, width ${Math.round(q.w)} of ${vw}` };
 	});
+
+	if (!builtinMode && subFolder) {
+		await step('folder-change', async () => {
+			await tap('#hd-dock [data-dock="files"]');
+			await page.waitForTimeout(1500);
+			await tap('#hd-drawer-head [aria-label="폴더 변경"]'); // the picker starts at the parent of the open folder
+			await page.waitForTimeout(1200);
+			await tap(page.locator('#hd-drawer .hd-row', { hasText: 'workspace' }).first());
+			await page.waitForTimeout(1200);
+			await tap(page.locator('#hd-drawer .hd-row', { hasText: subFolder.name }).first());
+			await page.waitForTimeout(1200);
+			await Promise.all([page.waitForNavigation({ timeout: 60_000 }), tap('.hd-picker-actions .hd-primary')]);
+			await page.waitForSelector('#hd-appbar', { timeout: 120_000 });
+			await grantTrust(page); // a newly opened folder asks for trust again
+			await page.waitForTimeout(5000);
+			await tap('#hd-dock [data-dock="files"]');
+			await page.waitForTimeout(2500);
+			const folder = await page.locator('.hd-drawer-title strong').innerText();
+			const hasFile = (await page.locator('#hd-drawer .hd-row', { hasText: 'inside.txt' }).count()) > 0;
+			return { ok: folder === subFolder.name && hasFile, detail: `drawer shows "${folder}"${hasFile ? ' with its file' : ''}` };
+		});
+	}
 
 	await step('no-layer-errors', async () => ({ ok: errors.length === 0, detail: errors.slice(0, 2).join(' | ').slice(0, 160) }));
 
@@ -246,7 +341,7 @@ async function checkAndroid(serial, ctx) {
 	console.log(`android: ${dev.model()} (${dev.serial()}), Chrome ${chromeVersion ?? '?'}\n`);
 	// Map CSS px to screen px once: tap an invisible full-screen overlay and read where it landed.
 	let cal = null;
-	const tapAt = async (page, x, y) => {
+	const ensureCal = async (page) => {
 		if (!cal) {
 			await dismissChromePrompts();
 			await page.evaluate(() => {
@@ -265,9 +360,21 @@ async function checkAndroid(serial, ctx) {
 			const { x: cx, y: cy, dpr } = await page.evaluate(() => ({ ...window.__hdCal, dpr: devicePixelRatio }));
 			cal = { dpr, ox: sx - cx * dpr, oy: sy - cy * dpr };
 		}
-		// Screen position follows the visual viewport, which Chrome pans when the soft keyboard opens.
+	};
+	// Screen position follows the visual viewport, which Chrome pans when the soft keyboard opens.
+	const toScreen = async (page, x, y) => {
+		await ensureCal(page);
 		const vv = await page.evaluate(() => ({ l: visualViewport?.offsetLeft ?? 0, t: visualViewport?.offsetTop ?? 0 }));
-		await dev.shell(`input tap ${Math.round(cal.ox + (x - vv.l) * cal.dpr)} ${Math.round(cal.oy + (y - vv.t) * cal.dpr)}`);
+		return [Math.round(cal.ox + (x - vv.l) * cal.dpr), Math.round(cal.oy + (y - vv.t) * cal.dpr)];
+	};
+	const tapAt = async (page, x, y) => {
+		const [sx, sy] = await toScreen(page, x, y);
+		await dev.shell(`input tap ${sx} ${sy}`);
+	};
+	const swipe = async (page, x0, y0, x1, y1) => {
+		const [a, b] = await toScreen(page, x0, y0);
+		const [c, d] = await toScreen(page, x1, y1);
+		await dev.shell(`input swipe ${Math.max(1, a)} ${b} ${c} ${d} 250`);
 	};
 	// Chrome's own first-run / permission sheets sit above the page and swallow taps.
 	const dismissChromePrompts = async () => {
@@ -287,7 +394,7 @@ async function checkAndroid(serial, ctx) {
 		return { page, close: () => context.close() };
 	};
 	try {
-		return await checkDevice({ name: `Android ${dev.model()}`, open, tapAt }, ctx);
+		return await checkDevice({ name: `Android ${dev.model()}`, open, tapAt, swipe }, ctx);
 	} finally {
 		spawnSync(adb, ['-s', dev.serial(), 'reverse', '--remove', `tcp:${port}`]);
 		await dev.close();
@@ -313,7 +420,7 @@ try {
 	console.log(`editor: ${proxy.editor}\nlayer tested with: ${selectors.testedWith.editor} ${selectors.testedWith.version}\nmode: ${opts.mode}\n`);
 
 	const all = [];
-	const ctx = { ...proxy, mode: opts.mode, tabs: layerConfig.tabs };
+	const ctx = { ...proxy, mode: opts.mode, dock: layerConfig.dock };
 	if (opts.android) {
 		all.push(...(await checkAndroid(opts.android, ctx)));
 	} else {
@@ -322,11 +429,20 @@ try {
 			const device = DEVICES[name];
 			if (!device) throw new Error(`unknown Playwright device "${name}"`);
 			const { defaultBrowserType, ...deviceOpts } = device;
+			let context;
 			const open = async () => {
-				const context = await browser.newContext(deviceOpts);
+				context = await browser.newContext(deviceOpts);
 				return { page: await context.newPage(), close: () => context.close() };
 			};
-			all.push(...(await checkDevice({ name, open }, ctx)));
+			// A real touch swipe (start, moves, end) through the DevTools protocol.
+			const swipe = async (page, x0, y0, x1, y1) => {
+				const cdp = await context.newCDPSession(page);
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+				for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / 8, y: y0 + ((y1 - y0) * i) / 8 }] });
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+				await cdp.detach();
+			};
+			all.push(...(await checkDevice({ name, open, swipe }, ctx)));
 		}
 		await browser.close();
 	}

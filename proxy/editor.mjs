@@ -64,7 +64,7 @@ export function editorVersion(cli) {
  * Starts `serve-web` on localhost only; the proxy is the sole public entry point.
  * Resolves once the CLI prints its "Web UI available" line.
  */
-export function startServeWeb({ cli, port, token, dataDir, folder, log }) {
+export function startServeWeb({ cli, port, token, dataDir, folder, env, log }) {
 	const args = [
 		'serve-web',
 		'--host', '127.0.0.1',
@@ -78,6 +78,8 @@ export function startServeWeb({ cli, port, token, dataDir, folder, log }) {
 	const child = spawn(cli, args, {
 		shell: process.platform === 'win32' && !cli.endsWith('.exe'),
 		windowsHide: true,
+		// Inherited down to the extension host: tells the companion how to reach the bridge.
+		env: { ...process.env, ...env },
 	});
 	const ready = new Promise((resolve, reject) => {
 		const onData = (buf) => {

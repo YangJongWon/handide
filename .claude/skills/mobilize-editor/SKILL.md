@@ -1,28 +1,29 @@
 ---
 name: mobilize-editor
-description: Set up, verify, repair and personalize handide, the mobile layer that serves the user's real VS Code to a phone browser without forking it. Use when installing handide, after VS Code updates (to re-verify and fix the layer), when `npm run check` fails, when the user wants to change their mobile layout (tabs, accessory keys, breakpoint), or when choosing how the companion extension is installed.
+description: Set up, verify, repair and personalize handide, the `handide` command that serves the user's real VS Code to a phone as a mobile IDE (app bar, file drawer, docked terminal, full-screen AI) without forking it. Use when installing handide, after VS Code updates (to re-verify and fix the layer), when `npm run check` fails, when the user wants to change their mobile layout (dock, accessory keys, breakpoint), or when choosing how the companion extension is installed.
 ---
 
 # mobilize-editor
 
-handide = the installed VS Code (untouched) → `code serve-web` → `proxy/server.mjs` (injects `layer/`) → phone browser.
+`handide [folder]` (like `code .`) = the installed VS Code (untouched) → `code serve-web` on 127.0.0.1 → `proxy/server.mjs` (LAN HTTPS + QR, injects `layer/`, command bridge) → phone browser.
 
 What each piece owns (keep it that way):
 
 | Piece | Owns | Survives editor updates because |
 |---|---|---|
-| `profile/settings.json` | everything a VS Code setting can do (hidden activity/status bar, word wrap, `workbench.editor.useModal: off`, autosave) | settings are public API |
-| `extension/` (companion) | one full-screen area per tab via **official command IDs**; moves Explorer/Search/SCM into the maximizable panel | commands are API, but a few layout ones are internal (see `compat.mjs`) |
-| `layer/commands.json` | chord ↔ command mapping; proxy generates the extension keybindings from it | single source of truth |
+| `profile/settings.json` | everything a VS Code setting can do (no activity/status bar, no editor tabs/title actions, word wrap, `workbench.editor.useModal: off`, autosave, `terminal.integrated.commandsToSkipShell`) | settings are public API |
+| `extension/` (companion) | `handide.view` (editor / terminalDock / terminal / ai / search / git) from **official, idempotent commands**; `handide.state`; the bridge client; moves Search/SCM into the maximizable panel | commands are API, but a few layout ones are internal (see `compat.mjs`) |
+| `proxy/bridge.mjs` | command bridge: layer → proxy → extension (long-poll on a private 127.0.0.1 port + secret), and `/__handide/fs` directory listing for the drawer | own code |
+| `layer/commands.json` | chord ↔ command mapping (fallback when the bridge is down); proxy generates the extension keybindings from it | single source of truth |
 | `layer/selectors.json` | **every** VS Code internal DOM hook the layer or the check uses | the one file to fix after an update |
-| `layer/mobile.css`, `layer/mobile.js` | bottom tabs, accessory keys, viewport shim, input sheet, theme sync, dialog fixes | depend on DOM only through `selectors.json` + rules marked `[vscode-dom]` |
-| `layer.config.json` | the user's personal layout (tabs, keys, breakpoint, companion mode) | user data |
+| `layer/mobile.js`, `layer/mobile.css` | the shell: app bar, file drawer + folder picker, dock, accessory keys, input sheet, viewport shim, theme sync, `settleView()` (finishes layouts from the DOM) | depend on DOM only through `selectors.json` + rules marked `[vscode-dom]` |
+| `~/.handide/` (`$HANDIDE_HOME`) | per-user: mobile VS Code profile (`data/Machine/settings.json`), installed companion, `tls/` certificate, `token`, `layer.config.json` | user data |
 
 Hard rules:
-- Verify on real Android (`--android`) after changes to input, keys, viewport or tab logic; emulation has no soft keyboard.
-- Never modify the VS Code installation, `~/.vscode`, or the user's desktop VS Code settings. handide state lives in `.handide-data/` (created by the proxy).
+- Never modify the VS Code installation, `~/.vscode`, or the user's desktop VS Code settings. handide state lives in `~/.handide` (an older `<repo>/.handide-data` is reused if it exists).
 - New DOM dependencies go into `layer/selectors.json`, never hard-coded elsewhere.
-- Prefer, in order: a VS Code setting (`profile/settings.json`) → an official command (`layer/commands.json` / `extension/`) → CSS/JS on DOM.
+- Prefer, in order: a VS Code setting (`profile/settings.json`) → an official command (bridge / `extension/`) → CSS/JS on DOM.
+- Verify on real Android (`--android`) after changes to input, keys, gestures, viewport or view logic; emulation has no soft keyboard.
 - Do not report success without a passing `npm run check`.
 
 Scripts (all in `scripts/`, run from the repo root):
@@ -30,60 +31,61 @@ Scripts (all in `scripts/`, run from the repo root):
 | Command | Does |
 |---|---|
 | `npm run compat [-- --editor <cli>]` | static install check → JSON verdict; exit 0 compatible, 2 uncertain, 3 incompatible |
-| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** proxy (fresh data dir + sample workspace under `check-output/`), runs 15 checks per emulated device, writes `check-output/report.json` + screenshots per step |
-| `npm run check -- --android [serial]` | same 15 checks in **real Chrome** on an emulator or USB phone: real touches (`adb input tap`), real soft keyboard. Catches what emulation cannot (keyboard resizing, terminal focus, input handling). Needs `adb`; sets `adb reverse` itself |
-| `node .claude/skills/mobilize-editor/scripts/inspect.mjs [--tab files] [--find "text"] [--eval "js"]` | phone-viewport DOM inspector for repairing selectors |
+| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** handide (`--local`, fresh data dir + sample workspace under `check-output/`), runs 19 checks per emulated device through the UI (taps, CDP swipes), writes `check-output/report.json` + a screenshot per step |
+| `npm run check -- --android [serial]` | same checks in **real Chrome** on an emulator or USB phone: `adb input tap/swipe`, real soft keyboard; sets `adb reverse` itself |
+| `node .claude/skills/mobilize-editor/scripts/inspect.mjs [--tab <view>] [--find "text"] [--eval "js"]` | phone-viewport DOM inspector for repairing selectors |
 
 ## Workflow A — install / first setup
 
-1. `npm install` (Playwright is a dev dependency; if its browser is missing: `npx playwright install chromium`).
+1. Install: `npm install -g github:YangJongWon/handide`, or from this repo `npm install && npm link`. For the checks, Playwright's browser: `npx playwright install chromium` if missing.
 2. `npm run compat`. Read the JSON.
    - `editor.cli` null → the user needs VS Code (Cursor/Windsurf cannot serve a web UI). Explain `editor.note`, stop.
    - `verdict: compatible` → keep `companion.mode: "extension"`.
-   - `verdict: uncertain | incompatible` → ask the user with AskUserQuestion, using `choices` from the JSON verbatim (labels are Korean on purpose), explaining `reasons`. Then set `layer.config.json` → `companion.mode` to the chosen id (`extension` | `builtin`), or stop on `skip`.
+   - `verdict: uncertain | incompatible` → ask the user with AskUserQuestion, using `choices` from the JSON verbatim (labels are Korean on purpose), explaining `reasons`. Then set `companion.mode` in `~/.handide/layer.config.json` to the chosen id (`extension` | `builtin`), or stop on `skip`.
 3. `npm run check -- --mode <chosen mode>`. Must pass (see Workflow B on failure).
-4. Start for the phone: `npm start -- --folder <project>`. By default it listens on the LAN over HTTPS with a self-signed certificate (`proxy/tls.mjs`, kept in `.handide-data/tls`, regenerated when the PC's addresses change) and prints a **QR code + link** carrying the token; `http://` on the same port redirects to `https://`. Tell the user: scan the QR code, accept the certificate warning once (Android Chrome: Advanced → Proceed; Safari: Show Details → visit this website).
-   Why not plain http: VS Code's connection handshake needs Web Crypto, only available in a secure context (HTTPS or localhost); `http://<LAN-IP>` loads but never connects.
-   Other setups: `--local` (this PC only) + `tailscale serve --bg 9000` for a valid certificate from anywhere; `--local` + `adb reverse` for Android over USB; `--cert/--key` for their own certificate.
-   The `?tkn=` token is the only auth; never expose the port on a public network.
-5. Tell the user the one manual step: on first open, VS Code asks to trust the folder. Until they tap Trust, the companion extension (and Claude Code / Copilot) stays disabled; the layer shows a notice with a "신뢰 설정" button.
+4. Tell the user to run `handide` in the folder they want (or `handide <folder>`). It listens on the LAN over HTTPS with a self-signed certificate (`proxy/tls.mjs`, regenerated when the PC's addresses change) and prints a **QR code + link** carrying the token (kept in `~/.handide/token`; `--new-token` replaces it); `http://` on the same port redirects to `https://`. `http://localhost:9000/__handide/connect` on the PC shows the QR code large (answers only the PC itself).
+   First visit: accept the certificate warning once (Android Chrome: Advanced → Proceed; Safari: Show Details → visit this website), then **Trust** the folder — until then VS Code keeps the companion (views, file opening, bridge) and agent extensions off; the layer shows a notice with a "신뢰 설정" button.
+   Why not plain http: VS Code's connection handshake needs Web Crypto, only available in a secure context. Other setups: `--local` + `tailscale serve --bg 9000` (valid certificate, anywhere), `--local` + `adb reverse` (Android over USB), `--cert/--key`.
 
 ## Workflow B — VS Code updated, or `npm run check` fails
 
-1. `npm run compat` and `npm run check`. Open `check-output/report.json`; look at the screenshot named after each failing step in `check-output/<device>/`.
+1. `npm run compat` and `npm run check`. Open `check-output/report.json`; look at the screenshot named after each failing step in `check-output/<device>/`. Note that `serve-web` may have downloaded a newer web server than the desktop VS Code.
 2. Map the failure to its fix:
 
 | Failing check | Likely cause | Fix |
 |---|---|---|
-| `layer-injected` | proxy/serve-web problem, or the workbench HTML changed | run `npm start` manually, read its output; check `injectLayer()` in `proxy/server.mjs` still finds `</head>` / `</html>` and `vscode-workbench-web-configuration` |
-| `selectors` | internal class renamed | `inspect.mjs` (and `--find`) to find the new name → edit `layer/selectors.json` |
+| `layer-injected` | proxy/serve-web problem, or the workbench HTML changed | run `handide --local` manually, read its output; check `injectLayer()` in `proxy/server.mjs` still finds `</head>` / `</html>` and `vscode-workbench-web-configuration` |
+| `selectors` | internal class renamed | `inspect.mjs` (and `--find`) → edit `layer/selectors.json` |
 | `trust` | trust UI changed | `inspect.mjs --find "Restricted Mode" --find "Trust"` → update `scripts/lib/trust.mjs` and `banner` in `selectors.json` |
-| `tab:*` (extension mode) | a layout command ID changed, the extension did not load, view IDs changed, or `settleTab()` in `mobile.js` (which maximizes the panel based on the DOM) needs adjusting | `inspect.mjs --tab <tab>`; check the command IDs in `extension/extension.js` still exist (the Keyboard Shortcuts editor lists every command ID; "Developer: Show Running Extensions" shows whether the companion is active); fix `PANEL_HOMES` / `showTab`. If unfixable now, offer `builtin` mode (Workflow A step 2 choices). |
-| `tab:*` (builtin mode) | default shortcut changed | update `BUILTIN_TABS` in `layer/mobile.js` |
-| `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height` | adjust `installViewportShim()` in `layer/mobile.js` |
-| `theme-sync` | theme variables moved | `inspect.mjs --eval "getComputedStyle(document.querySelector('.monaco-workbench')).getPropertyValue('--vscode-foreground')"`; update `THEME_VARS` / `syncTheme()` |
-| `edit-korean` | text insertion path changed | the report shows `last paste: <element> <method>`. `pasteInto()` in `mobile.js` inserts via EditContext `textupdate` when the editor has one (a synthetic paste is accepted but ignored on Android Chrome), else via a paste event. Check `textInputs` in `selectors.json` |
-| `accessory-keys` | synthetic keys ignored | check `sendKey()` (keyCode/code), `check.cursor` selector |
+| `view:*` (extension mode) | a layout command ID changed, the companion or bridge did not start, or `settleView()` misreads the layout | `inspect.mjs --tab <view>`; check `/__handide/bridge/status` in the page (`connected`), the command IDs in `extension/extension.js` (Keyboard Shortcuts editor lists them), `VIEW_PARTS` / `settleView()` in `mobile.js`. If unfixable now, offer `builtin` mode |
+| `view:*` (builtin mode) | a default shortcut changed | update `BUILTIN_VIEWS` in `layer/mobile.js` |
+| `drawer` | bridge down, `vscode.open` changed, or `pageFolder()` can't read the folder | bridge status; `handide.state`; the workbench configuration's `folderUri` |
+| `swipe` | gestures broken, or VS Code's gesture handler swallowing taps again | `installGestures()` / `onTap()` in `mobile.js` |
+| `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height`, or the body offset changed | `installViewportShim()` / `relayout()` in `mobile.js`, `body { padding-top }` in `mobile.css` |
+| `theme-sync` | theme variables moved | `inspect.mjs --eval "getComputedStyle(document.querySelector('.monaco-workbench')).getPropertyValue('--vscode-foreground')"`; update `THEME_VARS` |
+| `edit-korean` | text insertion path changed | the report shows `last paste: <element> <method>`; `pasteInto()` uses EditContext `textupdate` when present (a synthetic paste is accepted but ignored on Android Chrome), else a paste event |
+| `accessory-keys` | synthetic keys ignored | `sendKey()` (keyCode/code), `check.cursor` selector |
 | `palette-fits` | quick input overflows | CSS in `mobile.css` for `quickInput` |
+| `folder-change` | `vscode.openFolder` or the `?folder=` reload changed | bridge result of `vscode.openFolder`; `pageFolder()` |
 | `no-layer-errors` | JS exception in the layer | message is in the report |
 
-3. Re-run `npm run check` (both modes if the change touched shared code) until it passes.
-4. Update `layer/selectors.json` → `testedWith.version` to the editor version from the report, so `compat` stops reporting "untested".
+3. Re-run `npm run check` (both modes if the change touched shared code; `--android` for input/gesture/viewport changes) until it passes.
+4. Update `layer/selectors.json` → `testedWith.version`, so `compat` stops reporting "untested".
 5. Summarize for the user: what broke, what changed, the check result.
 
 ## Workflow C — personalize
 
-Edit `layer.config.json` (served live; a page reload applies it, no restart):
+Edit `~/.handide/layer.config.json` (served live; a page reload applies it):
 
-- `tabs`: any order/subset of `code, files, search, git, terminal, chat`.
+- `dock`: any order/subset of `files, code, terminal, ai, git, search` (search is also in the app bar).
 - `accessoryKeys`: any of `esc tab left up down right home end ctrl alt shift undo redo save find quickOpen palette input` (`input` = the Korean-safe input sheet, `ctrl/alt/shift` are sticky).
 - `breakpoint`: width (px) below which the mobile layout activates (touch devices always get it).
 - `companion.mode`: `extension` | `builtin`.
 
-Adding a new action key means: an entry in `layer/commands.json` → `actions` (official command ID), a `KEY_DEFS` entry in `layer/mobile.js`, and `BUILTIN_ACTIONS` for builtin mode. Then `npm run check`.
+A new action key: an entry in `layer/commands.json` → `actions` (official command ID), a `KEY_DEFS` entry in `layer/mobile.js`, and `BUILTIN_ACTIONS` for builtin mode. A new view: `VIEW_PARTS` + `DOCK_DEFS` in `mobile.js`, `showView()` in `extension/extension.js`, a `tabs` chord in `commands.json`. Then `npm run check`.
 
-Mobile-only VS Code settings go in `profile/settings.json`; on the next start the proxy adds new keys to the user's existing handide settings without overwriting their values (`--reset-profile` to overwrite).
+Mobile-only VS Code settings go in `profile/settings.json`; on the next start handide adds new keys to the user's settings without overwriting their values, and replaces handide's own old defaults listed in `UPGRADES` (`proxy/server.mjs`). `--reset-profile` overwrites everything.
 
 ## Workflow D — share
 
-The shareable unit is this repo (layer + extension + profile + this skill). Someone else clones it, opens Claude Code in it, and asks to set up handide → Workflow A adapts to their editor version. Their `layer.config.json` is their personalization; changes to `selectors.json` after a VS Code update are worth sending back upstream so everyone's layer stays current.
+The shareable unit is this repo (command + layer + extension + profile + this skill), installable with `npm install -g github:YangJongWon/handide`. Someone else clones it, opens Claude Code in it, and asks to set up handide → Workflow A adapts to their editor version. Their `~/.handide/layer.config.json` is their personalization; changes to `selectors.json` after a VS Code update are worth sending back upstream.

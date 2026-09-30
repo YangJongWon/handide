@@ -8,28 +8,78 @@
   "engines": {
     "vscode": "^1.100.0"
   },
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "main": "./extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": true },
+    "untrustedWorkspaces": {
+      "supported": true
+    },
     "virtualWorkspaces": true
   },
   "contributes": {
     "commands": [
-      { "command": "handide.tab", "title": "Show Mobile Tab", "category": "handide" }
+      {
+        "command": "handide.view",
+        "title": "Show Mobile View",
+        "category": "handide"
+      },
+      {
+        "command": "handide.tab",
+        "title": "Show Mobile Tab",
+        "category": "handide"
+      },
+      {
+        "command": "handide.state",
+        "title": "Mobile State",
+        "category": "handide"
+      }
     ],
     "viewsContainers": {
       "panel": [
-        { "id": "handide-files", "title": "Files", "icon": "media/files.svg" },
-        { "id": "handide-search", "title": "Search", "icon": "media/search.svg" },
-        { "id": "handide-git", "title": "Git", "icon": "media/git.svg" }
+        {
+          "id": "handide-files",
+          "title": "Files",
+          "icon": "media/files.svg"
+        },
+        {
+          "id": "handide-search",
+          "title": "Search",
+          "icon": "media/search.svg"
+        },
+        {
+          "id": "handide-git",
+          "title": "Git",
+          "icon": "media/git.svg"
+        }
       ]
     },
     "views": {
-      "handide-files": [{ "id": "handide.files.home", "name": "Files", "when": "false" }],
-      "handide-search": [{ "id": "handide.search.home", "name": "Search", "when": "false" }],
-      "handide-git": [{ "id": "handide.git.home", "name": "Git", "when": "false" }]
+      "handide-files": [
+        {
+          "id": "handide.files.home",
+          "name": "Files",
+          "when": "false"
+        }
+      ],
+      "handide-search": [
+        {
+          "id": "handide.search.home",
+          "name": "Search",
+          "when": "false"
+        }
+      ],
+      "handide-git": [
+        {
+          "id": "handide.git.home",
+          "name": "Git",
+          "when": "false"
+        }
+      ]
     },
     "keybindings": []
   }

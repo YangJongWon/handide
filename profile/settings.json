@@ -18,7 +18,9 @@
   "workbench.editor.useModal": "off",
 
   // Editor: one file at a time, no horizontal scrolling.
-  "workbench.editor.showTabs": "single",
+  "workbench.editor.showTabs": "none", // the app bar shows the active file
+  // Without tabs VS Code moves editor actions into its title bar; the app bar replaces both.
+  "workbench.editor.editorActionsLocation": "hidden",
   "breadcrumbs.enabled": false,
   "editor.wordWrap": "on",
   "editor.minimap.enabled": false,
