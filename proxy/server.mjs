@@ -17,6 +17,7 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
+import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,6 +26,27 @@ const PROFILE_DIR = join(ROOT, 'profile');
 const LAYER_PREFIX = '/__handide/';
 // Personal layer config; --config points elsewhere (the automated check uses this).
 let CONFIG_PATH = join(ROOT, 'layer.config.json');
+// PC-side page with a large QR code; filled in once the server is listening.
+const CONNECT_PATH = '/__handide/connect';
+let CONNECT = null;
+
+async function serveConnect(req, res) {
+	const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
+	if (!isConnectAllowed(req)) {
+		res.writeHead(403, { ...headers, 'content-type': 'text/plain; charset=utf-8' });
+		res.end('This page is only available on the PC running handide: http://localhost:<port>/__handide/connect');
+		return;
+	}
+	if (!CONNECT) {
+		res.writeHead(503, { ...headers, 'content-type': 'text/plain; charset=utf-8', 'retry-after': '2' });
+		res.end('handide is still starting, reload in a moment.');
+		return;
+	}
+	res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8' });
+	res.end(await renderConnectPage(CONNECT.info, CONNECT));
+}
+
+const isConnectRequest = (req) => req.method === 'GET' && req.url.split('?')[0] === CONNECT_PATH;
 
 const MIME = {
 	'.css': 'text/css; charset=utf-8',
@@ -278,6 +300,7 @@ function createProxy({ upstreamPort, log, tls }) {
 	};
 
 	const handler = async (req, res) => {
+		if (isConnectRequest(req)) return serveConnect(req, res);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
@@ -349,6 +372,8 @@ function createProxy({ upstreamPort, log, tls }) {
 	// phone is sent to https:// instead of getting a dead connection. A TLS handshake
 	// starts with byte 0x16; anything else is plain HTTP.
 	const redirect = http.createServer((req, res) => {
+		// The connect page stays on plain http://localhost so the PC browser shows no certificate warning.
+		if (isConnectRequest(req)) return serveConnect(req, res);
 		res.writeHead(301, { location: `https://${req.headers.host}${req.url}` }).end();
 	});
 	return net.createServer((socket) => {
@@ -363,29 +388,29 @@ function createProxy({ upstreamPort, log, tls }) {
 }
 
 /**
- * Prints how to connect. On the LAN the phone just scans the QR code (or opens the
- * link); the link carries the token, which VS Code turns into a cookie.
+ * Prints how to connect. On the LAN the phone scans the QR code (here, or larger on
+ * the connect page); the link carries the token, which VS Code turns into a cookie.
  */
-async function printAccess({ host, port, token, tls, selfSigned, log }) {
-	const local = host === '127.0.0.1' || host === 'localhost';
-	const scheme = tls ? 'https' : 'http';
-	const path = `/?tkn=${encodeURIComponent(token)}`;
-	if (local) {
-		log(`  ${scheme}://localhost:${port}${path}`);
-		log(`  Android over USB: adb reverse tcp:${port} tcp:${port}, then open the link above on the phone.`);
+async function printAccess(info, { selfSigned, log }) {
+	const page = `http://localhost:${info.port}${CONNECT_PATH}`;
+	if (info.local) {
+		log(`  ${info.localUrl}`);
+		log(`  Android over USB: adb reverse tcp:${info.port} tcp:${info.port}, then open the link above on the phone.`);
 		log('  Drop --local to open it on the LAN with a QR code.');
 		return;
 	}
-	const addrs = lanAddresses();
-	if (!addrs.length) {
-		log(`  No LAN address found. On this PC: ${scheme}://localhost:${port}${path}`);
+	if (!info.links.length) {
+		log(`  No LAN address found. On this PC: ${info.localUrl}`);
 		return;
 	}
-	const primary = `${scheme}://${addrs[0].ip}:${port}${path}`;
-	const qr = await QRCode.toString(primary, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
-	process.stdout.write(`\n${qr}\n`);
-	log(`  Scan the QR code, or open: ${primary}`);
-	for (const a of addrs.slice(1)) log(`  also: ${scheme}://${a.ip}:${port}${path}   (${a.tailscale ? 'Tailscale' : a.name})`);
+	const [primary, ...others] = info.links;
+	const qr = await QRCode.toString(primary.url, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
+	process.stdout.write(`
+${qr}
+`);
+	log(`  Scan the QR code, or open: ${primary.url}`);
+	log(`  Large QR code in the PC browser: ${page}`);
+	for (const o of others) log(`  also: ${o.url}   (${o.label})`);
 	if (selfSigned) {
 		log('  First visit shows a certificate warning (self-signed, made for this PC):');
 		log('    Android Chrome: Advanced → Proceed.  iPhone Safari: Show Details → visit this website.');
@@ -436,7 +461,8 @@ async function main() {
 	});
 	server.listen(opts.port, host, () => {
 		log(`mobile VS Code ready. Open on your phone:`);
-		printAccess({ host, port: opts.port, token: opts.token, tls, selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
+		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls }), selfSigned };
+		printAccess(CONNECT.info, { selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
 	});
 
 	// serve-web spawns its own server process; kill the whole tree so nothing is orphaned.

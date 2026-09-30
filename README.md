@@ -10,7 +10,7 @@
 > **한국어 요약**
 > PC에 설치된 VS Code 원본을 그대로 폰 브라우저로 띄우고, 그 위에 모바일 레이어를 입힙니다. 하단 탭 한 번에 한 영역이 전체 화면으로 뜨고, 보조키 줄(Esc·Tab·방향키·Ctrl)과 한글 입력 시트가 있습니다. VS Code를 포크하지 않으므로 Claude Code·Copilot 같은 확장이 그대로 동작합니다.
 > 가장 쉬운 설치: 이 레포를 받아 **Claude Code로 열고 "handide 설치해줘"라고 하면** 포함된 `mobilize-editor` 스킬이 호환성 점검부터 실행까지 안내합니다. VS Code가 업데이트돼 화면이 깨지면 같은 스킬이 점검하고 고칩니다.
-> PC에서 `npm start`를 실행하면 터미널에 **QR 코드와 링크**가 뜹니다. 폰 카메라로 QR을 찍거나 링크를 열면 바로 연결됩니다(첫 방문 때 인증서 경고를 한 번 넘기면 됩니다).
+> PC에서 `npm start`를 실행하면 터미널에 **QR 코드와 링크**가 뜹니다. 터미널 QR이 잘 안 찍히면 PC 브라우저에서 `http://localhost:9000/__handide/connect`를 열면 QR이 크게 보입니다. 폰 카메라로 QR을 찍거나 링크를 열면 바로 연결됩니다(첫 방문 때 인증서 경고를 한 번 넘기면 됩니다).
 
 ## How it works
 
@@ -53,6 +53,8 @@ npm start -- --folder ~/my-project    # prints a QR code + link for the phone
 ### Open it on your phone
 
 `npm start` opens handide on your LAN over HTTPS and prints a **QR code and a link**. Scan the QR code with the phone camera (or open the link on any device on the same network) and you are in: the link carries the access token.
+
+If the QR code is hard to scan in your terminal, open **http://localhost:9000/__handide/connect** in the PC's browser: it shows the same QR code large, with the link and a copy button. That page only answers requests from the PC itself, because it contains the token.
 
 The first visit shows a certificate warning, because handide makes its own certificate for your PC (stored in `.handide-data/tls`). Accept it once: Android Chrome → *Advanced* → *Proceed*; iPhone Safari → *Show Details* → *visit this website*. Typing `http://` instead of `https://` redirects automatically.
 
