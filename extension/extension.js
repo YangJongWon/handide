@@ -12,8 +12,8 @@
 // panel is a toggle whose state extensions cannot read, so the layer finishes that part
 // by looking at the DOM:
 //   editor        editor alone
-//   terminalDock  editor on top, terminal docked below
-//   terminal      terminal full screen (layer maximizes the panel)
+//   terminalDock  editor on top, terminal docked below (the layer's bottom drawer)
+//   terminal      terminal full screen (layer maximizes the panel; kept for key chords)
 //   ai            chat in the secondary side bar, maximized
 //   search / git  that view in the panel, full screen (layer maximizes)
 // VS Code has no "maximize primary side bar", so Search and Source Control are moved

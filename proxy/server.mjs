@@ -183,7 +183,9 @@ export async function layerKeybindings() {
 	const { modifiers, tabs, actions } = JSON.parse(await readFile(join(LAYER_DIR, 'commands.json'), 'utf8'));
 	const chord = (key) => `${modifiers}+${key.toLowerCase()}`;
 	const tabBindings = Object.entries(tabs).map(([tab, key]) => ({ key: chord(key), command: 'handide.tab', args: { tab } }));
-	const actionBindings = Object.values(actions).map(({ key, command }) => ({ key: chord(key), command }));
+	const actionBindings = Object.values(actions)
+		.filter(({ key }) => key)
+		.map(({ key, command }) => ({ key: chord(key), command }));
 	return [...tabBindings, ...actionBindings];
 }
 

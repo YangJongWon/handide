@@ -93,6 +93,17 @@ async function checkDevice(target, ctx) {
 			return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, shown };
 		}, s);
 
+	const shownPartsNow = () =>
+		page.evaluate((parts) => {
+			const out = {};
+			for (const [name, s] of Object.entries(parts)) {
+				const el = document.querySelector(s);
+				const r = el?.getBoundingClientRect();
+				if (r && r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none') out[name] = Math.round(r.width);
+			}
+			return out;
+		}, sel.parts);
+
 	// Created before the page loads: on a first-run server the file watcher can take
 	// longer than the check waits, and a file missing from the tree fails the edit step.
 	const slug = deviceName.replace(/\W+/g, '-').toLowerCase();
@@ -114,6 +125,46 @@ async function checkDevice(target, ctx) {
 		return { ok: true, detail: `viewport width ${vw}` };
 	});
 
+	// Before trust (companion off): VS Code may restore its side bars next to the editor.
+	// Open both the way that happens, and expect the layer to close them again.
+	await step('restricted-layout', async () => {
+		await page.waitForTimeout(4000);
+		// Every part that was ever laid out, sampled on each DOM change: the layer may close
+		// them before the next frame.
+		await page.evaluate((parts) => {
+			window.__hdSeen = new Set();
+			const sample = () => {
+				if (!window.__hdSeen) return obs.disconnect();
+				for (const [name, s] of Object.entries(parts)) {
+					const r = document.querySelector(s)?.getBoundingClientRect();
+					if (r && r.width > 0 && r.height > 0) window.__hdSeen.add(name);
+				}
+			};
+			const obs = new MutationObserver(sample);
+			obs.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
+			sample();
+		}, sel.parts);
+		const mod = apple ? 'Meta' : 'Control';
+		// A trust prompt from a restored terminal is modal and would swallow the keys.
+		if (await page.locator(sel.dialog).count()) await page.keyboard.press('Escape');
+		await page.waitForTimeout(500);
+		await tap(sel.parts.editor).catch(() => {}); // keys go to the workbench, not to a leftover focus
+		await page.waitForTimeout(300);
+		await page.keyboard.press(`${mod}+B`);
+		await page.keyboard.press(`${mod}+Alt+B`);
+		await page.waitForTimeout(1500);
+		const opened = (await page.evaluate(() => [...window.__hdSeen])).join(', ');
+		await page.waitForTimeout(5000);
+		await page.evaluate(() => (window.__hdSeen = null));
+		const parts = await shownPartsNow();
+		const names = Object.keys(parts);
+		const reproduced = /sidebar/.test(opened) && /auxiliarybar/.test(opened);
+		return {
+			ok: reproduced && names.length === 1 && names[0] === 'editor',
+			detail: `seen: ${opened || 'nothing'}${reproduced ? '' : ' (side bars did not open: test not reproduced)'}; now: ${names.join(', ') || 'nothing'}`,
+		};
+	});
+
 	await step('trust', async () => {
 		const how = await grantTrust(page);
 		await page.waitForTimeout(6000); // companion extension activation
@@ -128,9 +179,34 @@ async function checkDevice(target, ctx) {
 	});
 
 	const builtinMode = ctx.mode === 'builtin';
-	const dock = ctx.dock ?? ['files', 'code', 'terminal', 'ai', 'git'];
-	const title = () => page.locator('#hd-title-text').innerText();
+	const menuItems = ctx.menu ?? ['files', 'terminal', 'ai', 'quickOpen', 'palette', 'save', 'undo', 'redo'];
+	const title = async () => (await page.locator('#hd-title-text').textContent()).trim();
 	const drawerOpen = () => page.evaluate(() => document.documentElement.classList.contains('hd-drawer-open'));
+	const keysShown = () => page.evaluate(() => document.getElementById('hd-root')?.dataset.keys === '1');
+	// The menu sheet opens from the floating button, or from the accessory keys' ☰ while typing.
+	const menu = async (item) => {
+		await tap((await keysShown()) ? '#hd-keys [data-key="menu"]' : '#hd-fab');
+		await page.waitForTimeout(600);
+		await tap(`#hd-menu [data-item="${item}"]`);
+	};
+	const closeBar = () => tap('#hd-viewbar [data-act="back"]');
+	// Accessory keys follow the soft keyboard. Emulation has none: shrink the viewport the
+	// way a keyboard does. On a real phone, tapping the editor raises the real one.
+	let fullViewport = null;
+	const showKeyboard = async () => {
+		if (!tapAt && !fullViewport) {
+			fullViewport = page.viewportSize();
+			await page.setViewportSize({ width: fullViewport.width, height: fullViewport.height - 330 });
+		}
+		await page.waitForFunction(() => document.getElementById('hd-root')?.dataset.keys === '1', null, { timeout: 10_000 });
+	};
+	const hideKeyboard = async () => {
+		if (fullViewport) {
+			await page.setViewportSize(fullViewport);
+			fullViewport = null;
+		} else if (await keysShown()) await tap('#hd-keys [data-key="hideKeyboard"]');
+		await page.waitForTimeout(600);
+	};
 	const shownParts = async () => {
 		const out = {};
 		for (const [name, s] of Object.entries(sel.parts)) {
@@ -141,24 +217,20 @@ async function checkDevice(target, ctx) {
 	};
 	const describe = (parts) => Object.entries(parts).map(([n, b]) => `${n} ${Math.round(b.w)}x${Math.round(b.h)}`).join(', ') || 'nothing';
 
-	// Views, driven through the UI the way a user would: [check, dock button, how, parts that must be visible, content check]
+	// Views, driven through the UI the way a user would: [check, menu item, how, parts that must be visible, content check]
 	const content = {
 		terminal: () => page.locator(`${sel.parts.panel} ${sel.check.terminal}`).count(),
-		// builtin mode: Search and Source Control stay in VS Code's default side bar.
-		git: () => page.evaluate(([p, t]) => (document.querySelector(p)?.innerText.includes(t) ? 1 : 0), [sel.parts[builtinMode ? 'sidebar' : 'panel'], sel.check.scmTitle]),
-		search: () => page.locator(`${sel.parts[builtinMode ? 'sidebar' : 'panel']} ${sel.check.searchView}`).count(),
 	};
+	// The code is the only screen; the terminal and AI are drawers over it.
 	const views = [
-		['view:editor', 'code', () => tap('#hd-dock [data-dock="code"]'), ['editor']],
-		['view:terminal-dock', 'terminal', () => tap('#hd-dock [data-dock="terminal"]'), ['editor', 'panel'], 'terminal'],
-		['view:terminal-full', 'terminal', () => tap('#hd-dock [data-dock="terminal"]'), ['panel'], 'terminal'],
-		['view:ai', 'ai', () => tap('#hd-dock [data-dock="ai"]'), ['auxiliarybar']],
-		['view:git', 'git', () => tap('#hd-dock [data-dock="git"]'), ['panel'], 'git'],
-		['view:search', null, () => tap('#hd-appbar [data-act="search"]'), ['panel'], 'search'],
-		['view:editor-again', 'code', () => tap('#hd-dock [data-dock="code"]'), ['editor']],
+		['view:editor', null, async () => {}, ['editor']],
+		['view:terminal-drawer', 'terminal', () => menu('terminal'), ['editor', 'panel'], 'terminal'],
+		['view:terminal-close', 'terminal', closeBar, ['editor']],
+		['view:ai-drawer', 'ai', () => menu('ai'), ['auxiliarybar']],
+		['view:ai-close', 'ai', closeBar, ['editor']],
 	];
-	for (const [name, dockName, how, want, contentKey] of views) {
-		if (dockName && !dock.includes(dockName)) continue;
+	for (const [name, item, how, want, contentKey] of views) {
+		if (item && !menuItems.includes(item)) continue;
 		await step(name, async () => {
 			await how();
 			await page.waitForTimeout(2500);
@@ -166,7 +238,7 @@ async function checkDevice(target, ctx) {
 			const names = Object.keys(parts);
 			const hasContent = contentKey ? (await content[contentKey]()) > 0 : true;
 			let ok;
-			const builtinPart = contentKey === 'git' || contentKey === 'search' ? 'sidebar' : want[want.length - 1];
+			const builtinPart = want[want.length - 1];
 			if (builtinMode) ok = names.includes(builtinPart); // builtin: the area opens, no phone layout
 			else {
 				ok = want.length === names.length && want.every((p) => names.includes(p)) && want.every((p) => parts[p].w >= vw * 0.95);
@@ -177,7 +249,7 @@ async function checkDevice(target, ctx) {
 	}
 
 	await step('drawer', async () => {
-		await tap('#hd-dock [data-dock="files"]');
+		await menu('files');
 		await page.waitForTimeout(2500);
 		if (!(await drawerOpen())) return { ok: false, detail: 'drawer did not open' };
 		const row = page.locator('#hd-drawer .hd-row', { hasText: editFile.name }).first();
@@ -204,28 +276,40 @@ async function checkDevice(target, ctx) {
 		const closed = !(await drawerOpen());
 		// A swipe used to leave VS Code's gesture handler thinking a finger was down,
 		// after which no tap worked: taps must still work now.
-		await tap('#hd-dock [data-dock="files"]');
+		await menu('files');
 		await page.waitForTimeout(900);
 		const tapOpens = await drawerOpen();
 		await tap('#hd-scrim', { x: vw - 10, y: 300 });
 		await page.waitForTimeout(900);
 		const tapCloses = !(await drawerOpen());
-		return { ok: opened && closed && tapOpens && tapCloses, detail: `edge swipe opens ${opened}, swipe closes ${closed}, tap after swipe opens ${tapOpens}, scrim closes ${tapCloses}` };
+		// The AI drawer from the right edge, closed again from the left edge.
+		const view = () => page.evaluate(() => document.documentElement.dataset.hdView);
+		await target.swipe(page, vw - 4, h / 2, vw - 230, h / 2);
+		await page.waitForTimeout(1500);
+		const aiOpens = (await view()) === 'ai';
+		await target.swipe(page, 4, h / 2, 230, h / 2);
+		await page.waitForTimeout(1500);
+		const aiCloses = (await view()) === 'editor' && !(await drawerOpen());
+		return {
+			ok: opened && closed && tapOpens && tapCloses && aiOpens && aiCloses,
+			detail: `left edge opens files ${opened}, swipe closes ${closed}, tap after swipe opens ${tapOpens}, scrim closes ${tapCloses}, right edge opens AI ${aiOpens}, left edge closes it ${aiCloses}`,
+		};
 	});
 
 	await step('bars-layout', async () => {
-		const bar = await box('#hd-appbar');
+		// Full screen: the workbench fills the visible area, the floating button sits inside it.
 		const wb = await box(sel.workbench);
-		const bottom = await box('#hd-root');
+		const fab = await box('#hd-fab');
 		const viewportH = Math.round(await viewportHeight());
-		const ok = bar && wb && bottom && Math.abs(bar.y) <= 1 && wb.y >= bar.bottom - 1 && wb.bottom <= bottom.y + 1 && Math.abs(bottom.bottom - viewportH) <= 2;
-		return { ok, detail: `app bar 0-${Math.round(bar?.bottom)}, workbench ${Math.round(wb?.y)}-${Math.round(wb?.bottom)}, dock ${Math.round(bottom?.y)}-${Math.round(bottom?.bottom)} of ${viewportH}` };
+		const fabInside = fab?.shown && fab.x >= 0 && fab.x + fab.w <= vw + 1 && fab.y >= wb?.y && fab.bottom <= viewportH;
+		const ok = wb && Math.abs(wb.y) <= 1 && Math.abs(wb.bottom - viewportH) <= 2 && fabInside;
+		return { ok, detail: `workbench ${Math.round(wb?.y)}-${Math.round(wb?.bottom)} of ${viewportH}, button ${fab?.shown ? `at ${Math.round(fab.x)},${Math.round(fab.y)}` : 'hidden'}` };
 	});
 
 	await step('theme-sync', async () => {
 		const colors = await page.evaluate(() => ({
 			fg: document.documentElement.style.getPropertyValue('--vscode-foreground'),
-			bg: getComputedStyle(document.getElementById('hd-root')).backgroundColor,
+			bg: getComputedStyle(document.getElementById('hd-menu')).backgroundColor,
 		}));
 		return { ok: !!colors.fg, detail: `bg ${colors.bg}` };
 	});
@@ -236,21 +320,20 @@ async function checkDevice(target, ctx) {
 		// satisfy another device's check.
 		const { name, file } = editFile;
 		if (builtinMode) {
-			await tap('#hd-title'); // quick open
+			await menu('quickOpen');
 			await page.waitForTimeout(800);
 			await page.keyboard.type(name);
 			await page.waitForTimeout(800);
 			await page.keyboard.press('Enter');
 			await page.waitForTimeout(1500);
 		} else if ((await title()) !== name) {
-			await tap('#hd-dock [data-dock="files"]');
+			await menu('files');
 			await page.waitForTimeout(1500);
 			await tap(page.locator('#hd-drawer .hd-row', { hasText: name }).first());
 			await page.waitForTimeout(1500);
 		}
-		await tap('#hd-dock [data-dock="code"]');
-		await page.waitForTimeout(1500);
 		await tap(page.locator(sel.check.editorLine).first(), { x: 4, y: 4 });
+		await showKeyboard();
 		// A tap can land after the first character; jump to the document start
 		// (VS Code uses Mac bindings on Apple devices).
 		await page.keyboard.press(apple ? 'Meta+ArrowUp' : 'Control+Home');
@@ -271,15 +354,23 @@ async function checkDevice(target, ctx) {
 		await page.keyboard.press(apple ? 'Meta+ArrowUp' : 'Control+Home');
 		await page.waitForTimeout(300);
 		const before = await cursorY();
-		await tap('#hd-keys [data-key="down"]');
-		await tap('#hd-keys [data-key="down"]');
+		const shown = await keysShown();
+		if (shown) {
+			await tap('#hd-keys [data-key="down"]');
+			await tap('#hd-keys [data-key="down"]');
+		}
 		await page.waitForTimeout(400);
 		const after = await cursorY();
-		return { ok: before != null && after > before, detail: `cursor y ${Math.round(before)} → ${Math.round(after)}` };
+		await hideKeyboard();
+		const keysGone = !(await keysShown());
+		return {
+			ok: shown && before != null && after > before && keysGone,
+			detail: `keys ${shown ? 'shown' : 'not shown'} with the keyboard, cursor y ${Math.round(before)} → ${Math.round(after)}, ${keysGone ? 'hidden' : 'still shown'} without it`,
+		};
 	});
 
 	await step('palette-fits', async () => {
-		await tap('#hd-appbar [data-act="palette"]');
+		await menu('palette');
 		await page.waitForTimeout(1000);
 		const q = await box(sel.quickInput);
 		await page.keyboard.press('Escape');
@@ -290,7 +381,7 @@ async function checkDevice(target, ctx) {
 
 	if (!builtinMode && subFolder) {
 		await step('folder-change', async () => {
-			await tap('#hd-dock [data-dock="files"]');
+			await menu('files');
 			await page.waitForTimeout(1500);
 			await tap('#hd-drawer-head [aria-label="폴더 변경"]'); // the picker starts at the parent of the open folder
 			await page.waitForTimeout(1200);
@@ -299,10 +390,10 @@ async function checkDevice(target, ctx) {
 			await tap(page.locator('#hd-drawer .hd-row', { hasText: subFolder.name }).first());
 			await page.waitForTimeout(1200);
 			await Promise.all([page.waitForNavigation({ timeout: 60_000 }), tap('.hd-picker-actions .hd-primary')]);
-			await page.waitForSelector('#hd-appbar', { timeout: 120_000 });
+			await page.waitForSelector('#hd-fab', { timeout: 120_000 });
 			await grantTrust(page); // a newly opened folder asks for trust again
 			await page.waitForTimeout(5000);
-			await tap('#hd-dock [data-dock="files"]');
+			await menu('files');
 			await page.waitForTimeout(2500);
 			const folder = await page.locator('.hd-drawer-title strong').innerText();
 			const hasFile = (await page.locator('#hd-drawer .hd-row', { hasText: 'inside.txt' }).count()) > 0;
@@ -420,7 +511,7 @@ try {
 	console.log(`editor: ${proxy.editor}\nlayer tested with: ${selectors.testedWith.editor} ${selectors.testedWith.version}\nmode: ${opts.mode}\n`);
 
 	const all = [];
-	const ctx = { ...proxy, mode: opts.mode, dock: layerConfig.dock };
+	const ctx = { ...proxy, mode: opts.mode, menu: layerConfig.menu };
 	if (opts.android) {
 		all.push(...(await checkAndroid(opts.android, ctx)));
 	} else {

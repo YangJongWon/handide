@@ -1,16 +1,17 @@
 # handide
 
-**Your real VS Code, as a phone IDE.** Run `handide` in any folder, scan the QR code with your phone, and edit that folder from the phone: file drawer, editor, docked terminal, full-screen AI chat. It is the VS Code installed on your PC (not a fork), so your extensions — Claude Code, Copilot and the rest — keep working.
+**Your real VS Code, as a phone IDE.** Run `handide` in any folder, scan the QR code with your phone, and edit that folder from the phone: a full-screen editor, a floating menu button, a file drawer, a terminal drawer and full-screen AI chat. It is the VS Code installed on your PC (not a fork), so your extensions — Claude Code, Copilot and the rest — keep working.
 
 <p>
-<img src="docs/editor.png" width="200" alt="Editor with app bar, accessory keys and dock">
-<img src="docs/drawer.png" width="200" alt="File drawer over the editor">
-<img src="docs/terminal-dock.png" width="200" alt="Terminal docked under the editor">
-<img src="docs/ai.png" width="200" alt="AI chat full screen">
+<img src="docs/editor.png" width="160" alt="Full-screen editor with the floating menu button">
+<img src="docs/menu.png" width="160" alt="Menu sheet">
+<img src="docs/drawer.png" width="160" alt="File drawer over the editor">
+<img src="docs/terminal-dock.png" width="160" alt="Terminal drawer under the editor">
+<img src="docs/ai.png" width="160" alt="AI chat full screen">
 </p>
 
 > **한국어 요약**
-> `code .`처럼 아무 폴더에서 `handide`를 실행하면 그 폴더가 열리고, 터미널에 QR 코드가 뜹니다. 폰 카메라로 찍으면 PC의 VS Code가 **폰용 IDE 레이아웃**으로 열립니다: 파일 드로어(☰ 또는 왼쪽 가장자리 스와이프, 폴더 변경 가능), 에디터, 하단 도킹/전체 화면 터미널, 전체 화면 AI, Git, 검색, 보조키(Esc·Tab·Ctrl·방향키)와 한글 입력 시트.
+> `code .`처럼 아무 폴더에서 `handide`를 실행하면 그 폴더가 열리고, 터미널에 QR 코드가 뜹니다. 폰 카메라로 찍으면 PC의 VS Code가 **폰용 IDE 레이아웃**으로 열립니다: 코드만 보이는 전체 화면 에디터, 드래그로 옮길 수 있는 플로팅 버튼(→ 메뉴 시트), 파일 드로어(메뉴 또는 왼쪽 가장자리 스와이프, 폴더 변경 가능), 하단 터미널 드로어(아래로 쓸면 닫힘), 오른쪽 AI 드로어(오른쪽 가장자리 스와이프). 화면은 코드 하나뿐이고 별도 탭 화면은 없습니다. 키보드가 올라왔을 때만 뜨는 보조키(Esc·Tab·Ctrl·방향키)와 한글 입력 시트.
 > 설치: `npm install -g github:YangJongWon/handide` → 프로젝트 폴더에서 `handide`. 터미널 QR이 잘 안 보이면 PC 브라우저에서 `http://localhost:9000/__handide/connect`를 열면 크게 보입니다. 처음 한 번 인증서 경고를 넘기고 폴더를 신뢰하면 됩니다.
 
 ## Install
@@ -62,12 +63,13 @@ Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or local
 └ 파일   코드   터미널   AI   Git     ┘   dock
 ```
 
-- **Files**: a drawer over the editor (☰, the Files button, or swipe from the left edge; swipe left, tap outside or ✕ to close). Tap a file to open it. The folder button opens a folder picker to switch to any folder on the PC.
-- **Code**: the editor alone. Word wrap on, no minimap, autosave after 1.5 s.
-- **Terminal**: first tap docks it under the editor, second tap makes it full screen, **Code** closes it. VS Code's own maximize / ✕ buttons on the terminal also work.
-- **AI**: VS Code's chat (and agent extensions in it) full screen.
-- **Git**, **Search**: full screen.
-- **Accessory keys**: Esc, Tab, sticky Ctrl, arrows, undo, **가** (a native text box: any IME including Korean, inserted at the cursor), command palette. With the soft keyboard open the dock shrinks to icons and ⌄ hides the keyboard.
+- **One screen**: the code. Everything else is a drawer over it (files from the left, AI from the right, terminal from the bottom); VS Code's own side bar or a layout it restores by itself is closed again.
+- **Menu** (floating button, or ☰ on the accessory keys): the active file (tap it for quick open), save, and tiles for Files, Terminal, AI, Find file, Command palette, Save, Undo and Redo. Swipe down or tap outside to close. Drag the button to move it; it snaps to the nearest side and remembers where it was, and a dot on it means unsaved changes.
+- **Files**: a drawer over the editor (menu, or swipe from the left edge; swipe left, tap outside or ✕ to close). Tap a file to open it. The folder button opens a folder picker to switch to any folder on the PC.
+- **Code**: the editor alone, edge to edge. Word wrap on, no minimap, autosave after 1.5 s.
+- **Terminal**: a drawer under the editor. Its grab bar has new terminal and kill buttons; swipe it down or tap ⌄ to close.
+- **AI**: VS Code's chat as a drawer from the right (menu, or swipe from the right edge). Its bar starts a new chat; › , a swipe right on the bar or a swipe from the left edge closes it.
+- **Accessory keys**: shown only while the soft keyboard is up. ☰ (menu), Esc, Tab, sticky Ctrl, arrows, undo, **가** (a native text box: any IME including Korean, inserted at the cursor), ⌄ hides the keyboard.
 
 ## Customize
 
@@ -75,20 +77,20 @@ Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or local
 
 ```json
 {
-  "dock": ["files", "code", "terminal", "ai", "git"],
-  "accessoryKeys": ["esc", "tab", "ctrl", "left", "up", "down", "right", "undo", "input", "palette"],
+  "menu": ["files", "terminal", "ai", "quickOpen", "palette", "save", "undo", "redo"],
+  "accessoryKeys": ["esc", "tab", "ctrl", "left", "up", "down", "right", "undo", "input"],
   "breakpoint": 900,
   "companion": { "mode": "extension" }
 }
 ```
 
-`dock` can also hold `search`. `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files). Mobile VS Code settings live in `~/.handide/data/Machine/settings.json`.
+`menu` can also hold `find`; `accessoryKeys` also `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen` and `palette` (☰ is always first). `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files). Mobile VS Code settings live in `~/.handide/data/Machine/settings.json`.
 
 ## How it works
 
 ```
 phone ──https──> handide ──> code serve-web (127.0.0.1 only) ──> your VS Code
-                   ├─ injects the layer: app bar, drawer, dock, keys (layer/)
+                   ├─ injects the layer: floating button, menu, drawers, keys (layer/)
                    ├─ command bridge ⇄ companion extension (extension/): official VS Code
                    │    commands with arguments (open file, open folder, switch view)
                    └─ mobile profile + certificate + token in ~/.handide
@@ -103,14 +105,14 @@ The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open t
 ## Verify
 
 ```sh
-npm run check                     # Pixel 7 + iPhone 14 emulation (19 checks each)
+npm run check                     # Pixel 7 + iPhone 14 emulation (18 checks each)
 npm run check -- --mode builtin
 npm run check -- --android        # real Chrome on an emulator or USB phone: real taps, swipes, soft keyboard
 ```
 
 Each run uses a private data dir and sample workspace under `check-output/`, and writes `check-output/report.json` plus a screenshot per step.
 
-Last verified: VS Code 1.138.0 (web server 1.139+) on Windows — emulated Pixel 7 / iPhone 14: 38/38 (companion) and 36/36 (builtin). The new layout has not yet been run on the Android emulator or a physical phone.
+Last verified: VS Code 1.138.0 (web server 1.139+) on Windows — emulated Pixel 7 / iPhone 14: 36/36 (companion) and 34/34 (builtin). Emulation has no soft keyboard, so the check shrinks the viewport the way one does. The full-screen layout has not yet been run on the Android emulator or a physical phone.
 
 ## Known limitations
 

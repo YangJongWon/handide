@@ -4,8 +4,10 @@
   // Anything VS Code can do through a setting is done here instead of CSS,
   // because settings survive editor updates.
 
-  // Chrome: the mobile layer's bottom tab bar replaces these.
+  // Chrome: the mobile layer's floating button and menu replace these.
   "workbench.activityBar.location": "hidden",
+  // No floating, rounded parts with margins: the editor and terminal run edge to edge.
+  "workbench.experimental.modernUI": false,
   "workbench.statusBar.visible": false,
   "workbench.layoutControl.enabled": false,
   "window.commandCenter": false,
@@ -18,8 +20,8 @@
   "workbench.editor.useModal": "off",
 
   // Editor: one file at a time, no horizontal scrolling.
-  "workbench.editor.showTabs": "none", // the app bar shows the active file
-  // Without tabs VS Code moves editor actions into its title bar; the app bar replaces both.
+  "workbench.editor.showTabs": "none", // the menu sheet shows the active file
+  // Without tabs VS Code moves editor actions into its title bar; the menu replaces both.
   "workbench.editor.editorActionsLocation": "hidden",
   "breadcrumbs.enabled": false,
   "editor.wordWrap": "on",
@@ -46,7 +48,7 @@
 
   "terminal.integrated.fontSize": 13,
   // The terminal sends keystrokes to the shell first; let the layer's tab and key
-  // commands through so the bottom bars keep working while the terminal has focus.
+  // commands through so the menu and keys keep working while the terminal has focus.
   "terminal.integrated.commandsToSkipShell": [
     "handide.tab",
     "workbench.action.toggleMaximizedPanel",

@@ -1,13 +1,14 @@
 // handide mobile layer. Injected by the proxy into the real VS Code web UI.
 //
-// A mobile IDE shell around VS Code's own editor, terminal and chat:
+// A full-screen code editor with everything else one gesture away:
 //
-//   ┌ app bar ─ ☰ · file name (quick open) · search · command palette ┐
-//   │ editor (VS Code)                                                │
-//   │ terminal docked below, or full screen (VS Code panel)           │
-//   ├ accessory keys (while typing)                                   ┤
-//   └ dock ─ Files · Code · Terminal · AI · Git                       ┘
-//   Files = the layer's own drawer (file tree + folder picker) over the editor.
+//   ┌ editor (VS Code), full screen ─────────────┐
+//   │                                       (◉)  │  floating button (draggable) → menu sheet
+//   ├─ terminal: bottom drawer (VS Code panel) ──┤  grab bar: swipe down / ⌄ closes
+//   └─ accessory keys, only while typing ────────┘
+//   Files = left drawer (menu, or swipe from the left edge).
+//   AI = right drawer (menu, or swipe from the right edge): VS Code's secondary side bar.
+//   There are no other screens: the code is the only "tab".
 //
 // It never touches VS Code internals. It talks to VS Code through
 //  - the command bridge (proxy ↔ companion extension): official commands with
@@ -17,6 +18,7 @@
 const BASE = '/__handide/';
 
 const KEY_DEFS = {
+	menu: { icon: 'menu', menu: true },
 	esc: { label: 'Esc', key: 'Escape', keyCode: 27 },
 	tab: { label: '⇥', key: 'Tab', keyCode: 9 },
 	left: { label: '←', key: 'ArrowLeft', keyCode: 37 },
@@ -37,27 +39,33 @@ const KEY_DEFS = {
 	input: { label: '가', input: true },
 };
 
-// Dock buttons. `files` opens the drawer; the rest are views.
-const DOCK_DEFS = {
+// Menu sheet tiles: the three drawers, then actions. `terminal` and `ai` toggle.
+const MENU_DEFS = {
 	files: { icon: 'files', label: '파일' },
-	code: { icon: 'code', label: '코드', view: 'editor' },
-	terminal: { icon: 'terminal', label: '터미널' },
+	terminal: { icon: 'terminal', label: '터미널', view: 'terminalDock' },
 	ai: { icon: 'sparkle', label: 'AI', view: 'ai' },
-	git: { icon: 'source-control', label: 'Git', view: 'git' },
-	search: { icon: 'search', label: '검색', view: 'search' },
+	quickOpen: { icon: 'go-to-file', label: '파일 찾기', action: 'quickOpen' },
+	palette: { icon: 'terminal-cmd', label: '명령', action: 'commandPalette' },
+	save: { icon: 'save', label: '저장', action: 'save' },
+	undo: { icon: 'discard', label: '실행 취소', action: 'undo' },
+	redo: { icon: 'redo', label: '다시 실행', action: 'redo' },
+	find: { icon: 'search', label: '찾기', action: 'find' },
 };
+const DEFAULT_MENU = ['files', 'terminal', 'ai', 'quickOpen', 'palette', 'save', 'undo', 'redo'];
 
 // What each view looks like, as the set of VS Code parts that must be visible.
 const VIEW_PARTS = {
 	editor: ['editor'],
 	terminalDock: ['editor', 'panel'],
-	terminal: ['panel'],
-	search: ['panel'],
-	git: ['panel'],
 	ai: ['auxiliarybar'],
 };
-// Views where the user types: the accessory key row shows there.
-const TYPING_VIEWS = new Set(['editor', 'terminalDock', 'terminal', 'ai']);
+
+// The bar laid over the title strip of a drawer's part: [icon, label, action].
+// `side` is where the drawer comes from, and so which way it closes.
+const VIEW_BARS = {
+	terminalDock: { part: 'panel', title: '터미널', side: 'bottom', actions: [['add', '새 터미널', 'newTerminal'], ['trash', '터미널 종료', 'killTerminal']] },
+	ai: { part: 'auxiliarybar', title: 'AI', side: 'right', actions: [['add', '새 채팅', 'newChat']] },
+};
 
 const state = {
 	config: null,
@@ -65,13 +73,17 @@ const state = {
 	selectors: null,
 	view: 'editor',
 	sticky: { ctrlKey: false, altKey: false, shiftKey: false },
-	keyboardOpen: false,
+	keysOn: false, // accessory keys: a text input has focus and the keyboard is up
 	lastInput: null,
 	bridge: false,
 	folder: null, // { name, path }
 	activePath: null,
 	tree: new Map(), // dir path → { entries, open }
 	picker: null, // { path, parent, entries } while choosing a folder
+	drawerOpen: false,
+	menuOpen: false,
+	viewbarFor: null,
+	fab: loadFab(),
 };
 
 // ---------------------------------------------------------------- bridge + fs
@@ -119,6 +131,7 @@ async function refreshState() {
 		if (folder) await loadDir(folder.path, true);
 	}
 	renderDrawer();
+	renderMenuHead();
 }
 
 /**
@@ -166,9 +179,11 @@ function sendKey({ key, keyCode = keyCodeOf(key), code = key, ctrlKey = false, a
 	}
 }
 
+const LAYER_UI = '#hd-root, #hd-fab, #hd-menu, #hd-drawer, #hd-viewbar';
+
 function focusTarget() {
 	const active = document.activeElement;
-	if (active && active !== document.body && !active.closest('#hd-root, #hd-appbar, #hd-drawer')) return active;
+	if (active && active !== document.body && !active.closest(LAYER_UI)) return active;
 	if (state.lastInput?.isConnected) return state.lastInput;
 	return document.querySelector(state.selectors.workbench) || document.body;
 }
@@ -185,9 +200,6 @@ const k = (key, code, keyCode, mods) => ({ key, code, keyCode, ...mods });
 const MOD = APPLE ? { metaKey: true } : { ctrlKey: true };
 const BUILTIN_VIEWS = {
 	editor: k('1', 'Digit1', 49, MOD),
-	search: k('F', 'KeyF', 70, { ...MOD, shiftKey: true }),
-	git: k('G', 'KeyG', 71, { ctrlKey: true, shiftKey: true }),
-	terminal: k('`', 'Backquote', 192, { ctrlKey: true }),
 	terminalDock: k('`', 'Backquote', 192, { ctrlKey: true }),
 	ai: APPLE ? k('I', 'KeyI', 73, { ctrlKey: true, metaKey: true }) : k('I', 'KeyI', 73, { ctrlKey: true, altKey: true }),
 };
@@ -198,6 +210,14 @@ const BUILTIN_ACTIONS = {
 	undo: k('Z', 'KeyZ', 90, MOD),
 	redo: APPLE ? k('Z', 'KeyZ', 90, { metaKey: true, shiftKey: true }) : k('Y', 'KeyY', 89, { ctrlKey: true }),
 	find: k('F', 'KeyF', 70, MOD),
+	newTerminal: k('`', 'Backquote', 192, { ctrlKey: true, shiftKey: true }),
+};
+// VS Code's default toggles, which work even in Restricted Mode (companion off).
+// Toggles: sent only for a part the DOM shows as open.
+const CLOSE_PART_KEYS = {
+	sidebar: k('B', 'KeyB', 66, MOD),
+	auxiliarybar: k('B', 'KeyB', 66, { ...MOD, altKey: true }),
+	panel: k('J', 'KeyJ', 74, MOD),
 };
 const builtin = () => state.config.companion?.mode === 'builtin';
 
@@ -209,7 +229,7 @@ function runAction(name) {
 	const action = state.commands.actions[name];
 	if (!action) return;
 	if (state.bridge) bridgeCall(action.command);
-	else chord(action.key);
+	else if (action.key) chord(action.key);
 }
 
 // ---------------------------------------------------------------- views
@@ -228,10 +248,11 @@ function showView(view) {
 	// syncViewFromLayout read that as the user closing something.
 	state.settlingUntil = Date.now() + 4500;
 	closeDrawer();
+	closeMenu();
 	render();
 	if (builtin()) {
 		// Ctrl+` toggles the terminal: pressing it again while it is open would close it.
-		const terminalAlreadyOpen = (view === 'terminal' || view === 'terminalDock') && visiblePart('panel');
+		const terminalAlreadyOpen = view === 'terminalDock' && visiblePart('panel');
 		if (BUILTIN_VIEWS[view] && !terminalAlreadyOpen) sendKey(BUILTIN_VIEWS[view]);
 		return;
 	}
@@ -278,29 +299,48 @@ function settleView(view) {
 	setTimeout(tick, 300);
 }
 
-/** Keeps the dock in sync when VS Code's own buttons change the layout (e.g. panel ✕). */
+/**
+ * Keeps the screen to the code plus at most the drawer the user opened, whatever VS Code
+ * does by itself: it restores its saved layout (side bar, panel and chat side by side)
+ * when the folder is trusted, and extensions reveal their views. A drawer VS Code
+ * closed is followed; anything VS Code opened is closed again.
+ */
+let lastEnforced = 0;
+let recheck = 0;
+/** Looks again once a pause is over, even if nothing in the DOM changes by then. */
+function syncLater(at) {
+	clearTimeout(recheck);
+	recheck = setTimeout(syncViewFromLayout, Math.max(0, at - Date.now()) + 50);
+}
 function syncViewFromLayout() {
-	if (Date.now() < (state.settlingUntil || 0)) return;
+	if (Date.now() < (state.settlingUntil || 0)) return syncLater(state.settlingUntil);
 	const shown = visibleParts();
 	let view = state.view;
-	if (state.view === 'terminalDock' && !shown.includes('panel')) view = 'editor';
-	if (state.view === 'terminalDock' && shown.includes('panel') && !shown.includes('editor')) view = 'terminal';
-	if (state.view === 'terminal' && shown.includes('editor') && shown.includes('panel')) view = 'terminalDock';
-	if ((state.view === 'terminal' || state.view === 'search' || state.view === 'git') && !shown.includes('panel') && shown.includes('editor')) view = 'editor';
-	if (state.view === 'ai' && !shown.includes('auxiliarybar') && shown.includes('editor')) view = 'editor';
+	if (view === 'terminalDock' && !shown.includes('panel') && shown.includes('editor')) view = 'editor';
+	if (view === 'ai' && !shown.includes('auxiliarybar') && shown.includes('editor')) view = 'editor';
+	const stray = shown.filter((p) => !VIEW_PARTS[view].includes(p) && CLOSE_PART_KEYS[p]);
 	if (view !== state.view) {
 		state.view = view;
 		render();
 	}
+	if (!stray.length) return;
+	if (Date.now() - lastEnforced < 3000) return syncLater(lastEnforced + 3000);
+	// Not while the user is in quick open or a dialog: the keys would take their focus.
+	const busy = [state.selectors.quickInput, state.selectors.dialog].some((s) => document.querySelector(s)?.getBoundingClientRect().height > 0);
+	if (busy) return syncLater(Date.now() + 1000);
+	lastEnforced = Date.now();
+	syncLater(lastEnforced + 3000); // confirm it worked
+	if (state.bridge && !builtin()) return showView(view);
+	// No companion (Restricted Mode, or builtin mode): close them with VS Code's own keys.
+	for (const part of stray) sendKey({ ...CLOSE_PART_KEYS[part], target: document.querySelector(state.selectors.workbench) });
 }
 
-function pressDock(name) {
-	if (name === 'files') return state.drawerOpen ? closeDrawer() : openDrawer();
-	if (name === 'terminal') {
-		// Editor → terminal docked below → terminal full screen → docked again.
-		return showView(state.view === 'terminalDock' ? 'terminal' : 'terminalDock');
-	}
-	showView(DOCK_DEFS[name].view);
+function pressMenu(name) {
+	const def = MENU_DEFS[name];
+	closeMenu();
+	if (name === 'files') return openDrawer();
+	if (def.view) return showView(state.view === def.view ? 'editor' : def.view);
+	if (def.action) runAction(def.action);
 }
 
 // ---------------------------------------------------------------- sticky modifiers
@@ -334,11 +374,18 @@ function openInputSheet() {
 	sheet.hidden = false;
 	area.value = '';
 	area.focus();
+	render();
 	sheet.onsubmit = (e) => {
 		e.preventDefault();
 		sheet.hidden = true;
 		if (area.value) pasteInto(target, area.value);
+		render();
 	};
+}
+
+function closeInputSheet() {
+	document.getElementById('hd-sheet').hidden = true;
+	render();
 }
 
 /**
@@ -367,9 +414,33 @@ function pasteInto(target, text) {
 	document.documentElement.dataset.hdLastPaste = `${target.tagName}.${[...(target.classList || [])].join('.')} ${how}`;
 }
 
+// ---------------------------------------------------------------- menu sheet
+
+function openMenu() {
+	closeDrawer();
+	state.menuOpen = true;
+	document.documentElement.classList.add('hd-menu-open');
+	document.activeElement?.blur?.(); // no soft keyboard under the sheet
+	renderMenuHead();
+	render();
+}
+
+function closeMenu() {
+	if (!state.menuOpen) return;
+	state.menuOpen = false;
+	document.documentElement.classList.remove('hd-menu-open');
+	render();
+}
+
+function renderMenuHead() {
+	const folder = document.getElementById('hd-menu-folder');
+	if (folder) folder.textContent = state.folder?.name ?? '';
+}
+
 // ---------------------------------------------------------------- drawer
 
 function openDrawer() {
+	closeMenu();
 	state.drawerOpen = true;
 	document.documentElement.classList.add('hd-drawer-open');
 	document.activeElement?.blur?.(); // no soft keyboard over the tree
@@ -520,35 +591,48 @@ function parentOf(path) {
 function row({ depth, iconName, label, onclick, dim, active }) {
 	return el(
 		'button',
-		{ class: `hd-row${dim ? ' dim' : ''}${active ? ' active' : ''}`, style: `padding-left:${12 + depth * 14}px`, onclick },
+		{ class: `hd-row${dim ? ' dim' : ''}${active ? ' active' : ''}`, style: `padding-left:${16 + depth * 14}px`, onclick },
 		icon(iconName),
 		el('span', { class: 'hd-row-label' }, label),
 	);
 }
 
-// Edge swipe opens the drawer; swiping it left closes it. Touches that belong to
-// the layer (edge swipe, anything in the drawer or on the scrim) are kept from VS
-// Code's own gesture handler: a swipe that starts on the editor and ends over the
-// drawer would otherwise leave it thinking a finger is still down, and it then
-// swallows every following tap.
+// ---------------------------------------------------------------- gestures
+
+// Left edge swipe opens the file drawer, right edge swipe the AI drawer; each closes by
+// swiping back the way it came (the AI drawer on its bar or from the left edge), and
+// the menu sheet and the terminal's grab bar close when swiped down. Touches that
+// belong to the layer are kept from VS Code's own gesture handler: a swipe that starts
+// on the editor and ends over a layer element would otherwise leave it thinking a
+// finger is still down, and it then swallows every following tap.
 function installGestures() {
 	let start = null;
-	const ours = (e) => !!e.target.closest?.('#hd-drawer, #hd-scrim');
+	const ours = (e) => !!e.target.closest?.('#hd-drawer, #hd-scrim, #hd-menu, #hd-menu-scrim, #hd-fab, #hd-viewbar');
+	const edge = (z) => z === 'leftEdge' || z === 'rightEdge';
+	const zoneOf = (e, t) => {
+		if (e.touches.length !== 1) return null;
+		const free = !state.drawerOpen && !state.menuOpen;
+		if (free && t.clientX < 18) return 'leftEdge';
+		if (free && t.clientX > document.documentElement.clientWidth - 18 && state.view !== 'ai') return 'rightEdge';
+		if (state.drawerOpen && e.target.closest('#hd-drawer, #hd-scrim')) return 'drawer';
+		if (state.menuOpen && e.target.closest('#hd-menu')) return 'menu';
+		if (e.target.closest('#hd-viewbar')) return VIEW_BARS[state.view]?.side ?? null;
+		return null;
+	};
 	document.addEventListener(
 		'touchstart',
 		(e) => {
 			const t = e.touches[0];
-			if (e.touches.length === 1 && !state.drawerOpen && t.clientX < 18) start = { x: t.clientX, y: t.clientY, edge: true };
-			else if (e.touches.length === 1 && state.drawerOpen && ours(e)) start = { x: t.clientX, y: t.clientY, edge: false };
-			else start = null;
-			if (start?.edge || ours(e)) e.stopPropagation();
+			const zone = zoneOf(e, t);
+			start = zone ? { x: t.clientX, y: t.clientY, zone } : null;
+			if (edge(start?.zone) || ours(e)) e.stopPropagation();
 		},
 		{ passive: true, capture: true },
 	);
 	document.addEventListener(
 		'touchmove',
 		(e) => {
-			if (start?.edge || ours(e)) e.stopPropagation();
+			if (edge(start?.zone) || ours(e)) e.stopPropagation();
 		},
 		{ passive: true, capture: true },
 	);
@@ -557,16 +641,138 @@ function installGestures() {
 		(e) => {
 			const s0 = start;
 			start = null;
-			if (s0?.edge || ours(e)) e.stopPropagation();
+			if (edge(s0?.zone) || ours(e)) e.stopPropagation();
 			if (!s0) return;
 			const t = e.changedTouches[0];
 			const dx = t.clientX - s0.x;
-			const dy = Math.abs(t.clientY - s0.y);
-			if (!state.drawerOpen && dx > 50 && dy < 60) openDrawer();
-			else if (state.drawerOpen && dx < -60 && dy < 60) closeDrawer();
+			const dy = t.clientY - s0.y;
+			const sideways = Math.abs(dy) < 60;
+			const downward = Math.abs(dx) < 80;
+			if (s0.zone === 'leftEdge' && dx > 50 && sideways) state.view === 'ai' ? showView('editor') : openDrawer();
+			else if (s0.zone === 'rightEdge' && dx < -50 && sideways) showView('ai');
+			else if (s0.zone === 'drawer' && dx < -60 && sideways) closeDrawer();
+			else if (s0.zone === 'menu' && dy > 60 && downward) closeMenu();
+			else if (s0.zone === 'bottom' && dy > 40 && downward) showView('editor');
+			else if (s0.zone === 'right' && dx > 50 && sideways) showView('editor');
 		},
 		{ passive: true, capture: true },
 	);
+}
+
+// ---------------------------------------------------------------- floating button
+
+const FAB_SIZE = 52;
+const FAB_MARGIN = 12;
+
+function loadFab() {
+	try {
+		const f = JSON.parse(localStorage.getItem('handide.fab'));
+		if ((f?.side === 'left' || f?.side === 'right') && f.y >= 0 && f.y <= 1) return f;
+	} catch {
+		// unreadable: default position
+	}
+	return { side: 'right', y: 0.72 };
+}
+
+/** The band the button may sit in: between the top inset and our bottom bars. */
+function fabBand() {
+	const top = (vv?.offsetTop || 0) + reservedTop + FAB_MARGIN;
+	let bottom = (vv?.offsetTop || 0) + realViewportHeight() - reservedBottom - FAB_SIZE - FAB_MARGIN;
+	// Above the terminal drawer, off its grab bar.
+	const bar = document.getElementById('hd-viewbar');
+	if (VIEW_BARS[state.view]?.side === 'bottom' && bar && !bar.hidden) bottom = Math.min(bottom, bar.getBoundingClientRect().top - FAB_SIZE - FAB_MARGIN);
+	return { top, bottom: Math.max(top, bottom), width: document.documentElement.clientWidth };
+}
+
+function placeFab() {
+	const fab = document.getElementById('hd-fab');
+	if (!fab || fab.dataset.dragging) return;
+	const band = fabBand();
+	fab.style.left = `${state.fab.side === 'left' ? FAB_MARGIN : band.width - FAB_SIZE - FAB_MARGIN}px`;
+	fab.style.top = `${Math.round(band.top + state.fab.y * (band.bottom - band.top))}px`;
+}
+
+// Tap opens the menu; dragging moves the button, which then snaps to the nearest side.
+function installFab(fab) {
+	let down = null;
+	fab.addEventListener('pointerdown', (e) => {
+		e.preventDefault();
+		const r = fab.getBoundingClientRect();
+		down = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, t: Date.now(), moved: false };
+		fab.setPointerCapture?.(e.pointerId);
+	});
+	fab.addEventListener('pointermove', (e) => {
+		if (!down || down.id !== e.pointerId) return;
+		if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8) return;
+		down.moved = true;
+		fab.dataset.dragging = '1';
+		const band = fabBand();
+		fab.style.left = `${Math.min(band.width - FAB_SIZE, Math.max(0, e.clientX - down.dx))}px`;
+		fab.style.top = `${Math.min(band.bottom, Math.max(band.top, e.clientY - down.dy))}px`;
+	});
+	const end = (e) => {
+		const d = down;
+		down = null;
+		if (!d || d.id !== e.pointerId) return;
+		delete fab.dataset.dragging;
+		if (!d.moved) {
+			if (e.type === 'pointerup' && Date.now() - d.t < 700) openMenu();
+			return;
+		}
+		const r = fab.getBoundingClientRect();
+		const band = fabBand();
+		state.fab = {
+			side: r.left + r.width / 2 < band.width / 2 ? 'left' : 'right',
+			y: band.bottom > band.top ? Math.min(1, Math.max(0, (r.top - band.top) / (band.bottom - band.top))) : 0,
+		};
+		localStorage.setItem('handide.fab', JSON.stringify(state.fab));
+		placeFab();
+	};
+	fab.addEventListener('pointerup', end);
+	fab.addEventListener('pointercancel', end);
+	fab.addEventListener('click', (e) => {
+		if (e.detail === 0) openMenu(); // keyboard
+		e.preventDefault();
+	});
+}
+
+// ---------------------------------------------------------------- view bar
+
+// Laid exactly over the title strip of the part the view shows, so VS Code's desktop
+// tabs and buttons there are covered by a phone header. Sized from the DOM only.
+function renderViewbar() {
+	const bar = document.getElementById('hd-viewbar');
+	if (!bar || state.viewbarFor === state.view) return;
+	state.viewbarFor = state.view;
+	const def = VIEW_BARS[state.view];
+	bar.replaceChildren();
+	bar.classList.toggle('hd-grab', def?.side === 'bottom');
+	if (!def) return;
+	if (def.side === 'bottom') bar.append(el('span', { class: 'hd-grip', 'aria-hidden': 'true' }));
+	bar.append(
+		button({ class: 'hd-icon-btn', 'aria-label': '닫기', 'data-act': 'back' }, icon(def.side === 'bottom' ? 'chevron-down' : 'chevron-right'), () => showView('editor')),
+		el('span', { class: 'hd-viewbar-title' }, def.title),
+		...def.actions.map(([iconName, label, action]) => button({ class: 'hd-icon-btn', 'aria-label': label, 'data-act': action }, icon(iconName), () => runAction(action))),
+	);
+}
+
+function placeViewbar() {
+	const bar = document.getElementById('hd-viewbar');
+	if (!bar) return;
+	const def = VIEW_BARS[state.view];
+	const title = def && visiblePart(def.part) ? document.querySelector(state.selectors.partTitles[def.part]) : null;
+	const r = title?.getBoundingClientRect();
+	if (!r || r.width < 8 || r.height < 8) {
+		bar.hidden = true;
+		return;
+	}
+	const moved = bar.hidden || bar.style.top !== `${r.top}px`;
+	bar.hidden = false;
+	bar.style.top = `${r.top}px`;
+	bar.style.left = `${r.left}px`;
+	bar.style.width = `${r.width}px`;
+	bar.style.height = `${r.height}px`;
+	if (moved && def.side === 'bottom') placeFab();
 }
 
 let toastTimer;
@@ -581,8 +787,8 @@ function toast(text) {
 // ---------------------------------------------------------------- viewport
 
 // VS Code sizes the workbench from window.innerHeight (visualViewport.height on
-// iOS). Report the space between our app bar and our bottom bars, and push the
-// workbench below the app bar. Nothing inside VS Code is modified.
+// iOS). Report the space between the top inset and our bottom bar, and push the
+// workbench below the inset. Nothing inside VS Code is modified.
 const vv = window.visualViewport;
 const vvHeightDesc = vv && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(vv), 'height');
 const realViewportHeight = () => (vvHeightDesc ? vvHeightDesc.get.call(vv) : document.documentElement.clientHeight);
@@ -597,26 +803,54 @@ function installViewportShim() {
 
 function relayout() {
 	const root = document.getElementById('hd-root');
-	const bar = document.getElementById('hd-appbar');
 	const height = realViewportHeight();
 	const offset = vv?.offsetTop || 0;
-	state.keyboardOpen = height < screen.height * 0.6 && isTyping();
-	root.dataset.keyboard = state.keyboardOpen ? '1' : '';
-	// Keep both bars glued to the visible area, even when the keyboard only shrinks
-	// or pans the visual viewport (Android default, iOS).
-	bar.style.top = `${Math.round(offset)}px`;
-	const barH = bar.getBoundingClientRect().height;
+	// Keep the bottom bar glued to the visible area, even when the keyboard only
+	// shrinks or pans the visual viewport (Android default, iOS).
 	const rootH = root.getBoundingClientRect().height;
 	root.style.top = `${Math.round(offset + height - rootH)}px`;
-	reservedTop = barH;
+	reservedTop = document.getElementById('hd-safe').getBoundingClientRect().height;
 	reservedBottom = rootH;
-	document.documentElement.style.setProperty('--hd-top', `${Math.round(offset + barH)}px`);
+	const style = document.documentElement.style;
+	style.setProperty('--hd-top', `${Math.round(offset + reservedTop)}px`);
+	style.setProperty('--hd-bottom', `${Math.round(rootH)}px`);
+	placeFab();
 	window.dispatchEvent(new Event('resize'));
+	requestAnimationFrame(placeViewbar);
 }
 
 function isTyping() {
 	const a = document.activeElement;
 	return !!a && a.matches?.(state.selectors.textInputs);
+}
+
+// Accessory keys follow the soft keyboard: a text input has focus *and* the visible
+// area shrank. Focus alone is not enough: VS Code focuses the editor by itself, which
+// raises no keyboard, and Android's back button hides the keyboard but keeps the focus.
+// The keyboard-free height is the largest one seen at the current width.
+let fullHeight = 0;
+let fullHeightWidth = 0;
+function updateKeys() {
+	const h = realViewportHeight();
+	const w = document.documentElement.clientWidth;
+	if (w !== fullHeightWidth) {
+		fullHeightWidth = w;
+		fullHeight = 0;
+	}
+	fullHeight = Math.max(fullHeight, h);
+	const on = isTyping() && h < fullHeight - 150;
+	if (on === state.keysOn) return relayout();
+	state.keysOn = on;
+	render();
+}
+
+function onFocusIn(e) {
+	if (e.target.matches?.(state.selectors.textInputs)) state.lastInput = e.target;
+	updateKeys();
+}
+
+function onFocusOut() {
+	setTimeout(updateKeys, 50);
 }
 
 // ---------------------------------------------------------------- UI
@@ -631,34 +865,44 @@ function button(attrs, children, onPress) {
 }
 
 function build() {
-	const appbar = el(
-		'header',
-		{ id: 'hd-appbar' },
-		button({ class: 'hd-icon-btn', 'aria-label': '파일', 'data-act': 'drawer' }, icon('menu'), () => (state.drawerOpen ? closeDrawer() : openDrawer())),
-		button({ id: 'hd-title', 'aria-label': '파일 빠른 열기' }, [el('span', { id: 'hd-title-text' }, 'handide'), icon('chevron-down')], () => runAction('quickOpen')),
-		button({ class: 'hd-icon-btn', 'aria-label': '검색', 'data-act': 'search' }, icon('search'), () => showView(state.view === 'search' ? 'editor' : 'search')),
-		button({ class: 'hd-icon-btn', 'aria-label': '명령 팔레트', 'data-act': 'palette' }, icon('kebab-vertical'), () => runAction('commandPalette')),
-	);
-
 	const keys = el('div', { id: 'hd-keys' });
-	for (const name of state.config.accessoryKeys) {
+	for (const name of ['menu', ...state.config.accessoryKeys.filter((n) => n !== 'menu')]) {
 		const def = KEY_DEFS[name];
 		if (!def) continue;
 		keys.append(button({ 'data-key': name, 'aria-label': name }, def.label && !def.icon ? def.label : icon(def.icon), () => pressKey(name, def)));
 	}
-	// Shown only while the soft keyboard is up.
-	keys.append(button({ 'data-key': 'hideKeyboard', 'aria-label': '키보드 내리기', class: 'hd-kb-only' }, icon('chevron-down'), () => document.activeElement?.blur?.()));
+	keys.append(button({ 'data-key': 'hideKeyboard', 'aria-label': '키보드 내리기' }, icon('chevron-down'), () => document.activeElement?.blur?.()));
 
-	const dock = el('nav', { id: 'hd-dock' });
-	for (const name of state.config.dock) {
-		const def = DOCK_DEFS[name];
-		if (!def) continue;
-		dock.append(button({ 'data-dock': name, 'aria-label': def.label }, [icon(def.icon), el('span', {}, def.label)], () => pressDock(name)));
-	}
-
-	const insecure = el('div', { id: 'hd-insecure', hidden: window.isSecureContext }, 'HTTPS나 localhost로 접속해야 VS Code가 연결됩니다 (현재 http). PC에서 npm start가 띄운 QR이나 링크로 여세요.');
+	const insecure = el('div', { id: 'hd-insecure', hidden: window.isSecureContext }, 'HTTPS나 localhost로 접속해야 VS Code가 연결됩니다 (현재 http). PC에서 handide가 띄운 QR이나 링크로 여세요.');
 	const notice = el('div', { id: 'hd-notice', hidden: true });
-	const root = el('div', { id: 'hd-root' }, insecure, notice, keys, dock);
+	const root = el('div', { id: 'hd-root' }, insecure, notice, keys);
+
+	const fab = el('button', { id: 'hd-fab', type: 'button', tabindex: '-1', 'aria-label': '메뉴' }, icon('menu'));
+	installFab(fab);
+
+	const tiles = el('div', { id: 'hd-menu-grid' });
+	for (const name of state.config.menu) {
+		const def = MENU_DEFS[name];
+		if (!def) continue;
+		tiles.append(button({ class: 'hd-tile', 'data-item': name, 'aria-label': def.label }, [icon(def.icon), el('span', {}, def.label)], () => pressMenu(name)));
+	}
+	const menu = el(
+		'section',
+		{ id: 'hd-menu', 'aria-label': '메뉴' },
+		el('span', { class: 'hd-grip', 'aria-hidden': 'true' }),
+		el(
+			'div',
+			{ id: 'hd-menu-head' },
+			button({ id: 'hd-title', 'aria-label': '파일 빠른 열기' }, [el('span', { id: 'hd-title-text' }, 'handide'), el('small', { id: 'hd-menu-folder' })], () => {
+				closeMenu();
+				runAction('quickOpen');
+			}),
+			button({ class: 'hd-icon-btn', 'aria-label': '저장', 'data-act': 'save' }, icon('save'), () => runAction('save')),
+			button({ class: 'hd-icon-btn', 'aria-label': '닫기', 'data-act': 'close' }, icon('close'), closeMenu),
+		),
+		tiles,
+	);
+	const menuScrim = el('div', { id: 'hd-menu-scrim', onclick: closeMenu });
 
 	const drawer = el(
 		'aside',
@@ -668,6 +912,8 @@ function build() {
 	);
 	const scrim = el('div', { id: 'hd-scrim', onclick: closeDrawer });
 
+	const viewbar = el('div', { id: 'hd-viewbar', hidden: true });
+
 	const sheet = el(
 		'form',
 		{ id: 'hd-sheet', hidden: true },
@@ -675,17 +921,21 @@ function build() {
 		el(
 			'div',
 			{ class: 'hd-sheet-actions' },
-			el('button', { type: 'button', 'data-act': 'cancel', onclick: () => (document.getElementById('hd-sheet').hidden = true) }, '취소'),
+			el('button', { type: 'button', 'data-act': 'cancel', onclick: closeInputSheet }, '취소'),
 			el('button', { type: 'submit' }, '삽입'),
 		),
 	);
+	// Tapping the buttons must not take the focus (and the keyboard) from the text box.
+	for (const b of sheet.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.preventDefault());
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
+	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(appbar, root, scrim, drawer, sheet, toastEl);
+	document.body.append(safe, viewbar, root, fab, menuScrim, menu, scrim, drawer, sheet, toastEl);
 	renderDrawer();
 }
 
 function pressKey(name, def) {
+	if (def.menu) return openMenu();
 	if (def.sticky) {
 		state.sticky[def.sticky] = !state.sticky[def.sticky];
 		render();
@@ -699,22 +949,21 @@ function pressKey(name, def) {
 function render() {
 	const root = document.getElementById('hd-root');
 	if (!root) return;
-	root.dataset.view = state.view;
-	root.dataset.typing = TYPING_VIEWS.has(state.view) ? '1' : '';
-	const dockActive = { editor: 'code', terminalDock: 'terminal', terminal: 'terminal', ai: 'ai', git: 'git', search: 'search' }[state.view];
-	for (const b of root.querySelectorAll('[data-dock]')) {
-		b.classList.toggle('active', b.dataset.dock === (state.drawerOpen ? 'files' : dockActive));
-		if (b.dataset.dock === 'terminal') b.dataset.mode = state.view === 'terminal' ? 'full' : state.view === 'terminalDock' ? 'dock' : '';
-	}
-	document.querySelector('#hd-appbar [data-act="search"]')?.classList.toggle('active', state.view === 'search');
+	const sheetOpen = !document.getElementById('hd-sheet').hidden;
+	root.dataset.keys = state.keysOn && !sheetOpen ? '1' : '';
+	document.documentElement.dataset.hdView = state.view;
+	document.getElementById('hd-fab').hidden = state.keysOn || state.drawerOpen || state.menuOpen || sheetOpen;
+	for (const b of document.querySelectorAll('#hd-menu [data-item]')) b.classList.toggle('active', MENU_DEFS[b.dataset.item]?.view === state.view);
 	for (const b of root.querySelectorAll('[data-key]')) {
 		const def = KEY_DEFS[b.dataset.key];
 		b.classList.toggle('active', !!(def?.sticky && state.sticky[def.sticky]));
 	}
+	renderViewbar();
 	requestAnimationFrame(relayout);
 }
 
-// App bar title = the active file, from VS Code's own window title ("● name - folder - …").
+// The active file, from VS Code's own window title ("● name - folder - …"):
+// shown in the menu sheet, and as a dot on the floating button while unsaved.
 function watchTitle() {
 	const update = () => {
 		const [first] = document.title.split(' - ');
@@ -724,6 +973,7 @@ function watchTitle() {
 		const text = document.getElementById('hd-title-text');
 		text.textContent = known ? name : state.folder?.name ?? 'handide';
 		text.classList.toggle('dirty', dirty);
+		document.getElementById('hd-fab').classList.toggle('dirty', dirty);
 	};
 	new MutationObserver(update).observe(document.querySelector('title') || document.head, { childList: true, subtree: true, characterData: true });
 	update();
@@ -734,6 +984,7 @@ function watchTitle() {
 const THEME_VARS = [
 	'--vscode-sideBar-background', '--vscode-editor-background', '--vscode-foreground',
 	'--vscode-descriptionForeground', '--vscode-focusBorder', '--vscode-panel-border',
+	'--vscode-panel-background', '--vscode-sideBarSectionHeader-background',
 	'--vscode-button-background', '--vscode-button-foreground',
 	'--vscode-button-secondaryBackground', '--vscode-button-secondaryForeground',
 	'--vscode-input-background', '--vscode-input-foreground',
@@ -741,6 +992,7 @@ const THEME_VARS = [
 	'--vscode-titleBar-activeBackground', '--vscode-titleBar-activeForeground',
 	'--vscode-inputValidation-warningBackground', '--vscode-inputValidation-warningForeground',
 	'--vscode-inputValidation-errorBackground', '--vscode-inputValidation-errorForeground',
+	'--vscode-widget-shadow',
 	'--vscode-font-family', '--vscode-editor-font-family',
 ];
 
@@ -752,7 +1004,7 @@ function syncTheme(workbench) {
 			const value = computed.getPropertyValue(name);
 			if (value) style.setProperty(name, value);
 		}
-		const bg = computed.getPropertyValue('--vscode-sideBar-background') || computed.getPropertyValue('--vscode-editor-background');
+		const bg = computed.getPropertyValue('--vscode-editor-background');
 		if (bg) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg.trim());
 	};
 	new MutationObserver(copy).observe(workbench, { attributes: true, attributeFilter: ['class'] });
@@ -770,20 +1022,21 @@ function watchTrust() {
 		notice.hidden = !restricted;
 		if (restricted) {
 			notice.replaceChildren(
-				el('span', {}, '이 폴더를 신뢰해야 모바일 화면 전환, 파일 열기, 에이전트 확장이 동작합니다.'),
+				el('span', {}, '이 폴더를 신뢰해야 화면 전환, 파일 열기, 에이전트 확장이 동작합니다.'),
 				button({}, '신뢰 설정', () => [...banner.querySelectorAll('a')].find((a) => /Manage/i.test(a.textContent))?.click()),
 			);
 		}
 		requestAnimationFrame(relayout);
 	};
 	let queued = false;
-	new MutationObserver(() => {
-		if (queued) return;
+	new MutationObserver((records) => {
+		if (queued || records.every((r) => r.target.closest?.('#hd-viewbar, #hd-fab'))) return;
 		queued = true;
 		requestAnimationFrame(() => {
 			queued = false;
 			update();
 			syncViewFromLayout();
+			placeViewbar();
 		});
 	}).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
 	update();
@@ -813,7 +1066,8 @@ function waitFor(selector) {
 
 async function main() {
 	const [config, commands, selectors] = await Promise.all([loadJson('config.json'), loadJson('commands.json'), loadJson('selectors.json')]);
-	config.dock ??= ['files', 'code', 'terminal', 'ai', 'git'];
+	config.menu ??= DEFAULT_MENU;
+	config.accessoryKeys ??= ['esc', 'tab', 'ctrl', 'left', 'up', 'down', 'right', 'undo', 'input'];
 	Object.assign(state, { config, commands, selectors });
 
 	const mobile = window.matchMedia(`(max-width: ${config.breakpoint}px), (pointer: coarse)`);
@@ -825,20 +1079,28 @@ async function main() {
 	render();
 	installGestures();
 
-	vv?.addEventListener('resize', relayout);
+	updateKeys();
+	vv?.addEventListener('resize', updateKeys);
 	vv?.addEventListener('scroll', relayout);
-	document.addEventListener('focusin', (e) => {
-		if (e.target.matches?.(selectors.textInputs)) state.lastInput = e.target;
-		requestAnimationFrame(relayout);
-	});
-	document.addEventListener('focusout', () => requestAnimationFrame(relayout));
+	window.addEventListener('orientationchange', () => setTimeout(updateKeys, 300));
+	document.addEventListener('focusin', onFocusIn);
+	document.addEventListener('focusout', onFocusOut);
 	document.addEventListener('beforeinput', onBeforeInput, true);
-	document.addEventListener('keydown', (e) => e.key === 'Escape' && state.drawerOpen && closeDrawer(), true);
+	document.addEventListener(
+		'keydown',
+		(e) => {
+			if (e.key !== 'Escape') return;
+			if (state.menuOpen) closeMenu();
+			else if (state.drawerOpen) closeDrawer();
+		},
+		true,
+	);
 
 	syncTheme(await waitFor(selectors.workbench));
 	watchTrust();
 	watchTitle();
 	state.folder = pageFolder();
+	renderMenuHead();
 	if (state.folder) loadDir(state.folder.path, true).then(renderDrawer);
 	if (!builtin() && (await waitForBridge())) {
 		await refreshState();

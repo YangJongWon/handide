@@ -1,12 +1,15 @@
 {
-  "$comment": "Personal layout of your mobile VS Code. Edit by hand or ask the mobilize-editor skill (e.g. 'add an Alt key', 'put search in the dock'). dock: files, code, terminal, ai, git, search.",
+  "$comment": "Personal layout of your mobile VS Code. Edit by hand or ask the mobilize-editor skill (e.g. 'add an Alt key', 'put find in the menu'). menu: files, terminal, ai, quickOpen, palette, save, undo, redo, find.",
   "breakpoint": 900,
-  "dock": [
+  "menu": [
     "files",
-    "code",
     "terminal",
     "ai",
-    "git"
+    "quickOpen",
+    "palette",
+    "save",
+    "undo",
+    "redo"
   ],
   "accessoryKeys": [
     "esc",
@@ -17,8 +20,7 @@
     "down",
     "right",
     "undo",
-    "input",
-    "palette"
+    "input"
   ],
   "inputSheet": true,
   "companion": {

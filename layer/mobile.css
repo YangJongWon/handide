@@ -1,4 +1,5 @@
-/* handide mobile layer: app bar, file drawer, dock and accessory keys around VS Code.
+/* handide mobile layer: full-screen editor, floating button + menu sheet, file drawer,
+ * terminal bottom drawer and accessory keys around VS Code.
  * Only active under html.hd-mobile (phones / narrow screens). Colors come from VS Code's
  * theme variables (copied onto :root by mobile.js), so any theme works.
  * Rules that touch VS Code DOM are marked [vscode-dom]; if an editor update breaks them,
@@ -6,8 +7,7 @@
 
 html.hd-mobile {
 	--hd-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
-	--hd-bar-bg: var(--vscode-titleBar-activeBackground, var(--hd-bg));
-	--hd-bar-fg: var(--vscode-titleBar-activeForeground, var(--hd-fg));
+	--hd-surface: var(--vscode-editor-background, var(--hd-bg));
 	--hd-fg: var(--vscode-foreground, #ccc);
 	--hd-muted: var(--vscode-descriptionForeground, #999);
 	--hd-accent: var(--vscode-focusBorder, #0078d4);
@@ -18,24 +18,35 @@ html.hd-mobile {
 	--hd-btn-fg: var(--vscode-button-foreground, #fff);
 	--hd-row-active: var(--vscode-list-activeSelectionBackground, rgba(0, 120, 212, 0.25));
 	--hd-row-active-fg: var(--vscode-list-activeSelectionForeground, var(--hd-fg));
-	--hd-appbar-h: 48px;
-	--hd-dock-h: 56px;
+	--hd-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+	--hd-shadow: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
 	--hd-key-h: 44px;
 	overscroll-behavior: none;
 }
 
 html.hd-mobile body {
-	/* The workbench starts below the app bar; mobile.js sizes it via the viewport shim. */
-	padding-top: var(--hd-top, var(--hd-appbar-h));
+	/* The workbench starts below the top inset (notch); mobile.js sizes it via the viewport shim. */
+	padding-top: var(--hd-top, env(safe-area-inset-top));
 	box-sizing: border-box;
 }
 
-html.hd-mobile :is(#hd-appbar, #hd-root, #hd-drawer, #hd-sheet, #hd-toast) {
+/* Measures the top inset for mobile.js. */
+html.hd-mobile #hd-safe {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: env(safe-area-inset-top);
+	visibility: hidden;
+	pointer-events: none;
+}
+
+html.hd-mobile :is(#hd-root, #hd-fab, #hd-menu, #hd-viewbar, #hd-drawer, #hd-sheet, #hd-toast) {
 	font-family: var(--vscode-font-family, system-ui, sans-serif);
 	color: var(--hd-fg);
 	-webkit-tap-highlight-color: transparent;
 }
-html.hd-mobile :is(#hd-appbar, #hd-root, #hd-drawer) button {
+html.hd-mobile :is(#hd-root, #hd-fab, #hd-menu, #hd-viewbar, #hd-drawer) button {
 	appearance: none;
 	border: 0;
 	margin: 0;
@@ -50,52 +61,144 @@ html.hd-mobile .hd-icon-btn {
 	flex: none;
 	width: 44px;
 	height: 44px;
+	max-height: 100%;
 	display: grid;
 	place-items: center;
-	border-radius: 8px;
+	border-radius: 10px;
 }
 html.hd-mobile .hd-icon-btn .codicon {
 	font-size: 20px;
 }
-html.hd-mobile .hd-icon-btn.active {
-	color: var(--hd-accent);
+html.hd-mobile .hd-icon-btn:active {
+	background: var(--hd-hover);
+}
+html.hd-mobile .hd-grip {
+	display: block;
+	width: 36px;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--hd-muted);
+	opacity: 0.5;
 }
 
-/* Layering: below VS Code's context menus (2500), quick input (2550) and dialogs
- * (2575), which may overlap our bars; the drawer and sheet sit above everything. */
+/* Layering: the view bar, bottom bar and floating button sit below VS Code's context
+ * menus (2500), quick input (2550) and dialogs (2575); sheets and drawers above everything. */
 
-/* ---------------------------------------------------------------- app bar */
+/* ---------------------------------------------------------------- floating button */
 
-html.hd-mobile #hd-appbar {
+html.hd-mobile #hd-fab {
+	position: fixed;
+	z-index: 2450;
+	left: calc(100vw - 64px);
+	top: 70vh;
+	width: 52px;
+	height: 52px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+	box-shadow: 0 4px 14px var(--hd-shadow), 0 1px 3px rgba(0, 0, 0, 0.25);
+	opacity: 0.92;
+	touch-action: none;
+	transition: left 0.18s ease-out, top 0.18s ease-out, transform 0.12s;
+}
+html.hd-mobile #hd-fab[data-dragging] {
+	transition: none;
+	transform: scale(1.08);
+	opacity: 1;
+}
+html.hd-mobile #hd-fab:active {
+	transform: scale(0.94);
+}
+html.hd-mobile #hd-fab[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-fab .codicon {
+	font-size: 22px;
+}
+/* Unsaved changes in the active file. */
+html.hd-mobile #hd-fab.dirty::after {
+	content: '';
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	width: 11px;
+	height: 11px;
+	border-radius: 50%;
+	background: var(--hd-btn-fg);
+	box-shadow: 0 0 0 2px var(--hd-btn-bg);
+}
+
+/* ---------------------------------------------------------------- menu sheet */
+
+html.hd-mobile #hd-menu-scrim,
+html.hd-mobile #hd-scrim {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.45);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s;
+}
+html.hd-mobile #hd-menu-scrim {
+	z-index: 2690;
+}
+html.hd-mobile.hd-menu-open #hd-menu-scrim,
+html.hd-mobile.hd-drawer-open #hd-scrim {
+	opacity: 1;
+	pointer-events: auto;
+}
+html.hd-mobile #hd-menu {
 	position: fixed;
 	left: 0;
 	right: 0;
-	top: 0;
-	z-index: 2400;
+	bottom: 0;
+	z-index: 2700;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 4px;
+	padding: 8px 12px calc(16px + env(safe-area-inset-bottom));
+	background: var(--hd-bg);
+	border-radius: 18px 18px 0 0;
+	box-shadow: 0 -6px 24px var(--hd-shadow);
+	transform: translateY(105%);
+	transition: transform 0.22s ease-out;
+}
+html.hd-mobile.hd-menu-open #hd-menu {
+	transform: none;
+}
+html.hd-mobile #hd-menu > .hd-grip {
+	align-self: center;
+	margin-bottom: 4px;
+}
+html.hd-mobile #hd-menu-head {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	height: var(--hd-appbar-h);
-	padding: 0 4px;
-	padding-top: env(safe-area-inset-top);
-	box-sizing: content-box;
-	background: var(--hd-bar-bg);
-	color: var(--hd-bar-fg);
+	padding-bottom: 8px;
 	border-bottom: 1px solid var(--hd-border);
 }
 html.hd-mobile #hd-title {
 	flex: 1;
 	min-width: 0;
-	height: 44px;
+	min-height: 48px;
 	display: flex;
-	align-items: center;
-	gap: 4px;
+	flex-direction: column;
+	justify-content: center;
+	align-items: flex-start;
 	padding: 0 8px;
-	border-radius: 8px;
-	font-size: 16px;
-	font-weight: 600;
+	border-radius: 10px;
+	text-align: left;
+}
+html.hd-mobile #hd-title:active {
+	background: var(--hd-hover);
 }
 html.hd-mobile #hd-title-text {
+	max-width: 100%;
+	font-size: 17px;
+	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -104,12 +207,96 @@ html.hd-mobile #hd-title-text.dirty::before {
 	content: '● ';
 	color: var(--hd-accent);
 }
-html.hd-mobile #hd-title .codicon {
-	flex: none;
+html.hd-mobile #hd-menu-folder {
+	max-width: 100%;
 	color: var(--hd-muted);
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+html.hd-mobile #hd-menu-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 6px;
+	padding-top: 10px;
+}
+html.hd-mobile .hd-tile {
+	min-height: 72px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border-radius: 14px;
+	font-size: 12px !important;
+	color: var(--hd-fg);
+	background: var(--hd-key-bg) !important;
+}
+html.hd-mobile .hd-tile .codicon {
+	font-size: 24px;
+}
+html.hd-mobile .hd-tile:active {
+	filter: brightness(0.92);
+}
+html.hd-mobile .hd-tile.active {
+	background: var(--hd-btn-bg) !important;
+	color: var(--hd-btn-fg) !important;
 }
 
-/* ---------------------------------------------------------------- bottom: keys + dock */
+/* ---------------------------------------------------------------- view bar [vscode-dom: covers a part's title strip] */
+
+html.hd-mobile #hd-viewbar {
+	position: fixed;
+	z-index: 2400;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 0 4px;
+	box-sizing: border-box;
+	background: var(--vscode-panel-background, var(--hd-surface));
+	border-bottom: 1px solid var(--hd-border);
+	touch-action: none;
+}
+html.hd-mobile #hd-viewbar[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-viewbar .hd-icon-btn {
+	width: 40px;
+	height: 100%;
+}
+html.hd-mobile .hd-viewbar-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 14px;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* The terminal drawer: a grab bar with rounded top corners. */
+html.hd-mobile #hd-viewbar.hd-grab {
+	border-top: 1px solid var(--hd-border);
+	border-radius: 14px 14px 0 0;
+	box-shadow: 0 -4px 12px var(--hd-shadow);
+}
+html.hd-mobile #hd-viewbar.hd-grab .hd-grip {
+	position: absolute;
+	top: 4px;
+	left: calc(50% - 18px);
+}
+
+/* The AI drawer (VS Code's secondary side bar) slides in from the right. [vscode-dom] */
+html.hd-mobile[data-hd-view='ai'] .part.auxiliarybar {
+	animation: hd-from-right 0.22s ease-out;
+}
+@keyframes hd-from-right {
+	from {
+		transform: translateX(100%);
+	}
+}
+
+/* ---------------------------------------------------------------- bottom: notices + accessory keys */
 
 html.hd-mobile #hd-root {
 	position: fixed;
@@ -120,12 +307,14 @@ html.hd-mobile #hd-root {
 	display: flex;
 	flex-direction: column;
 	background: var(--hd-bg);
-	border-top: 1px solid var(--hd-border);
-	padding-bottom: env(safe-area-inset-bottom);
 	touch-action: manipulation;
 }
+html.hd-mobile #hd-root:has(> :not([hidden]):not(#hd-keys)),
+html.hd-mobile #hd-root[data-keys='1'] {
+	border-top: 1px solid var(--hd-border);
+}
 
-/* Accessory keys: on typing views, and whenever the soft keyboard is up. */
+/* Accessory keys: only while a text input has focus (the soft keyboard is up). */
 html.hd-mobile #hd-keys {
 	display: none;
 	gap: 4px;
@@ -138,14 +327,14 @@ html.hd-mobile #hd-keys {
 html.hd-mobile #hd-keys::-webkit-scrollbar {
 	display: none;
 }
-html.hd-mobile #hd-root:is([data-typing='1'], [data-keyboard='1']) #hd-keys {
+html.hd-mobile #hd-root[data-keys='1'] #hd-keys {
 	display: flex;
 }
 html.hd-mobile #hd-keys button {
 	flex: 1 0 auto;
-	min-width: 32px;
+	min-width: 34px;
 	padding: 0 6px;
-	border-radius: 6px;
+	border-radius: 7px;
 	background: var(--hd-key-bg);
 	color: var(--hd-key-fg);
 	font-size: 14px;
@@ -155,60 +344,9 @@ html.hd-mobile #hd-keys button.active {
 	background: var(--hd-btn-bg);
 	color: var(--hd-btn-fg);
 }
-html.hd-mobile #hd-keys .hd-kb-only {
-	display: none;
-}
-html.hd-mobile #hd-root[data-keyboard='1'] #hd-keys .hd-kb-only {
-	display: block;
-}
-
-/* Dock. While the soft keyboard is up it shrinks to icons, but never disappears. */
-html.hd-mobile #hd-dock {
-	display: flex;
-	height: var(--hd-dock-h);
-}
-html.hd-mobile #hd-dock button {
-	flex: 1 1 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 3px;
-	color: var(--hd-muted);
-	font-size: 11px;
-	border-top: 2px solid transparent;
-	position: relative;
-}
-html.hd-mobile #hd-dock button .codicon {
-	font-size: 20px;
-}
-html.hd-mobile #hd-dock button.active {
-	color: var(--hd-fg);
-	border-top-color: var(--hd-accent);
-}
-/* Terminal button shows its mode: docked below the editor, or full screen. */
-html.hd-mobile #hd-dock button[data-mode]:not([data-mode=''])::after {
-	position: absolute;
-	top: 6px;
-	right: calc(50% - 22px);
-	font-size: 9px;
-	padding: 0 4px;
-	border-radius: 6px;
-	background: var(--hd-accent);
+html.hd-mobile #hd-keys [data-key='menu'] {
+	background: var(--hd-btn-bg);
 	color: var(--hd-btn-fg);
-}
-html.hd-mobile #hd-dock button[data-mode='dock']::after {
-	content: '하단';
-}
-html.hd-mobile #hd-dock button[data-mode='full']::after {
-	content: '전체';
-}
-html.hd-mobile #hd-root[data-keyboard='1'] #hd-dock {
-	height: 40px;
-}
-html.hd-mobile #hd-root[data-keyboard='1'] #hd-dock span:not(.codicon),
-html.hd-mobile #hd-root[data-keyboard='1'] #hd-dock button::after {
-	display: none;
 }
 
 /* Notices */
@@ -217,6 +355,7 @@ html.hd-mobile :is(#hd-notice, #hd-insecure) {
 	align-items: center;
 	gap: 8px;
 	padding: 8px 12px;
+	padding-bottom: max(8px, env(safe-area-inset-bottom));
 	font-size: 13px;
 }
 html.hd-mobile :is(#hd-notice, #hd-insecure)[hidden] {
@@ -244,17 +383,7 @@ html.hd-mobile #hd-notice button {
 /* ---------------------------------------------------------------- drawer */
 
 html.hd-mobile #hd-scrim {
-	position: fixed;
-	inset: 0;
 	z-index: 2690;
-	background: rgba(0, 0, 0, 0.45);
-	opacity: 0;
-	pointer-events: none;
-	transition: opacity 0.2s;
-}
-html.hd-mobile.hd-drawer-open #hd-scrim {
-	opacity: 1;
-	pointer-events: auto;
 }
 html.hd-mobile #hd-drawer {
 	position: fixed;
@@ -266,12 +395,13 @@ html.hd-mobile #hd-drawer {
 	display: flex;
 	flex-direction: column;
 	background: var(--hd-bg);
-	border-right: 1px solid var(--hd-border);
-	box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
+	border-radius: 0 18px 18px 0;
+	box-shadow: 6px 0 24px var(--hd-shadow);
 	transform: translateX(-105%);
 	transition: transform 0.22s ease-out;
 	padding-top: env(safe-area-inset-top);
 	padding-bottom: env(safe-area-inset-bottom);
+	overflow: hidden;
 }
 html.hd-mobile.hd-drawer-open #hd-drawer {
 	transform: none;
@@ -281,8 +411,8 @@ html.hd-mobile #hd-drawer-head {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	min-height: var(--hd-appbar-h);
-	padding: 4px 4px 4px 14px;
+	min-height: 56px;
+	padding: 6px 6px 6px 16px;
 	border-bottom: 1px solid var(--hd-border);
 }
 html.hd-mobile .hd-drawer-title {
@@ -292,7 +422,7 @@ html.hd-mobile .hd-drawer-title {
 	flex-direction: column;
 }
 html.hd-mobile .hd-drawer-title strong {
-	font-size: 15px;
+	font-size: 16px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -310,17 +440,17 @@ html.hd-mobile #hd-drawer-body {
 	flex: 1;
 	overflow-y: auto;
 	overscroll-behavior: contain;
-	padding: 4px 0 16px;
+	padding: 6px 0 16px;
 }
 html.hd-mobile .hd-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 10px;
 	width: 100%;
-	min-height: 40px;
+	min-height: 44px;
 	padding-right: 12px;
 	text-align: left;
-	font-size: 14px;
+	font-size: 15px;
 }
 html.hd-mobile .hd-row .codicon {
 	flex: none;
@@ -340,7 +470,7 @@ html.hd-mobile .hd-row.active {
 	color: var(--hd-row-active-fg);
 }
 html.hd-mobile .hd-row:active {
-	background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+	background: var(--hd-hover);
 }
 html.hd-mobile .hd-empty {
 	margin: 16px;
@@ -348,12 +478,12 @@ html.hd-mobile .hd-empty {
 	font-size: 13px;
 }
 html.hd-mobile .hd-picker-actions {
-	padding: 12px 14px;
+	padding: 12px 16px;
 }
 html.hd-mobile .hd-primary {
 	width: 100%;
-	height: 44px;
-	border-radius: 8px;
+	height: 46px;
+	border-radius: 10px;
 	background: var(--hd-btn-bg) !important;
 	color: var(--hd-btn-fg) !important;
 	font-weight: 600 !important;
@@ -373,8 +503,8 @@ html.hd-mobile #hd-sheet {
 	padding: 12px;
 	padding-top: max(12px, env(safe-area-inset-top));
 	background: var(--hd-bg);
-	border-bottom: 1px solid var(--hd-border);
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+	border-radius: 0 0 18px 18px;
+	box-shadow: 0 6px 24px var(--hd-shadow);
 }
 html.hd-mobile #hd-sheet[hidden] {
 	display: none;
@@ -384,8 +514,8 @@ html.hd-mobile #hd-sheet textarea {
 	box-sizing: border-box;
 	font-family: var(--vscode-editor-font-family, monospace);
 	font-size: 16px; /* ≥16px stops iOS from zooming the page on focus */
-	padding: 8px;
-	border-radius: 6px;
+	padding: 10px;
+	border-radius: 10px;
 	border: 1px solid var(--hd-border);
 	background: var(--vscode-input-background, transparent);
 	color: var(--vscode-input-foreground, var(--hd-fg));
@@ -397,8 +527,8 @@ html.hd-mobile .hd-sheet-actions {
 	gap: 8px;
 }
 html.hd-mobile .hd-sheet-actions button {
-	padding: 8px 18px;
-	border-radius: 6px;
+	padding: 10px 20px;
+	border-radius: 10px;
 	border: 0;
 	font-size: 15px;
 	background: var(--hd-key-bg);
@@ -411,16 +541,16 @@ html.hd-mobile .hd-sheet-actions button[type='submit'] {
 html.hd-mobile #hd-toast {
 	position: fixed;
 	left: 50%;
-	bottom: calc(var(--hd-dock-h) + 24px);
+	bottom: calc(var(--hd-bottom, 0px) + 24px + env(safe-area-inset-bottom));
 	transform: translateX(-50%);
 	z-index: 2900;
 	max-width: calc(100vw - 32px);
 	padding: 10px 16px;
-	border-radius: 10px;
+	border-radius: 12px;
 	background: var(--hd-fg);
 	color: var(--hd-bg);
 	font-size: 14px;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 4px 12px var(--hd-shadow);
 }
 html.hd-mobile #hd-toast[hidden] {
 	display: none;

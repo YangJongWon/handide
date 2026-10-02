@@ -1,6 +1,6 @@
 ---
 name: mobilize-editor
-description: Set up, verify, repair and personalize handide, the `handide` command that serves the user's real VS Code to a phone as a mobile IDE (app bar, file drawer, docked terminal, full-screen AI) without forking it. Use when installing handide, after VS Code updates (to re-verify and fix the layer), when `npm run check` fails, when the user wants to change their mobile layout (dock, accessory keys, breakpoint), or when choosing how the companion extension is installed.
+description: Set up, verify, repair and personalize handide, the `handide` command that serves the user's real VS Code to a phone as a mobile IDE (full-screen editor, floating menu button, file drawer, terminal drawer, full-screen AI) without forking it. Use when installing handide, after VS Code updates (to re-verify and fix the layer), when `npm run check` fails, when the user wants to change their mobile layout (menu, accessory keys, breakpoint), or when choosing how the companion extension is installed.
 ---
 
 # mobilize-editor
@@ -16,7 +16,7 @@ What each piece owns (keep it that way):
 | `proxy/bridge.mjs` | command bridge: layer → proxy → extension (long-poll on a private 127.0.0.1 port + secret), and `/__handide/fs` directory listing for the drawer | own code |
 | `layer/commands.json` | chord ↔ command mapping (fallback when the bridge is down); proxy generates the extension keybindings from it | single source of truth |
 | `layer/selectors.json` | **every** VS Code internal DOM hook the layer or the check uses | the one file to fix after an update |
-| `layer/mobile.js`, `layer/mobile.css` | the shell: app bar, file drawer + folder picker, dock, accessory keys, input sheet, viewport shim, theme sync, `settleView()` (finishes layouts from the DOM) | depend on DOM only through `selectors.json` + rules marked `[vscode-dom]` |
+| `layer/mobile.js`, `layer/mobile.css` | the shell: floating button + menu sheet, file drawer + folder picker, terminal (bottom) and AI (right) drawers with a bar laid over the part's title strip, `syncViewFromLayout()` (closes whatever VS Code opens by itself), accessory keys (only while the soft keyboard is up), input sheet, viewport shim, theme sync, `settleView()` (finishes layouts from the DOM) | depend on DOM only through `selectors.json` + rules marked `[vscode-dom]` |
 | `~/.handide/` (`$HANDIDE_HOME`) | per-user: mobile VS Code profile (`data/Machine/settings.json`), installed companion, `tls/` certificate, `token`, `layer.config.json` | user data |
 
 Hard rules:
@@ -31,7 +31,7 @@ Scripts (all in `scripts/`, run from the repo root):
 | Command | Does |
 |---|---|
 | `npm run compat [-- --editor <cli>]` | static install check → JSON verdict; exit 0 compatible, 2 uncertain, 3 incompatible |
-| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** handide (`--local`, fresh data dir + sample workspace under `check-output/`), runs 19 checks per emulated device through the UI (taps, CDP swipes), writes `check-output/report.json` + a screenshot per step |
+| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** handide (`--local`, fresh data dir + sample workspace under `check-output/`), runs 18 checks per emulated device through the UI (taps, CDP swipes), writes `check-output/report.json` + a screenshot per step |
 | `npm run check -- --android [serial]` | same checks in **real Chrome** on an emulator or USB phone: `adb input tap/swipe`, real soft keyboard; sets `adb reverse` itself |
 | `node .claude/skills/mobilize-editor/scripts/inspect.mjs [--tab <view>] [--find "text"] [--eval "js"]` | phone-viewport DOM inspector for repairing selectors |
 
@@ -60,11 +60,13 @@ Scripts (all in `scripts/`, run from the repo root):
 | `view:*` (extension mode) | a layout command ID changed, the companion or bridge did not start, or `settleView()` misreads the layout | `inspect.mjs --tab <view>`; check `/__handide/bridge/status` in the page (`connected`), the command IDs in `extension/extension.js` (Keyboard Shortcuts editor lists them), `VIEW_PARTS` / `settleView()` in `mobile.js`. If unfixable now, offer `builtin` mode |
 | `view:*` (builtin mode) | a default shortcut changed | update `BUILTIN_VIEWS` in `layer/mobile.js` |
 | `drawer` | bridge down, `vscode.open` changed, or `pageFolder()` can't read the folder | bridge status; `handide.state`; the workbench configuration's `folderUri` |
+| `restricted-layout` | before trust (companion off) the primary/secondary side bar stayed next to the editor: a default toggle shortcut changed, or the layer stopped watching | `CLOSE_PART_KEYS` / `syncViewFromLayout()` in `mobile.js` (VS Code on iPhone uses Mac bindings) |
 | `swipe` | gestures broken, or VS Code's gesture handler swallowing taps again | `installGestures()` / `onTap()` in `mobile.js` |
-| `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height`, or the body offset changed | `installViewportShim()` / `relayout()` in `mobile.js`, `body { padding-top }` in `mobile.css` |
+| `view:*` passes but the ← / ⌄ bar is missing or misplaced | a part's title strip was renamed | `partTitles` in `selectors.json`, `placeViewbar()` |
+| `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height`, the body offset changed, or the floating button left the screen | `installViewportShim()` / `relayout()` / `fabBand()` in `mobile.js`, `body { padding-top }` in `mobile.css` |
 | `theme-sync` | theme variables moved | `inspect.mjs --eval "getComputedStyle(document.querySelector('.monaco-workbench')).getPropertyValue('--vscode-foreground')"`; update `THEME_VARS` |
 | `edit-korean` | text insertion path changed | the report shows `last paste: <element> <method>`; `pasteInto()` uses EditContext `textupdate` when present (a synthetic paste is accepted but ignored on Android Chrome), else a paste event |
-| `accessory-keys` | synthetic keys ignored | `sendKey()` (keyCode/code), `check.cursor` selector |
+| `accessory-keys` | synthetic keys ignored, or the keys no longer follow the keyboard (emulation shrinks the viewport to stand in for one) | `sendKey()` (keyCode/code), `check.cursor` selector; `updateKeys()` |
 | `palette-fits` | quick input overflows | CSS in `mobile.css` for `quickInput` |
 | `folder-change` | `vscode.openFolder` or the `?folder=` reload changed | bridge result of `vscode.openFolder`; `pageFolder()` |
 | `no-layer-errors` | JS exception in the layer | message is in the report |
@@ -77,12 +79,12 @@ Scripts (all in `scripts/`, run from the repo root):
 
 Edit `~/.handide/layer.config.json` (served live; a page reload applies it):
 
-- `dock`: any order/subset of `files, code, terminal, ai, git, search` (search is also in the app bar).
-- `accessoryKeys`: any of `esc tab left up down right home end ctrl alt shift undo redo save find quickOpen palette input` (`input` = the Korean-safe input sheet, `ctrl/alt/shift` are sticky).
+- `menu`: tiles of the menu sheet, any order/subset of `files terminal ai quickOpen palette save undo redo find`. The code is the only screen: files, terminal and AI are drawers, and there are no separate tab screens (the user asked for this explicitly; do not add Git/Search/other full-screen views back).
+- `accessoryKeys`: any of `esc tab left up down right home end ctrl alt shift undo redo save find quickOpen palette input` (`input` = the Korean-safe input sheet, `ctrl/alt/shift` are sticky). ☰ (menu) is always first and ⌄ (hide keyboard) last; the row shows only while the soft keyboard is up.
 - `breakpoint`: width (px) below which the mobile layout activates (touch devices always get it).
 - `companion.mode`: `extension` | `builtin`.
 
-A new action key: an entry in `layer/commands.json` → `actions` (official command ID), a `KEY_DEFS` entry in `layer/mobile.js`, and `BUILTIN_ACTIONS` for builtin mode. A new view: `VIEW_PARTS` + `DOCK_DEFS` in `mobile.js`, `showView()` in `extension/extension.js`, a `tabs` chord in `commands.json`. Then `npm run check`.
+A new action key or tile: an entry in `layer/commands.json` → `actions` (official command ID; `key` only if it must work without the bridge), a `KEY_DEFS` / `MENU_DEFS` entry in `layer/mobile.js`, and `BUILTIN_ACTIONS` for builtin mode. A new view: `VIEW_PARTS` + `MENU_DEFS` (+ `VIEW_BARS` for its header) in `mobile.js`, `showView()` in `extension/extension.js`, a `tabs` chord in `commands.json`. Then `npm run check`.
 
 Mobile-only VS Code settings go in `profile/settings.json`; on the next start handide adds new keys to the user's settings without overwriting their values, and replaces handide's own old defaults listed in `UPGRADES` (`proxy/server.mjs`). `--reset-profile` overwrites everything.
 

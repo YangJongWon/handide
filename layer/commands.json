@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source of truth for layer→VS Code wiring. The layer prefers the command bridge (official commands with arguments); these chords are the fallback. `tabs` = views, bound to the companion's `handide.tab` with the view name; `actions` = official command IDs.",
+  "$comment": "Single source of truth for layer→VS Code wiring. The layer prefers the command bridge (official commands with arguments); these chords are the fallback. `tabs` = views, bound to the companion's `handide.tab` with the view name; `actions` = official command IDs (actions without a `key` work through the bridge only).",
   "modifiers": "ctrl+alt+shift",
   "tabs": {
     "editor": "F1",
@@ -37,6 +37,18 @@
     "toggleMaximizedPanel": {
       "key": "F13",
       "command": "workbench.action.toggleMaximizedPanel"
+    },
+    "newTerminal": {
+      "command": "workbench.action.terminal.new"
+    },
+    "killTerminal": {
+      "command": "workbench.action.terminal.kill"
+    },
+    "newChat": {
+      "command": "workbench.action.chat.newChat"
+    },
+    "gitRefresh": {
+      "command": "git.refresh"
     }
   }
 }

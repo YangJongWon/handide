@@ -9,6 +9,11 @@
     "panel": ".part.panel",
     "auxiliarybar": ".part.auxiliarybar"
   },
+  "partTitles": {
+    "$comment": "The title strip of a part; the layer lays its own view bar exactly over it.",
+    "panel": ".part.panel > .composite.title",
+    "auxiliarybar": ".part.auxiliarybar > .composite.title"
+  },
   "textInputs": ".monaco-editor .native-edit-context, .monaco-editor textarea.inputarea, .xterm-helper-textarea, .monaco-inputbox input, .monaco-inputbox textarea",
   "dialog": ".monaco-dialog-box",
   "dialogButtons": ".monaco-dialog-box .dialog-buttons",
