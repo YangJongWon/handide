@@ -13,6 +13,7 @@
 > **한국어 요약**
 > `code .`처럼 아무 폴더에서 `handide`를 실행하면 그 폴더가 열리고, 터미널에 QR 코드가 뜹니다. 폰 카메라로 찍으면 PC의 VS Code가 **폰용 IDE 레이아웃**으로 열립니다: 코드만 보이는 전체 화면 에디터, 드래그로 옮길 수 있는 플로팅 버튼(→ 메뉴 시트), 파일 드로어(메뉴 또는 왼쪽 가장자리 스와이프, 폴더 변경 가능), 하단 터미널 드로어(아래로 쓸면 닫힘), 오른쪽 AI 드로어(오른쪽 가장자리 스와이프). 화면은 코드 하나뿐이고 별도 탭 화면은 없습니다. 키보드가 올라왔을 때만 뜨는 보조키(Esc·Tab·Ctrl·방향키)와 한글 입력 시트.
 > 설치: `npm install -g github:YangJongWon/handide` → 프로젝트 폴더에서 `handide`. 터미널 QR이 잘 안 보이면 PC 브라우저에서 `http://localhost:9000/__handide/connect`를 열면 크게 보입니다. 처음 한 번 인증서 경고를 넘기고 폴더를 신뢰하면 됩니다.
+> **집 밖에서도:** `handide remote`를 한 번 실행하세요(Tailscale 설치 → 브라우저로 로그인·허용). 그다음부터 `handide`의 QR은 집에서도 밖에서도 그대로 되는 고정 주소 `https://<PC>.<tailnet>.ts.net`이고, 폰에는 아무것도 설치할 필요가 없습니다. 주소는 공개되고 링크 속 토큰이 열쇠입니다. 내 기기만 접속하게 하려면 `--private`(폰에 Tailscale 앱 필요), 계정 없이 바로 쓰려면 `handide --cloudflare`(실행마다 주소가 바뀜).
 
 ## Install
 
@@ -45,7 +46,10 @@ Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or local
 | Situation | How |
 |---|---|
 | Phone on the same Wi-Fi (default) | `handide` → scan the QR code |
-| Away from home | `handide --local`, then `tailscale serve --bg 9000` → `https://<machine>.<tailnet>.ts.net/?tkn=<token>` (valid certificate, no warning) |
+| Away from home | Run `handide remote` once: it installs [Tailscale](https://tailscale.com/download) on the PC and opens the browser to sign in and allow it. From then on `handide` publishes itself with Tailscale Funnel and its QR code is a fixed `https://<machine>.<tailnet>.ts.net/?tkn=<token>`: a valid certificate, the same link at home and outside, **nothing to install on the phone**. The address is public and the access token in the link is the key (`--new-token` replaces it). |
+| Away from home, own devices only | `handide remote --private`, Tailscale app on the phone (same account), then `handide --private`: the same address, but only devices in your tailnet reach it. |
+| Away from home, no account at all | `handide --cloudflare`: a Cloudflare Quick Tunnel (cloudflared is downloaded once if missing). Nothing to sign up for or install on the phone, but the address is random and changes on every run. |
+| LAN only | `handide --no-remote` |
 | Android phone over USB | `handide --local`, `adb reverse tcp:9000 tcp:9000`, open `http://localhost:9000/?tkn=<token>` |
 | Your own certificate | `handide --cert cert.pem --key key.pem` |
 | This PC only | `handide --local` |
@@ -55,12 +59,11 @@ Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or local
 ## The phone layout
 
 ```
-┌ ☰  file name ▾            🔍  ⋮ ┐   app bar: drawer, quick open, search, command palette
-│                                 │
-│  editor                         │
-├──── terminal (docked) ──────────┤   optional; or full screen
-├ Esc ⇥ Ctrl ← ↑ ↓ → ↶ 가 ⌘        ┤   accessory keys while typing
-└ 파일   코드   터미널   AI   Git     ┘   dock
+┌─────────────────────────────────┐
+│  editor, full screen            │   no app bar, no tabs: only code
+│                           (◉)   │   floating button → menu sheet (drag it anywhere)
+├──── ⌄ 터미널 ═══ ＋ 🗑 ──────────┤   terminal drawer (optional); files and AI drawers come from the sides
+└ ☰ Esc ⇥ Ctrl ← ↑ ↓ → ↶ 가 ⌄     ┘   accessory keys, only while the keyboard is up
 ```
 
 - **One screen**: the code. Everything else is a drawer over it (files from the left, AI from the right, terminal from the bottom); VS Code's own side bar or a layout it restores by itself is closed again.

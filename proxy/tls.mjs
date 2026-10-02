@@ -18,6 +18,7 @@ export function lanAddresses() {
 		for (const a of addrs || []) {
 			if (a.family !== 'IPv4' || a.internal) continue;
 			const ip = a.address;
+			if (/^169\.254\./.test(ip)) continue; // link-local: an adapter without a network (e.g. Tailscale signed out)
 			const rank = /^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : /^100\./.test(ip) ? 3 : 4;
 			found.push({ ip, name, rank, tailscale: rank === 3 });
 		}

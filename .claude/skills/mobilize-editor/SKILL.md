@@ -11,7 +11,7 @@ What each piece owns (keep it that way):
 
 | Piece | Owns | Survives editor updates because |
 |---|---|---|
-| `profile/settings.json` | everything a VS Code setting can do (no activity/status bar, no editor tabs/title actions, word wrap, `workbench.editor.useModal: off`, autosave, `terminal.integrated.commandsToSkipShell`) | settings are public API |
+| `profile/settings.json` | everything a VS Code setting can do (no activity/status bar, no editor tabs/title actions, no floating parts (`workbench.experimental.modernUI: false`), word wrap, `workbench.editor.useModal: off`, autosave, `terminal.integrated.commandsToSkipShell`) | settings are public API |
 | `extension/` (companion) | `handide.view` (editor / terminalDock / terminal / ai / search / git) from **official, idempotent commands**; `handide.state`; the bridge client; moves Search/SCM into the maximizable panel | commands are API, but a few layout ones are internal (see `compat.mjs`) |
 | `proxy/bridge.mjs` | command bridge: layer → proxy → extension (long-poll on a private 127.0.0.1 port + secret), and `/__handide/fs` directory listing for the drawer | own code |
 | `layer/commands.json` | chord ↔ command mapping (fallback when the bridge is down); proxy generates the extension keybindings from it | single source of truth |
@@ -45,7 +45,11 @@ Scripts (all in `scripts/`, run from the repo root):
 3. `npm run check -- --mode <chosen mode>`. Must pass (see Workflow B on failure).
 4. Tell the user to run `handide` in the folder they want (or `handide <folder>`). It listens on the LAN over HTTPS with a self-signed certificate (`proxy/tls.mjs`, regenerated when the PC's addresses change) and prints a **QR code + link** carrying the token (kept in `~/.handide/token`; `--new-token` replaces it); `http://` on the same port redirects to `https://`. `http://localhost:9000/__handide/connect` on the PC shows the QR code large (answers only the PC itself).
    First visit: accept the certificate warning once (Android Chrome: Advanced → Proceed; Safari: Show Details → visit this website), then **Trust** the folder — until then VS Code keeps the companion (views, file opening, bridge) and agent extensions off; the layer shows a notice with a "신뢰 설정" button.
-   Why not plain http: VS Code's connection handshake needs Web Crypto, only available in a secure context. Other setups: `--local` + `tailscale serve --bg 9000` (valid certificate, anywhere), `--local` + `adb reverse` (Android over USB), `--cert/--key`.
+   Why not plain http: VS Code's connection handshake needs Web Crypto, only available in a secure context. Away from home (`--no-remote` to skip; the checks always pass it):
+   - Default: when Tailscale is signed in, handide runs `tailscale funnel --bg --https=443 <its port>` (`proxy/tailscale.mjs`): public fixed `https://<machine>.<tailnet>.ts.net`, nothing on the phone, guarded by the token. If Funnel is not allowed it falls back to `tailscale serve` (tailnet only). `--private` always uses serve. Both are removed on exit.
+   - `--cloudflare` (`proxy/cloudflare.mjs`): Quick Tunnel, cloudflared from PATH/Program Files or downloaded into `<home>/bin`. It runs with its own HOME (`<home>/cloudflared-home`) because an existing `~/.cloudflared` makes the edge answer 404; the link is printed only after the new hostname answers (DNS takes ~5 s).
+   - `handide remote [--private]`: one-time guided setup (install via winget/brew/install.sh, sign-in and the Funnel/HTTPS approval each open the browser; reruns skip finished steps and never touch an existing config on 443).
+   - Funnel, serve and cloudflared all keep the original Host header and set X-Forwarded-Proto, so the proxy's host rewriting needs nothing extra. The connect page stays PC-only (Host must be localhost), and the bridge needs the token cookie. Other setups: `--local` + `adb reverse` (Android over USB), `--cert/--key`.
 
 ## Workflow B — VS Code updated, or `npm run check` fails
 
@@ -56,11 +60,11 @@ Scripts (all in `scripts/`, run from the repo root):
 |---|---|---|
 | `layer-injected` | proxy/serve-web problem, or the workbench HTML changed | run `handide --local` manually, read its output; check `injectLayer()` in `proxy/server.mjs` still finds `</head>` / `</html>` and `vscode-workbench-web-configuration` |
 | `selectors` | internal class renamed | `inspect.mjs` (and `--find`) → edit `layer/selectors.json` |
+| `restricted-layout` | before trust (companion off) the primary/secondary side bar stayed next to the editor: a default toggle shortcut changed, or the layer stopped watching | `CLOSE_PART_KEYS` / `syncViewFromLayout()` in `mobile.js` (VS Code on iPhone uses Mac bindings) |
 | `trust` | trust UI changed | `inspect.mjs --find "Restricted Mode" --find "Trust"` → update `scripts/lib/trust.mjs` and `banner` in `selectors.json` |
 | `view:*` (extension mode) | a layout command ID changed, the companion or bridge did not start, or `settleView()` misreads the layout | `inspect.mjs --tab <view>`; check `/__handide/bridge/status` in the page (`connected`), the command IDs in `extension/extension.js` (Keyboard Shortcuts editor lists them), `VIEW_PARTS` / `settleView()` in `mobile.js`. If unfixable now, offer `builtin` mode |
 | `view:*` (builtin mode) | a default shortcut changed | update `BUILTIN_VIEWS` in `layer/mobile.js` |
 | `drawer` | bridge down, `vscode.open` changed, or `pageFolder()` can't read the folder | bridge status; `handide.state`; the workbench configuration's `folderUri` |
-| `restricted-layout` | before trust (companion off) the primary/secondary side bar stayed next to the editor: a default toggle shortcut changed, or the layer stopped watching | `CLOSE_PART_KEYS` / `syncViewFromLayout()` in `mobile.js` (VS Code on iPhone uses Mac bindings) |
 | `swipe` | gestures broken, or VS Code's gesture handler swallowing taps again | `installGestures()` / `onTap()` in `mobile.js` |
 | `view:*` passes but the ← / ⌄ bar is missing or misplaced | a part's title strip was renamed | `partTitles` in `selectors.json`, `placeViewbar()` |
 | `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height`, the body offset changed, or the floating button left the screen | `installViewportShim()` / `relayout()` / `fabBand()` in `mobile.js`, `body { padding-top }` in `mobile.css` |

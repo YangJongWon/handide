@@ -45,7 +45,7 @@ export async function startProxy({ mode = 'extension', editor, host } = {}) {
 
 	const port = await freePort();
 	const token = randomBytes(12).toString('hex');
-	const args = [join(ROOT, 'proxy/server.mjs'), '--port', String(port), '--token', token, '--folder', workspace, '--data-dir', join(OUT, 'data'), '--config', configPath];
+	const args = [join(ROOT, 'proxy/server.mjs'), '--port', String(port), '--token', token, '--folder', workspace, '--data-dir', join(OUT, 'data'), '--config', configPath, '--no-remote'];
 	if (editor) args.push('--editor', editor);
 	if (host) args.push('--host', host);
 	else args.push('--local'); // checks use http://localhost (+ adb reverse on Android)

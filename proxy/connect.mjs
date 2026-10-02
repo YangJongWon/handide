@@ -4,13 +4,18 @@ import QRCode from 'qrcode';
 import { lanAddresses } from './tls.mjs';
 
 /** Where a phone can reach this handide, best address first. */
-export function accessInfo({ host, port, token, tls }) {
+export function accessInfo({ host, port, token, tls, remote }) {
 	const scheme = tls ? 'https' : 'http';
 	const path = `/?tkn=${encodeURIComponent(token)}`;
 	const local = host === '127.0.0.1' || host === 'localhost';
-	const links = local
+	const lan = local
 		? []
-		: lanAddresses().map((a) => ({ url: `${scheme}://${a.ip}:${port}${path}`, label: a.tailscale ? 'Tailscale' : a.name }));
+		: lanAddresses()
+				.filter((a) => !(remote && a.tailscale)) // the ts.net name supersedes the raw tailnet IP
+				.map((a) => ({ url: `${scheme}://${a.ip}:${port}${path}`, label: a.tailscale ? 'Tailscale' : a.name }));
+	const links = remote
+		? [{ url: `${remote.url}${path}`, label: remote.public ? '어디서나' : '어디서나 (Tailscale 앱)', remote: true, public: remote.public }, ...lan]
+		: lan;
 	return { local, scheme, port, localUrl: `${scheme}://localhost:${port}${path}`, links };
 }
 
@@ -46,7 +51,8 @@ export async function renderConnectPage(info, { selfSigned } = {}) {
 		)
 		.join('');
 
-	const body = info.local
+	const remote = targets[0]?.remote;
+	const body = info.local && !targets.length
 		? `<h1>이 PC 전용으로 실행 중</h1>
 			<p class="lead"><code>--local</code>로 실행해서 LAN 주소와 QR이 없습니다. 폰에서 쓰려면 <code>--local</code> 없이 다시 실행하세요.</p>
 			<div class="link"><code>${escapeHtml(info.localUrl)}</code><button type="button" class="copy" data-url="${escapeHtml(info.localUrl)}">복사</button></div>
@@ -55,13 +61,18 @@ export async function renderConnectPage(info, { selfSigned } = {}) {
 			? `<h1>LAN 주소를 찾지 못했습니다</h1>
 			<p class="lead">PC가 Wi-Fi나 유선 네트워크에 연결돼 있는지 확인한 뒤 handide를 다시 실행하세요.</p>`
 			: `<h1>폰 카메라로 QR을 찍으세요</h1>
-			<p class="lead">폰과 이 PC가 같은 Wi-Fi에 있어야 합니다.</p>
+			<p class="lead">${!remote ? '폰과 이 PC가 같은 Wi-Fi에 있어야 합니다.' : targets[0].public ? '집 밖에서도 접속됩니다. 폰에 따로 설치할 것은 없습니다.' : '폰에서 Tailscale 앱이 켜져 있으면(이 PC와 같은 계정) 집 밖에서도 접속됩니다.'}</p>
 			${targets.length > 1 ? `<div class="tabs" role="tablist">${tabs}</div>` : ''}
 			${panels}
 			<ol class="steps">
-				${selfSigned ? `<li><b>처음 한 번 인증서 경고</b>가 뜹니다. 이 PC가 직접 만든 인증서라서입니다.<br>Android 크롬: <i>고급</i> → <i>계속</i> · iPhone Safari: <i>세부사항 보기</i> → <i>이 웹사이트 방문</i></li>` : ''}
+				${selfSigned && targets.some((t) => !t.remote) ? `<li><b>${remote ? 'LAN 주소로 처음 접속할 때' : '처음 한 번'} 인증서 경고</b>가 뜹니다. 이 PC가 직접 만든 인증서라서입니다.<br>Android 크롬: <i>고급</i> → <i>계속</i> · iPhone Safari: <i>세부사항 보기</i> → <i>이 웹사이트 방문</i></li>` : ''}
 				<li>VS Code가 폴더를 <b>신뢰</b>할지 물으면 신뢰를 누르세요. 그래야 모바일 탭과 에이전트 확장이 동작합니다.</li>
-				<li>연결이 안 되면 Windows 방화벽이 포트 ${info.port}를 막고 있는지 확인하세요.</li>
+				${!remote
+					? '<li><b>집 밖에서도 쓰려면</b> PC 터미널에서 <code>handide remote</code>를 한 번 실행하세요. 설치·로그인을 안내하고, 다음 실행부터 어디서나 되는 QR이 나옵니다. 계정 없이 바로 쓰려면 <code>handide --cloudflare</code>(실행마다 주소가 바뀜).</li>'
+					: targets[0].public
+						? '<li>이 주소는 인터넷에 공개되어 있고 링크 안의 토큰이 열쇠입니다. 링크가 새면 <code>handide --new-token</code>으로 바꾸세요.</li>'
+						: '<li>폰에 Tailscale 앱이 없다면 <a href="https://tailscale.com/download">tailscale.com/download</a>에서 설치하고 이 PC와 같은 계정으로 로그인해 켜 두세요.</li>'}
+				${targets.some((t) => !t.remote) ? `<li>LAN 주소로 연결이 안 되면 Windows 방화벽이 포트 ${info.port}를 막고 있는지 확인하세요.</li>` : ''}
 			</ol>
 			<p class="note">링크에 접속 토큰이 들어 있습니다. 비밀번호처럼 본인 기기에만 쓰세요.${selfSigned ? ` 인증서 SHA-1: <code>${escapeHtml(selfSigned)}</code>` : ''}</p>`;
 

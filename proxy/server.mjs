@@ -19,6 +19,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
+import { PHONE_APP_URL, setupRemote, startTailscale } from './tailscale.mjs';
+import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
 import QRCode from 'qrcode';
 
@@ -67,6 +69,7 @@ const LEGACY_DATA_DIR = join(ROOT, '.handide-data'); // before handide became a 
 const USAGE = `handide — your VS Code on your phone
 
 Usage:  handide [folder] [options]      (folder defaults to the current directory)
+        handide remote [--private]      one-time setup to use it away from home (Tailscale)
 
   (default)           open on the LAN with HTTPS and print a QR code + link for the phone
   --local             this PC only (http://localhost), no LAN, no certificate
@@ -75,6 +78,11 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
   --new-token         issue a new access token (old phone links stop working)
   --token <secret>    use this access token (default: kept in the handide home, or $HANDIDE_TOKEN)
   --editor <path>     editor CLI with serve-web (default: auto-detect VS Code)
+  --private           away-from-home link only for devices signed in to your tailnet
+                      (default: public Tailscale Funnel link, guarded by the access token)
+  --cloudflare        away-from-home link without any account (Cloudflare Quick Tunnel;
+                      a new random address on every run)
+  --no-remote         no away-from-home link, LAN only
   --cert <file> --key <file>  serve HTTPS with your own certificate (e.g. from "tailscale cert")
   --data-dir <path>   handide home (default ~/.handide, or $HANDIDE_HOME)
   --config <path>     layout config (default <handide home>/layer.config.json)
@@ -84,7 +92,9 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
 Phones need a secure context (https, or localhost): VS Code refuses to connect
 over plain http://<LAN-IP>. The default LAN mode takes care of that. Other ways:
   Android over USB:  handide --local, then adb reverse tcp:9000 tcp:9000 and open http://localhost:9000
-  Anywhere:          handide --local, then tailscale serve --bg 9000 → https://<machine>.<tailnet>.ts.net
+  Anywhere:          run "handide remote" once (Tailscale on this PC); handide then publishes
+                     a fixed https://<machine>.<tailnet>.ts.net by itself, nothing to install
+                     on the phone. No account at all: handide --cloudflare.
 `;
 
 function parseArgs(argv) {
@@ -102,6 +112,7 @@ function parseArgs(argv) {
 		config: undefined,
 		cert: undefined,
 		key: undefined,
+		remote: 'tailscale', // 'tailscale' | 'private' | 'cloudflare' | 'off'
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -119,6 +130,9 @@ function parseArgs(argv) {
 		else if (a === '--config') opts.config = resolve(next());
 		else if (a === '--cert') opts.cert = resolve(next());
 		else if (a === '--key') opts.key = resolve(next());
+		else if (a === '--private') opts.remote = 'private';
+		else if (a === '--cloudflare') opts.remote = 'cloudflare';
+		else if (a === '--no-remote' || a === '--no-tailscale') opts.remote = 'off';
 		else if (a === '-h' || a === '--help') {
 			console.log(USAGE);
 			process.exit(0);
@@ -448,7 +462,7 @@ function createProxy({ upstreamPort, log, tls, bridge }) {
  */
 async function printAccess(info, { selfSigned, log }) {
 	const page = `http://localhost:${info.port}${CONNECT_PATH}`;
-	if (info.local) {
+	if (info.local && !info.links.length) {
 		log(`  ${info.localUrl}`);
 		log(`  Android over USB: adb reverse tcp:${info.port} tcp:${info.port}, then open the link above on the phone.`);
 		log('  Drop --local to open it on the LAN with a QR code.');
@@ -464,19 +478,38 @@ async function printAccess(info, { selfSigned, log }) {
 ${qr}
 `);
 	log(`  Scan the QR code, or open: ${primary.url}`);
+	if (primary.remote && !primary.public) log('  Works from anywhere while the Tailscale app is on (same account as this PC).');
 	log(`  Large QR code in the PC browser: ${page}`);
-	for (const o of others) log(`  also: ${o.url}   (${o.label})`);
-	if (selfSigned) {
+	for (const o of others) log(`  also: ${o.url}   (${o.label}${primary.remote ? ', same Wi-Fi only' : ''})`);
+	if (selfSigned && info.links.some((l) => !l.remote)) {
 		log('  First visit shows a certificate warning (self-signed, made for this PC):');
 		log('    Android Chrome: Advanced → Proceed.  iPhone Safari: Show Details → visit this website.');
 		log(`    Certificate SHA-1: ${selfSigned}`);
 	}
-	log('  The link contains the access token: share it only with your own devices.');
+	log(primary.public
+		? '  This link is public and its access token is the key: keep it to yourself (handide --new-token replaces it).'
+		: '  The link contains the access token: share it only with your own devices.');
+}
+
+async function remoteCommand(log, tailnetOnly) {
+	log('Setting up access from anywhere (Tailscale). Safe to rerun; finished steps are skipped.');
+	if (!(await setupRemote({ log, private: tailnetOnly }))) process.exit(1);
+	if (!tailnetOnly) {
+		log('Done. Run "handide" as usual: its QR code works at home and outside, nothing to install on the phone.');
+		log('(Only your own devices instead: "handide remote --private", then start with "handide --private".)');
+		return;
+	}
+	const qr = await QRCode.toString(PHONE_APP_URL, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
+	process.stdout.write(`\n${qr}\n`);
+	log('Last step, on the phone: scan this QR code, install the Tailscale app,');
+	log('sign in with the same account and turn it on.');
+	log('Then run "handide --private": its QR code works at home and outside.');
 }
 
 async function main() {
-	const opts = parseArgs(process.argv.slice(2));
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
+	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
+	const opts = parseArgs(process.argv.slice(2));
 	await resolveHome(opts);
 	CONFIG_PATH = opts.config;
 	log(`folder: ${opts.folder}`);
@@ -520,10 +553,30 @@ async function main() {
 		else log(`server error: ${err.message}`);
 		process.exit(1); // the 'exit' handler stops the editor server
 	});
-	server.listen(opts.port, host, () => {
-		log(`mobile VS Code ready. Open on your phone:`);
-		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls }), selfSigned };
+	let stopRemote;
+	const announce = (remote) => {
+		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls, remote }), selfSigned };
 		printAccess(CONNECT.info, { selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
+	};
+	server.listen(opts.port, host, async () => {
+		log(`mobile VS Code ready. Open on your phone:`);
+		announce();
+		if (opts.remote === 'off') return;
+		// Tunnels can wait for a one-time approval in the browser, so the LAN QR code comes first.
+		const r = opts.remote === 'cloudflare'
+			? { ...(await startCloudflare({ port: opts.port, tls, dataDir: opts.dataDir, log })), public: true, changes: true }
+			: await startTailscale({ port: opts.port, tls, log, private: opts.remote === 'private' });
+		if (r.url) {
+			stopRemote = r.stop;
+			log(r.public
+				? `Reachable from anywhere, no app needed on the phone${r.changes ? ' (this address changes on every run)' : ''}. Open on your phone:`
+				: 'Reachable from anywhere by devices on your tailnet (Tailscale app on). Open on your phone:');
+			announce({ url: r.url, public: r.public });
+		} else if (r.reason === 'not installed') {
+			log('To use it away from home too: run "handide remote" once, or start with --cloudflare (no account).');
+		} else {
+			log(`Away-from-home link not available (${r.reason})${r.hint ? `: ${r.hint.trim()}` : ''}`);
+		}
 	});
 
 	// serve-web spawns its own server process; kill the whole tree so nothing is orphaned.
@@ -532,15 +585,20 @@ async function main() {
 		if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
 		else child.kill('SIGTERM');
 	};
-	const shutdown = () => {
+	const cleanup = () => {
 		killEditor();
+		stopRemote?.();
+		stopRemote = undefined;
+	};
+	const shutdown = () => {
+		cleanup();
 		server.close();
 		process.exit(0);
 	};
 	process.on('SIGINT', shutdown);
 	process.on('SIGTERM', shutdown);
 	process.on('SIGHUP', shutdown);
-	process.on('exit', killEditor);
+	process.on('exit', cleanup);
 }
 
 // Run when executed directly, including through the global `handide` link (a different
