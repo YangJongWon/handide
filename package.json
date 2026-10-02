@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Mobile layer for the real VS Code: serves your installed VS Code to a phone browser with a touch-first UI, without forking it.",
+  "description": "Your real VS Code on your phone: run handide in a folder, scan the QR code, and code from the phone with your own extensions and AI agents.",
+  "keywords": ["vscode", "mobile", "phone", "ide", "serve-web", "remote", "tailscale", "claude-code"],
+  "homepage": "https://github.com/YangJongWon/handide#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/YangJongWon/handide.git" },
+  "bugs": "https://github.com/YangJongWon/handide/issues",
   "type": "module",
   "bin": {
     "handide": "proxy/server.mjs"

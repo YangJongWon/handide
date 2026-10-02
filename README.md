@@ -1,78 +1,110 @@
+<div align="center">
+
 # handide
 
-**Your real VS Code, as a phone IDE.** Run `handide` in any folder, scan the QR code with your phone, and edit that folder from the phone: a full-screen editor, a floating menu button, a file drawer, a terminal drawer and full-screen AI chat. It is the VS Code installed on your PC (not a fork), so your extensions — Claude Code, Copilot and the rest — keep working.
+**Your real VS Code, on your phone.**
 
-<p>
-<img src="docs/editor.png" width="160" alt="Full-screen editor with the floating menu button">
-<img src="docs/menu.png" width="160" alt="Menu sheet">
-<img src="docs/drawer.png" width="160" alt="File drawer over the editor">
-<img src="docs/terminal-dock.png" width="160" alt="Terminal drawer under the editor">
-<img src="docs/ai.png" width="160" alt="AI chat full screen">
-</p>
+Run `handide` in any folder, scan the QR code, and code from your phone —<br>
+with your own VS Code, your extensions and your AI agents. Not a fork, not a cloud IDE.
 
-> **한국어 요약**
-> `code .`처럼 아무 폴더에서 `handide`를 실행하면 그 폴더가 열리고, 터미널에 QR 코드가 뜹니다. 폰 카메라로 찍으면 PC의 VS Code가 **폰용 IDE 레이아웃**으로 열립니다: 코드만 보이는 전체 화면 에디터, 드래그로 옮길 수 있는 플로팅 버튼(→ 메뉴 시트), 파일 드로어(메뉴 또는 왼쪽 가장자리 스와이프, 폴더 변경 가능), 하단 터미널 드로어(아래로 쓸면 닫힘), 오른쪽 AI 드로어(오른쪽 가장자리 스와이프). 화면은 코드 하나뿐이고 별도 탭 화면은 없습니다. 키보드가 올라왔을 때만 뜨는 보조키(Esc·Tab·Ctrl·방향키)와 한글 입력 시트.
-> 설치: `npm install -g github:YangJongWon/handide` → 프로젝트 폴더에서 `handide`. 터미널 QR이 잘 안 보이면 PC 브라우저에서 `http://localhost:9000/__handide/connect`를 열면 크게 보입니다. 처음 한 번 인증서 경고를 넘기고 폴더를 신뢰하면 됩니다.
-> **집 밖에서도:** `handide remote`를 한 번 실행하세요(Tailscale 설치 → 브라우저로 로그인·허용). 그다음부터 `handide`의 QR은 집에서도 밖에서도 그대로 되는 고정 주소 `https://<PC>.<tailnet>.ts.net`이고, 폰에는 아무것도 설치할 필요가 없습니다. 주소는 공개되고 링크 속 토큰이 열쇠입니다. 내 기기만 접속하게 하려면 `--private`(폰에 Tailscale 앱 필요), 계정 없이 바로 쓰려면 `handide --cloudflare`(실행마다 주소가 바뀜).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node.js 20+](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
+![VS Code 1.100+](https://img.shields.io/badge/VS%20Code-%E2%89%A51.100-007ACC?logo=visualstudiocode&logoColor=white)
+![Android · iPhone](https://img.shields.io/badge/phone-Android%20%C2%B7%20iPhone-555)
 
-## Install
+**English** · [한국어](README.ko.md)
 
-Requirements: **VS Code** 1.100+ (the host; Cursor and other forks have no `serve-web` but can be installed alongside), **Node.js** 20+.
+<br>
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/editor.png" width="170" alt="Full-screen editor"><br><sub><b>Code</b>, edge to edge</sub></td>
+    <td align="center"><img src="docs/menu.png" width="170" alt="Menu sheet"><br><sub><b>Menu</b> from the floating button</sub></td>
+    <td align="center"><img src="docs/drawer.png" width="170" alt="File drawer"><br><sub><b>Files</b> drawer</sub></td>
+    <td align="center"><img src="docs/terminal-dock.png" width="170" alt="Terminal drawer"><br><sub><b>Terminal</b> drawer</sub></td>
+    <td align="center"><img src="docs/ai.png" width="170" alt="AI chat"><br><sub><b>AI</b> chat</sub></td>
+  </tr>
+</table>
+
+</div>
+
+## Why handide
+
+- **It's your VS Code.** handide serves the VS Code installed on your PC (`code serve-web`) and adds a touch layer on top. Claude Code, Copilot and the rest of your extensions keep working.
+- **Made for a phone, not squeezed onto one.** One screen: the code. Files, terminal and AI slide in as drawers; accessory keys (Esc, Tab, Ctrl, arrows) appear only while the keyboard is up; Korean and other IMEs work through a native input sheet.
+- **Your files stay on your PC.** Nothing is uploaded anywhere. The phone is just a screen.
+- **Works away from home.** One command sets up a fixed HTTPS address that works on mobile data — nothing to install on the phone.
+
+## Quick start
+
+> Requires **VS Code** 1.100+ and **Node.js** 20+ on the PC.
+
+**1. Install**
 
 ```sh
 npm install -g github:YangJongWon/handide
 ```
 
-Or from a clone: `git clone https://github.com/YangJongWon/handide.git && cd handide && npm install && npm link`.
-
-## Run
+**2. Run it in a project folder**
 
 ```sh
 cd ~/my-project
-handide                 # opens the current folder
-handide ~/other/folder  # or any folder
+handide
 ```
 
-It prints a QR code and a link. Scan the QR code with the phone camera (same Wi-Fi), or open the link. If the QR code is hard to scan in your terminal, open **http://localhost:9000/__handide/connect** on the PC: it shows it large.
+**3. Scan the QR code** with the phone camera (same Wi-Fi). The terminal QR too small? Open **http://localhost:9000/__handide/connect** on the PC for a big one.
 
-First visit on the phone:
-1. A certificate warning: handide makes its own HTTPS certificate for your PC. Android Chrome → *Advanced* → *Proceed*; iPhone Safari → *Show Details* → *visit this website*.
-2. VS Code asks whether you trust the folder → **Trust**. Until then VS Code keeps extensions off, including handide's companion (layout, file opening) and agent extensions.
+On the first visit, accept the certificate warning once (handide makes its own HTTPS certificate for your PC) and tap **Trust** when VS Code asks about the folder.
 
-The link carries an access token that is kept in `~/.handide/token`, so a link saved on the phone keeps working across restarts; `handide --new-token` replaces it. Share it only with your own devices.
+<details>
+<summary>Certificate warning, step by step</summary>
 
-Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or localhost). Plain `http://192.168.x.x` would load the page but never connect; typing `http://` redirects to `https://`.
+- **Android Chrome**: *Advanced* → *Proceed to …*
+- **iPhone Safari**: *Show Details* → *visit this website* → *Visit Website*
 
-| Situation | How |
-|---|---|
-| Phone on the same Wi-Fi (default) | `handide` → scan the QR code |
-| Away from home | Run `handide remote` once: it installs [Tailscale](https://tailscale.com/download) on the PC and opens the browser to sign in and allow it. From then on `handide` publishes itself with Tailscale Funnel and its QR code is a fixed `https://<machine>.<tailnet>.ts.net/?tkn=<token>`: a valid certificate, the same link at home and outside, **nothing to install on the phone**. The address is public and the access token in the link is the key (`--new-token` replaces it). |
-| Away from home, own devices only | `handide remote --private`, Tailscale app on the phone (same account), then `handide --private`: the same address, but only devices in your tailnet reach it. |
-| Away from home, no account at all | `handide --cloudflare`: a Cloudflare Quick Tunnel (cloudflared is downloaded once if missing). Nothing to sign up for or install on the phone, but the address is random and changes on every run. |
-| LAN only | `handide --no-remote` |
-| Android phone over USB | `handide --local`, `adb reverse tcp:9000 tcp:9000`, open `http://localhost:9000/?tkn=<token>` |
-| Your own certificate | `handide --cert cert.pem --key key.pem` |
-| This PC only | `handide --local` |
+Why HTTPS at all: VS Code only connects from a browser *secure context* (HTTPS or localhost). Plain `http://192.168.x.x` would load the page and then never connect.
 
-`handide --help` lists all options.
+</details>
+
+## Use it away from home
+
+```sh
+handide remote   # once
+```
+
+It installs [Tailscale](https://tailscale.com) on the PC and opens the browser to sign in (Google, Microsoft, GitHub or Apple account). From then on, `handide` prints a **fixed** `https://<your-pc>.<tailnet>.ts.net` link that works at home and on mobile data, with a valid certificate and **nothing to install on the phone**. Bookmark it once.
+
+| Mode | Command | Phone needs | Address | Who can reach it |
+|---|---|---|---|---|
+| **Public link** (default) | `handide` | nothing | fixed | anyone with the link + token |
+| Own devices only | `handide --private` | Tailscale app, same account | fixed | only your tailnet devices |
+| No account at all | `handide --cloudflare` | nothing | new on every run | anyone with the link + token |
+| LAN only | `handide --no-remote` | same Wi-Fi | LAN IP | your network |
+
+> [!IMPORTANT]
+> The link contains an access token (kept in `~/.handide/token`) that unlocks your VS Code, including its terminal. Treat it like a password. `handide --new-token` replaces it; old links stop working.
 
 ## The phone layout
 
 ```
 ┌─────────────────────────────────┐
-│  editor, full screen            │   no app bar, no tabs: only code
-│                           (◉)   │   floating button → menu sheet (drag it anywhere)
-├──── ⌄ 터미널 ═══ ＋ 🗑 ──────────┤   terminal drawer (optional); files and AI drawers come from the sides
-└ ☰ Esc ⇥ Ctrl ← ↑ ↓ → ↶ 가 ⌄     ┘   accessory keys, only while the keyboard is up
+│  code, full screen              │   no tabs, no side bars: only the code
+│                           (◉)   │   floating button → menu (drag it anywhere)
+├──── ⌄ Terminal ═══ ＋ 🗑 ────────┤   terminal drawer from the bottom
+└ ☰ Esc ⇥ Ctrl ← ↑ ↓ → ↶ 가 ⌄     ┘   accessory keys, only while typing
 ```
 
-- **One screen**: the code. Everything else is a drawer over it (files from the left, AI from the right, terminal from the bottom); VS Code's own side bar or a layout it restores by itself is closed again.
-- **Menu** (floating button, or ☰ on the accessory keys): the active file (tap it for quick open), save, and tiles for Files, Terminal, AI, Find file, Command palette, Save, Undo and Redo. Swipe down or tap outside to close. Drag the button to move it; it snaps to the nearest side and remembers where it was, and a dot on it means unsaved changes.
-- **Files**: a drawer over the editor (menu, or swipe from the left edge; swipe left, tap outside or ✕ to close). Tap a file to open it. The folder button opens a folder picker to switch to any folder on the PC.
-- **Code**: the editor alone, edge to edge. Word wrap on, no minimap, autosave after 1.5 s.
-- **Terminal**: a drawer under the editor. Its grab bar has new terminal and kill buttons; swipe it down or tap ⌄ to close.
-- **AI**: VS Code's chat as a drawer from the right (menu, or swipe from the right edge). Its bar starts a new chat; › , a swipe right on the bar or a swipe from the left edge closes it.
-- **Accessory keys**: shown only while the soft keyboard is up. ☰ (menu), Esc, Tab, sticky Ctrl, arrows, undo, **가** (a native text box: any IME including Korean, inserted at the cursor), ⌄ hides the keyboard.
+| | How to open | How to close |
+|---|---|---|
+| **Menu** | tap the floating button (or ☰ on the keys) | swipe down, tap outside |
+| **Files** | menu → Files, or swipe from the left edge | swipe left, tap outside |
+| **Terminal** | menu → Terminal | swipe the bar down, or ⌄ |
+| **AI chat** | menu → AI, or swipe from the right edge | swipe right, or › |
+
+- The menu shows the active file (tap it for quick open) and tiles for Files, Terminal, AI, Find file, Command palette, Save, Undo and Redo. A dot on the floating button means unsaved changes.
+- The file drawer can switch to any folder on the PC (folder button).
+- **가** opens a native text box, so any IME (Korean, Japanese, …) types into the editor at the cursor.
+- Word wrap on, no minimap, autosave after 1.5 s.
 
 ## Customize
 
@@ -87,43 +119,109 @@ Why HTTPS: VS Code's connection needs a browser *secure context* (HTTPS or local
 }
 ```
 
-`menu` can also hold `find`; `accessoryKeys` also `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen` and `palette` (☰ is always first). `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files). Mobile VS Code settings live in `~/.handide/data/Machine/settings.json`.
+<details>
+<summary>All options</summary>
+
+- `menu` can also hold `find`.
+- `accessoryKeys` can also hold `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen` and `palette` (☰ is always first).
+- `breakpoint`: screens narrower than this get the phone layout.
+- `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files).
+- The phone's VS Code settings live in `~/.handide/data/Machine/settings.json`, separate from your desktop settings.
+
+</details>
+
+<details>
+<summary>Command-line options</summary>
+
+```
+handide [folder] [options]       folder defaults to the current directory
+handide remote [--private]       one-time setup for access away from home
+
+  --private          away-from-home link only for your tailnet devices
+  --cloudflare       away-from-home link without any account (new address each run)
+  --no-remote        LAN only
+  --local            this PC only (http://localhost), no LAN, no certificate
+  --port <n>         port (default 9000)
+  --new-token        issue a new access token
+  --editor <path>    editor CLI with serve-web (default: auto-detect VS Code)
+  --cert/--key       your own HTTPS certificate
+  --reset-profile    restore handide's default mobile settings
+```
+
+`handide --help` lists everything. Android over USB: `handide --local`, then `adb reverse tcp:9000 tcp:9000` and open `http://localhost:9000/?tkn=<token>` on the phone.
+
+</details>
 
 ## How it works
 
-```
-phone ──https──> handide ──> code serve-web (127.0.0.1 only) ──> your VS Code
-                   ├─ injects the layer: floating button, menu, drawers, keys (layer/)
-                   ├─ command bridge ⇄ companion extension (extension/): official VS Code
-                   │    commands with arguments (open file, open folder, switch view)
-                   └─ mobile profile + certificate + token in ~/.handide
+```mermaid
+flowchart LR
+  phone["📱 Phone browser"] -- "HTTPS (LAN, Tailscale or Cloudflare)" --> proxy
+  subgraph pc["Your PC"]
+    proxy["handide proxy<br/>injects the touch layer"] --> serve["code serve-web<br/>127.0.0.1 only"]
+    serve --> vscode["Your VS Code<br/>+ extensions"]
+    proxy <-. "command bridge" .-> ext["companion extension"]
+  end
 ```
 
-`code serve-web` is VS Code's own "run in a browser" feature; handide never modifies VS Code or your desktop settings. Everything that depends on VS Code internals is listed in `layer/selectors.json`.
+- `code serve-web` is VS Code's own "run in a browser" feature. handide never modifies VS Code or your desktop settings; the phone gets its own profile in `~/.handide`.
+- The touch layer (`layer/`) is plain JS and CSS injected into the page. Every dependency on VS Code's DOM is listed in `layer/selectors.json`, so an update that moves something is a one-line fix.
+- The companion extension (`extension/`) runs official VS Code commands for the layer (open a file, switch folder, show a view).
 
-## Claude Code skill
+## FAQ
+
+<details>
+<summary><b>Does it work with Cursor or other VS Code forks?</b></summary>
+
+The host has to be VS Code, because forks don't ship `serve-web`. You can keep using Cursor on the desktop and install VS Code next to it for handide.
+
+</details>
+
+<details>
+<summary><b>The phone shows "Restricted Mode" or the layout looks like desktop VS Code.</b></summary>
+
+Tap **Trust** for the folder. Until then VS Code keeps all extensions off, including handide's companion.
+
+</details>
+
+<details>
+<summary><b>The phone can't connect on Wi-Fi.</b></summary>
+
+Check that the phone and PC are on the same network and that the firewall allows port 9000. Or skip the LAN entirely: `handide remote` once, then use the Tailscale link.
+
+</details>
+
+<details>
+<summary><b>Is the public link safe?</b></summary>
+
+Without the token in the link, VS Code answers 403 and the connect page is only served to the PC itself. The token is long and random, so it can't be guessed, but anyone who *has* the link can use your PC's terminal. Keep it private, or use `--private` so only your own Tailscale devices can reach it.
+
+</details>
+
+## For contributors
+
+```sh
+git clone https://github.com/YangJongWon/handide.git && cd handide
+npm install && npm link
+npm run check                  # Pixel 7 + iPhone 14 emulation, 18 checks each
+npm run check -- --android     # real Chrome on an emulator or USB phone
+```
+
+Each check run uses a private data dir and sample workspace under `check-output/` and writes a screenshot per step. `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` retakes the screenshots above.
 
 The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open the repo in Claude Code and ask it to set up handide, re-verify it after a VS Code update, fix what an update broke, or change your layout.
 
-## Verify
+<details>
+<summary>Verification status and known limitations</summary>
 
-```sh
-npm run check                     # Pixel 7 + iPhone 14 emulation (18 checks each)
-npm run check -- --mode builtin
-npm run check -- --android        # real Chrome on an emulator or USB phone: real taps, swipes, soft keyboard
-```
+Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 36/36 (companion) and 34/34 (builtin); used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
 
-Each run uses a private data dir and sample workspace under `check-output/`, and writes `check-output/report.json` plus a screenshot per step.
-
-Last verified: VS Code 1.138.0 (web server 1.139+) on Windows — emulated Pixel 7 / iPhone 14: 36/36 (companion) and 34/34 (builtin). Emulation has no soft keyboard, so the check shrinks the viewport the way one does. The full-screen layout has not yet been run on the Android emulator or a physical phone.
-
-## Known limitations
-
-- Not yet tested on a physical iPhone or Android phone.
 - The folder must be trusted once per browser and folder.
-- A few layout commands the companion uses are internal to VS Code; `npm run compat` flags untested versions and `npm run check` confirms them.
+- A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.
 - `serve-web` can download a newer VS Code web server than your desktop version, so the phone may run a newer VS Code than the one you tested with.
+
+</details>
 
 ## License
 
-MIT
+[MIT](LICENSE)
