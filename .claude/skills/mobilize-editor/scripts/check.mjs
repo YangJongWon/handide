@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { OUT, ROOT, SAMPLE, killTree, loadPlaywright, startProxy } from './lib/proxy.mjs';
 import { grantTrust } from './lib/trust.mjs';
+import { removeImportedExtensions } from '../../../../proxy/extensions.mjs';
 
 const TYPED = '// 모바일 입력 확인';
 const { chromium, devices: DEVICES, _android: android } = await loadPlaywright();
@@ -72,7 +73,13 @@ async function checkDevice(target, ctx) {
 		await tapAt(page, b.x + (position ? position.x : b.width / 2), b.y + (position ? position.y : b.height / 2));
 	};
 	const errors = [];
-	page.on('pageerror', (e) => errors.push(e.message));
+	// Only the layer's own errors fail the check; the user's extensions can throw too.
+	const otherErrors = [];
+	page.on('pageerror', (e) => {
+		const stack = e.stack ?? '';
+		if (/__handide|mobile\.js/.test(stack) || !/https?:\/\//.test(stack)) errors.push(e.message);
+		else otherErrors.push(`${e.message} @ ${(/https?:\/\/[^\s)]+/.exec(stack)?.[0] ?? '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80)}`);
+	});
 	page.on('console', (m) => m.type() === 'error' && /handide/.test(m.text()) && errors.push(m.text()));
 	const sel = JSON.parse(readFileSync(join(ROOT, 'layer/selectors.json'), 'utf8'));
 	let vw = 0; // measured after load
@@ -246,7 +253,46 @@ async function checkDevice(target, ctx) {
 			}
 			return { ok: ok && hasContent, detail: describe(parts) + (hasContent ? '' : ', expected view missing') };
 		});
-		if (name === 'view:ai-drawer' && !builtinMode) await step('voice', voiceStep);
+		if (name === 'view:ai-drawer' && !builtinMode) {
+			await step('agents', agentsStep);
+			await step('voice', voiceStep);
+		}
+	}
+
+	// The AI bar's title lists the secondary side bar's agents (VS Code's tabs for them
+	// are hidden); picking one shows it. Ends on VS Code's Chat for the voice step.
+	async function agentsStep() {
+		await tap('#hd-viewbar [data-act="agents"]');
+		await page.waitForSelector('#hd-agents:not([hidden]) .hd-agent', { timeout: 10_000 }).catch(() => {});
+		const names = await page.$$eval('#hd-agents .hd-agent > span', (els) => els.map((e) => e.textContent.trim()));
+		if (!names.includes('Chat')) return { ok: false, detail: `agent list: ${names.join(', ') || 'empty'}` };
+		// An extension from the primary side bar or the panel, when the machine has one: its
+		// views are moved into the secondary side bar and shown there.
+		let moved = 'no primary side bar extension installed';
+		const movable = page.locator('#hd-agents [data-moved]').first();
+		if (await movable.count()) {
+			const want = (await movable.locator('span').first().textContent()).trim();
+			await tap(`#hd-agents [data-agent="${await movable.getAttribute('data-agent')}"]`);
+			await page.waitForTimeout(3000);
+			const parts = Object.keys(await shownParts());
+			const label = await page.evaluate((s) => document.querySelector(s)?.textContent.trim(), sel.partTitleLabels.auxiliarybar);
+			const panes = await page.evaluate(() => [...document.querySelectorAll('.part.auxiliarybar .pane-header, .part.auxiliarybar .title-label')].map((e) => e.textContent.trim()).join(' | '));
+			if (parts.join() !== 'auxiliarybar' || !panes.toLowerCase().includes(want.toLowerCase().split(' ')[0])) {
+				return { ok: false, detail: `picked "${want}": parts ${parts.join(', ')}; side bar shows "${label}" / ${panes}` };
+			}
+			moved = `"${want}" shown`;
+			await tap('#hd-viewbar [data-act="agents"]');
+			await page.waitForSelector('#hd-agents:not([hidden]) .hd-agent', { timeout: 10_000 }).catch(() => {});
+		}
+		await tap('#hd-agents [data-agent="workbench.action.chat.open"]');
+		await page.waitForTimeout(2500);
+		const shown = await page.evaluate((s) => document.querySelector(s)?.textContent.trim(), sel.partTitleLabels.auxiliarybar);
+		const bar = (await page.locator('#hd-viewbar .hd-agent-name').textContent())?.trim();
+		const hasInput = (await page.locator(sel.chatInput).count()) > 0;
+		return {
+			ok: /chat/i.test(shown ?? '') && bar === shown && hasInput,
+			detail: `${names.length} listed; ${moved}; then showing "${shown}", bar "${bar}"${hasInput ? '' : ', no chat input'}`,
+		};
 	}
 
 	// Voice input in the AI bar. No microphone here: a stand-in recognizer "hears" one
@@ -433,7 +479,10 @@ async function checkDevice(target, ctx) {
 		});
 	}
 
-	await step('no-layer-errors', async () => ({ ok: errors.length === 0, detail: errors.slice(0, 2).join(' | ').slice(0, 160) }));
+	await step('no-layer-errors', async () => ({
+		ok: errors.length === 0,
+		detail: (errors.length ? errors.slice(0, 2).join(' | ') : otherErrors.length ? `not the layer: ${[...new Set(otherErrors)].slice(0, 2).join(' | ')}` : '').slice(0, 200),
+	}));
 
 	await close();
 	return results;
@@ -528,7 +577,9 @@ async function checkAndroid(serial, ctx) {
 
 const opts = parseArgs(process.argv.slice(2));
 // Fresh editor state every run: leftover unsaved buffers from an earlier run would
-// be restored and can block autosave.
+// be restored and can block autosave. The linked desktop extensions are unlinked first:
+// they point into the desktop editor's own folders.
+await removeImportedExtensions(join(OUT, 'data', 'extensions'));
 for (const dir of ['workspace', 'data']) rmSync(join(OUT, dir), { recursive: true, force: true });
 for (const d of opts.devices) rmSync(join(OUT, d.replace(/\W+/g, '-')), { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });

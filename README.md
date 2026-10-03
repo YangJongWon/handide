@@ -30,7 +30,7 @@ with your own VS Code, your extensions and your AI agents. Not a fork, not a clo
 
 ## Why handide
 
-- **It's your VS Code.** handide serves the VS Code installed on your PC (`code serve-web`) and adds a touch layer on top. Claude Code, Copilot and the rest of your extensions keep working.
+- **It's your VS Code.** handide serves the VS Code installed on your PC (`code serve-web`) and adds a touch layer on top. The extensions you installed in desktop VS Code and Cursor (Claude Code, Codex, …) are linked in, not copied.
 - **Made for a phone, not squeezed onto one.** One screen: the code. Files, terminal and AI slide in as drawers; accessory keys (Esc, Tab, Ctrl, arrows) appear only while the keyboard is up; Korean and other IMEs work through a native input sheet.
 - **Your files stay on your PC.** Nothing is uploaded anywhere. The phone is just a screen.
 - **Works away from home.** One command sets up a fixed HTTPS address that works on mobile data — nothing to install on the phone.
@@ -99,12 +99,13 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 | **Menu** | tap the floating button (or ☰ on the keys) | swipe down, tap outside |
 | **Files** | menu → Files, or swipe from the left edge | swipe left, tap outside |
 | **Terminal** | menu → Terminal | swipe the bar down, or ⌄ |
-| **AI chat** | menu → AI, or swipe from the right edge | swipe right, or › |
+| **AI · extensions** | menu → AI·확장, or swipe from the right edge | swipe right, or › |
 
 - The menu shows the active file (tap it for quick open) and tiles for Files, Terminal, AI, Find file, Command palette, Save, Undo and Redo. A dot on the floating button means unsaved changes.
 - The file drawer can switch to any folder on the PC (folder button).
 - **가** opens a native text box, so any IME (Korean, Japanese, …) types into the editor at the cursor.
-- **🎤 in the AI bar**: talk to the agent. Speech is recognized by the phone's browser (Chrome: Google, Safari: Apple) and typed into the chat input; tap the mic again or the transcript to stop. The language follows the phone (`"voiceLang": "en-US"` in the config overrides it).
+- **The AI·extensions drawer shows any extension's views**: agents (Claude Code, Codex, VS Code's Chat…) and extensions that normally sit in the primary side bar or the panel. Tap the name in the bar to pick one; its own buttons (new chat, history, refresh) stay next to it. VS Code has no full-screen primary side bar, so those views are moved into the secondary side bar while shown, and moved back when you pick another.
+- **🎤 in the AI bar**: talk to the agent. Speech is recognized by the phone's browser (Chrome: Google, Safari: Apple) and typed into VS Code's chat input; for extension agents the text is copied, to paste into their input. Tap the mic again or the transcript to stop. The language follows the phone (`"voiceLang": "en-US"` in the config overrides it).
 - Word wrap on, no minimap, autosave after 1.5 s.
 
 ## Customize
@@ -127,6 +128,7 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 - `accessoryKeys` can also hold `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen` and `palette` (☰ is always first).
 - `breakpoint`: screens narrower than this get the phone layout.
 - `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files).
+- `importExtensions: false` stops linking the desktop extensions (from `~/.vscode/extensions` and `~/.cursor/extensions`, newest version of each). Linked extensions are pinned: they are updated by the desktop editor, never by handide.
 - The phone's VS Code settings live in `~/.handide/data/Machine/settings.json`, separate from your desktop settings.
 
 </details>
@@ -204,7 +206,7 @@ Without the token in the link, VS Code answers 403 and the connect page is only 
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 emulation, 19 checks each
+npm run check                  # Pixel 7 + iPhone 14 emulation, 20 checks each
 npm run check -- --android     # real Chrome on an emulator or USB phone
 ```
 
@@ -215,7 +217,7 @@ The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open t
 <details>
 <summary>Verification status and known limitations</summary>
 
-Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 38/38 (companion); builtin mode has an intermittent layout failure on iPhone 14; used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
+Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 40/40 (companion); builtin mode has an intermittent layout failure on iPhone 14; used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
 
 - The folder must be trusted once per browser and folder.
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.

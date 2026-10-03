@@ -22,6 +22,7 @@ import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
+import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -211,9 +212,10 @@ export async function layerKeybindings() {
  *  - data/Machine/settings.json ("Remote" settings) → the mobile settings.
  *    Copied once, then it is the user's, unless --reset-profile.
  *  - installed extensions → the companion extension contributes the layer keybindings
- *    plus the user's extras from profile/keybindings.json.
+ *    plus the user's extras from profile/keybindings.json; the desktop editors'
+ *    extensions are linked in (proxy/extensions.mjs) unless importExtensions is false.
  */
-async function seedProfile(dataDir, reset) {
+async function seedProfile(dataDir, reset, log) {
 	const machineDir = join(dataDir, 'data', 'Machine');
 	await mkdir(machineDir, { recursive: true });
 	const settings = join(machineDir, 'settings.json');
@@ -224,6 +226,15 @@ async function seedProfile(dataDir, reset) {
 	const config = parseJsonc(await readFile(CONFIG_PATH, 'utf8'));
 	if (config.companion?.mode === 'builtin') await uninstallCompanion(dataDir);
 	else await installCompanion(dataDir);
+
+	const extDir = join(dataDir, 'extensions');
+	if (config.importExtensions === false) return removeImportedExtensions(extDir);
+	try {
+		const imported = await importDesktopExtensions(extDir, { skipIds: [await companionId()] });
+		for (const [source, ids] of Object.entries(imported)) log(`extensions from ${source}: ${ids.join(', ')}`);
+	} catch (err) {
+		log(`could not bring in desktop extensions: ${err.message}`);
+	}
 }
 
 async function companionId() {
@@ -522,7 +533,7 @@ async function main() {
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
 		log(`editor: ${cli} (${editorVersion(cli)})`);
-		await seedProfile(opts.dataDir, opts.resetProfile);
+		await seedProfile(opts.dataDir, opts.resetProfile, log);
 		upstreamPort = await freePort();
 		const started = startServeWeb({
 			cli,

@@ -30,7 +30,7 @@
 
 ## 특징
 
-- **내 VS Code 그대로.** PC에 설치된 VS Code(`code serve-web`)를 그대로 띄우고 그 위에 터치용 레이어만 얹습니다. Claude Code, Copilot 등 쓰던 확장이 그대로 동작합니다.
+- **내 VS Code 그대로.** PC에 설치된 VS Code(`code serve-web`)를 그대로 띄우고 그 위에 터치용 레이어만 얹습니다. 데스크톱 VS Code와 Cursor에 설치한 확장(Claude Code, Codex 등)을 복사하지 않고 연결해 그대로 씁니다.
 - **폰에 맞춰 다시 설계한 화면.** 화면은 코드 하나. 파일·터미널·AI는 드로어로 열립니다. 보조키(Esc·Tab·Ctrl·방향키)는 키보드가 올라왔을 때만 뜨고, 한글은 네이티브 입력 시트로 문제없이 입력됩니다.
 - **파일은 PC에만.** 어디에도 업로드하지 않습니다. 폰은 화면일 뿐입니다.
 - **집 밖에서도.** 명령 한 번이면 LTE에서도 되는 고정 HTTPS 주소가 생깁니다. 폰에는 아무것도 설치하지 않습니다.
@@ -99,12 +99,13 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 | **메뉴** | 플로팅 버튼 (입력 중엔 보조키 ☰) | 아래로 쓸기, 바깥 탭 |
 | **파일** | 메뉴 → 파일, 또는 왼쪽 가장자리에서 스와이프 | 왼쪽으로 쓸기, 바깥 탭 |
 | **터미널** | 메뉴 → 터미널 | 바를 아래로 쓸기, 또는 ⌄ |
-| **AI 채팅** | 메뉴 → AI, 또는 오른쪽 가장자리에서 스와이프 | 오른쪽으로 쓸기, 또는 › |
+| **AI·확장** | 메뉴 → AI·확장, 또는 오른쪽 가장자리에서 스와이프 | 오른쪽으로 쓸기, 또는 › |
 
 - 메뉴 상단에는 현재 파일(탭하면 빠른 열기), 아래에는 파일·터미널·AI·파일 찾기·명령 팔레트·저장·실행 취소·다시 실행이 있습니다. 플로팅 버튼의 점은 저장 안 된 변경이 있다는 뜻입니다.
 - 파일 드로어의 폴더 버튼으로 PC의 다른 폴더로 바꿀 수 있습니다.
 - **가** 키는 네이티브 입력창을 열어, 한글 등 어떤 IME로 입력해도 커서 위치에 들어갑니다.
-- **AI 바의 🎤**: 에이전트에게 말로 입력합니다. 폰 브라우저가 음성을 인식해(크롬은 Google, Safari는 Apple) 채팅 입력창에 넣어 줍니다. 마이크를 다시 누르거나 자막을 탭하면 멈춥니다. 언어는 폰 설정을 따르고, 설정 파일의 `"voiceLang": "en-US"`로 바꿀 수 있습니다.
+- **AI·확장 드로어에서 모든 확장의 화면을 엽니다**: 에이전트(Claude Code, Codex, VS Code Chat 등)뿐 아니라 원래 기본 사이드바나 패널에 있는 확장도 됩니다. 바의 이름을 탭해 고르고, 확장 자체 버튼(새 채팅, 기록, 새로고침)은 옆에 그대로 있습니다. VS Code에는 기본 사이드바 전체 화면이 없어서, 그런 확장은 보는 동안 보조 사이드바로 옮겼다가 다른 걸 고르면 제자리로 돌려놓습니다.
+- **AI 바의 🎤**: 에이전트에게 말로 입력합니다. 폰 브라우저가 음성을 인식해(크롬은 Google, Safari는 Apple) VS Code 채팅 입력창에 넣어 줍니다. 확장 에이전트는 텍스트를 복사해 주니 입력창에 붙여넣으세요. 마이크를 다시 누르거나 자막을 탭하면 멈춥니다. 언어는 폰 설정을 따르고, 설정 파일의 `"voiceLang": "en-US"`로 바꿀 수 있습니다.
 - 자동 줄바꿈, 미니맵 없음, 1.5초 뒤 자동 저장.
 
 ## 설정 바꾸기
@@ -127,6 +128,7 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 - `accessoryKeys`에는 `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen`, `palette`도 넣을 수 있습니다(☰는 항상 맨 앞).
 - `breakpoint`: 이보다 좁은 화면에서 폰 레이아웃이 적용됩니다.
 - `companion.mode: "builtin"`: 동반 확장 없이 실행합니다(VS Code 기본 단축키 사용, 뷰가 폰 레이아웃으로 열리지 않고 드로어에서 파일을 열 수 없음).
+- `importExtensions: false`: 데스크톱 확장(`~/.vscode/extensions`, `~/.cursor/extensions`의 확장별 최신 버전) 연결을 끕니다. 연결된 확장은 고정(pinned)되어 handide가 아니라 데스크톱 에디터에서만 업데이트됩니다.
 - 폰용 VS Code 설정은 데스크톱 설정과 따로 `~/.handide/data/Machine/settings.json`에 있습니다.
 
 </details>
@@ -204,7 +206,7 @@ flowchart LR
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 에뮬레이션, 기기당 19개 검사
+npm run check                  # Pixel 7 + iPhone 14 에뮬레이션, 기기당 20개 검사
 npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실제 크롬
 ```
 
@@ -215,7 +217,7 @@ npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실�
 <details>
 <summary>검증 상태와 알려진 제한</summary>
 
-마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 38/38(동반 확장). builtin 모드는 iPhone 14에서 레이아웃 검사가 간헐적으로 실패합니다. 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
+마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 40/40(동반 확장). builtin 모드는 iPhone 14에서 레이아웃 검사가 간헐적으로 실패합니다. 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
 
 - 폴더 신뢰는 브라우저·폴더마다 한 번 필요합니다.
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.

@@ -56,6 +56,13 @@
           "title": "Git",
           "icon": "media/git.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "handide-ext",
+          "title": "Extension",
+          "icon": "media/extensions.svg"
+        }
       ]
     },
     "views": {
@@ -77,6 +84,13 @@
         {
           "id": "handide.git.home",
           "name": "Git",
+          "when": "false"
+        }
+      ],
+      "handide-ext": [
+        {
+          "id": "handide.ext.home",
+          "name": "Extension",
           "when": "false"
         }
       ]

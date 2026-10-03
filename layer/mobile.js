@@ -43,7 +43,7 @@ const KEY_DEFS = {
 const MENU_DEFS = {
 	files: { icon: 'files', label: '파일' },
 	terminal: { icon: 'terminal', label: '터미널', view: 'terminalDock' },
-	ai: { icon: 'sparkle', label: 'AI', view: 'ai' },
+	ai: { icon: 'extensions', label: 'AI·확장', view: 'ai' },
 	quickOpen: { icon: 'go-to-file', label: '파일 찾기', action: 'quickOpen' },
 	palette: { icon: 'terminal-cmd', label: '명령', action: 'commandPalette' },
 	save: { icon: 'save', label: '저장', action: 'save' },
@@ -61,10 +61,11 @@ const VIEW_PARTS = {
 };
 
 // The bar laid over the title strip of a drawer's part: [icon, label, action].
-// `side` is where the drawer comes from, and so which way it closes.
+// `side` is where the drawer comes from, and so which way it closes. `agents`: the
+// title picks which extension's views the drawer shows; their own title buttons stay visible.
 const VIEW_BARS = {
 	terminalDock: { part: 'panel', title: '터미널', side: 'bottom', actions: [['add', '새 터미널', 'newTerminal'], ['trash', '터미널 종료', 'killTerminal']] },
-	ai: { part: 'auxiliarybar', title: 'AI', side: 'right', actions: [['mic', '음성 입력', 'voice'], ['add', '새 채팅', 'newChat']] },
+	ai: { part: 'auxiliarybar', title: 'AI·확장', side: 'right', agents: true, actions: [['mic', '음성 입력', 'voice']] },
 };
 // Bar actions the layer handles itself instead of a VS Code command.
 const LAYER_ACTIONS = { voice: () => toggleVoice() };
@@ -744,8 +745,9 @@ function installFab(fab) {
 // tabs and buttons there are covered by a phone header. Sized from the DOM only.
 function renderViewbar() {
 	const bar = document.getElementById('hd-viewbar');
-	if (!bar || state.viewbarFor === state.view) return;
-	state.viewbarFor = state.view;
+	const key = `${state.view}:${state.bridge}`;
+	if (!bar || state.viewbarFor === key) return;
+	state.viewbarFor = key;
 	const def = VIEW_BARS[state.view];
 	bar.replaceChildren();
 	bar.classList.toggle('hd-grab', def?.side === 'bottom');
@@ -753,12 +755,57 @@ function renderViewbar() {
 	if (def.side === 'bottom') bar.append(el('span', { class: 'hd-grip', 'aria-hidden': 'true' }));
 	bar.append(
 		button({ class: 'hd-icon-btn', 'aria-label': '닫기', 'data-act': 'back' }, icon(def.side === 'bottom' ? 'chevron-down' : 'chevron-right'), () => showView('editor')),
-		el('span', { class: 'hd-viewbar-title' }, def.title),
+		def.agents && state.bridge
+			? button({ class: 'hd-viewbar-title hd-agent-btn', 'aria-label': '에이전트 선택', 'data-act': 'agents' }, [el('span', { class: 'hd-agent-name' }, partLabel(def) || def.title), icon('chevron-down')], toggleAgents)
+			: el('span', { class: 'hd-viewbar-title' }, def.title),
 		...def.actions.map(([iconName, label, action]) =>
 			button({ class: 'hd-icon-btn', 'aria-label': label, 'data-act': action }, icon(iconName), () => (LAYER_ACTIONS[action] ? LAYER_ACTIONS[action]() : runAction(action))),
 		),
 	);
 	renderVoice();
+}
+
+function partLabel(def) {
+	const sel = state.selectors.partTitleLabels?.[def.part];
+	return (sel && document.querySelector(sel)?.textContent.trim()) || '';
+}
+
+// ---------------------------------------------------------------- agent picker (AI view)
+
+// VS Code's activity bar and side bar tabs are hidden on the phone; this list of every
+// extension's views (Claude Code, Codex, Chat, and primary side bar / panel ones) replaces them.
+async function toggleAgents() {
+	const list = document.getElementById('hd-agents');
+	if (!list.hidden) return closeAgents();
+	const items = (await bridgeCall('handide.extensionViews')) || [];
+	if (!items.length) return toast('확장 목록을 가져오지 못했습니다.');
+	const current = partLabel(VIEW_BARS.ai).toLowerCase();
+	list.replaceChildren(
+		...items.map((a) =>
+			button(
+				{ class: `hd-agent${current.includes(a.title.toLowerCase()) ? ' active' : ''}`, 'data-agent': a.id, 'data-moved': a.views ? '' : null },
+				[el('span', {}, a.title), a.extension && a.extension !== a.title ? el('small', {}, a.extension) : null],
+				() => {
+					closeAgents();
+					bridgeCall('handide.view', { view: 'ai', agent: a.id });
+				},
+			),
+		),
+	);
+	const bar = document.getElementById('hd-viewbar').getBoundingClientRect();
+	list.style.top = `${bar.bottom}px`;
+	list.style.left = `${bar.left}px`;
+	list.hidden = false;
+	setTimeout(() => document.addEventListener('pointerdown', closeAgentsOutside, true));
+}
+
+function closeAgentsOutside(e) {
+	if (!e.target.closest('#hd-agents, [data-act="agents"]')) closeAgents();
+}
+
+function closeAgents() {
+	document.getElementById('hd-agents').hidden = true;
+	document.removeEventListener('pointerdown', closeAgentsOutside, true);
 }
 
 // ---------------------------------------------------------------- voice input (AI chat)
@@ -816,7 +863,14 @@ function stopVoice() {
 function insertVoiceText(text) {
 	if (!text) return;
 	const target = document.querySelector(state.selectors.chatInput);
-	if (!target) return toast('채팅 입력창을 찾지 못했습니다.');
+	if (!target) {
+		// Extension agents draw their input inside a webview the layer cannot type into.
+		navigator.clipboard?.writeText(text).then(
+			() => toast(`복사됨: 입력창을 길게 눌러 붙여넣으세요\n${text}`),
+			() => toast(text),
+		);
+		return;
+	}
 	const before = target.editContext ? target.editContext.text.slice(0, target.editContext.selectionStart) : target.value?.slice(0, target.selectionStart) ?? '';
 	pasteInto(target, before && !/\s$/.test(before) ? ` ${text}` : text);
 }
@@ -840,11 +894,19 @@ function placeViewbar() {
 		bar.hidden = true;
 		return;
 	}
+	let width = r.width;
+	if (def.agents) {
+		const actions = document.querySelector(state.selectors.partTitleActions?.[def.part])?.getBoundingClientRect();
+		if (actions?.width > 0) width = Math.max(actions.left - r.left, r.width / 2);
+		const name = bar.querySelector('.hd-agent-name');
+		const label = partLabel(def);
+		if (name && label && name.textContent !== label) name.textContent = label;
+	}
 	const moved = bar.hidden || bar.style.top !== `${r.top}px`;
 	bar.hidden = false;
 	bar.style.top = `${r.top}px`;
 	bar.style.left = `${r.left}px`;
-	bar.style.width = `${r.width}px`;
+	bar.style.width = `${width}px`;
 	bar.style.height = `${r.height}px`;
 	if (moved && def.side === 'bottom') placeFab();
 }
@@ -1003,9 +1065,10 @@ function build() {
 	for (const b of sheet.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.preventDefault());
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
 	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
+	const agents = el('div', { id: 'hd-agents', hidden: true, role: 'menu', 'aria-label': '에이전트' });
 	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(safe, viewbar, root, fab, menuScrim, menu, scrim, drawer, sheet, toastEl, voicePill);
+	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, toastEl, voicePill);
 	renderDrawer();
 }
 
@@ -1034,7 +1097,10 @@ function render() {
 		b.classList.toggle('active', !!(def?.sticky && state.sticky[def.sticky]));
 	}
 	renderViewbar();
-	if (state.view !== 'ai') stopVoice();
+	if (state.view !== 'ai') {
+		stopVoice();
+		closeAgents();
+	}
 	requestAnimationFrame(relayout);
 }
 

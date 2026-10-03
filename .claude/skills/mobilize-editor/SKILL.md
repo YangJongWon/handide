@@ -31,7 +31,7 @@ Scripts (all in `scripts/`, run from the repo root):
 | Command | Does |
 |---|---|
 | `npm run compat [-- --editor <cli>]` | static install check → JSON verdict; exit 0 compatible, 2 uncertain, 3 incompatible |
-| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** handide (`--local`, fresh data dir + sample workspace under `check-output/`), runs 19 checks per emulated device through the UI (taps, CDP swipes), writes `check-output/report.json` + a screenshot per step |
+| `npm run check [-- --devices "Pixel 7,iPhone 14"] [-- --mode builtin]` | starts a **private** handide (`--local`, fresh data dir + sample workspace under `check-output/`), runs 20 checks per emulated device through the UI (taps, CDP swipes), writes `check-output/report.json` + a screenshot per step |
 | `npm run check -- --android [serial]` | same checks in **real Chrome** on an emulator or USB phone: `adb input tap/swipe`, real soft keyboard; sets `adb reverse` itself |
 | `node .claude/skills/mobilize-editor/scripts/inspect.mjs [--tab <view>] [--find "text"] [--eval "js"]` | phone-viewport DOM inspector for repairing selectors |
 
@@ -69,6 +69,7 @@ Scripts (all in `scripts/`, run from the repo root):
 | `view:*` passes but the ← / ⌄ bar is missing or misplaced | a part's title strip was renamed | `partTitles` in `selectors.json`, `placeViewbar()` |
 | `bars-layout` | VS Code stopped sizing from `window.innerHeight` / `visualViewport.height`, the body offset changed, or the floating button left the screen | `installViewportShim()` / `relayout()` / `fabBand()` in `mobile.js`, `body { padding-top }` in `mobile.css` |
 | `theme-sync` | theme variables moved | `inspect.mjs --eval "getComputedStyle(document.querySelector('.monaco-workbench')).getPropertyValue('--vscode-foreground')"`; update `THEME_VARS` |
+| `agents` | the AI bar's extension list lacks Chat, a primary side bar extension did not show in the secondary side bar, or picking Chat did not show it | `extensionViews()` / `borrowViews()` / `showView` in `extension/extension.js` (`vscode.moveViews` into the `handide-ext` container); `partTitleLabels` / `partTitleActions` in `selectors.json` (the side bar title moved) |
 | `voice` | the AI bar's 🎤 did not show listening, or the phrase from the stand-in recognizer missed the chat input | `toggleVoice()` / `insertVoiceText()` in `layer/mobile.js`, `chatInput` in `selectors.json` (the chat input editor moved) |
 | `edit-korean` | text insertion path changed | the report shows `last paste: <element> <method>`; `pasteInto()` uses EditContext `textupdate` when present (a synthetic paste is accepted but ignored on Android Chrome), else a paste event |
 | `accessory-keys` | synthetic keys ignored, or the keys no longer follow the keyboard (emulation shrinks the viewport to stand in for one) | `sendKey()` (keyCode/code), `check.cursor` selector; `updateKeys()` |

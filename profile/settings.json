@@ -42,6 +42,9 @@
   "diffEditor.renderSideBySide": false,
   "diffEditor.useInlineViewWhenSpaceIsLimited": true,
 
+  // Extensions linked in from the desktop editor are updated there, not here.
+  "extensions.autoUpdate": false,
+
   // Phones lose connections; do not lose edits.
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1500,

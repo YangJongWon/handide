@@ -14,6 +14,14 @@
     "panel": ".part.panel > .composite.title",
     "auxiliarybar": ".part.auxiliarybar > .composite.title"
   },
+  "partTitleLabels": {
+    "$comment": "The name of what a part shows (the active agent in the secondary side bar); shown in the layer's view bar.",
+    "auxiliarybar": ".part.auxiliarybar > .composite.title > .title-label"
+  },
+  "partTitleActions": {
+    "$comment": "The view's own title buttons (an agent's new chat, history, settings); the view bar leaves them uncovered.",
+    "auxiliarybar": ".part.auxiliarybar > .composite.title > .title-actions"
+  },
   "textInputs": ".monaco-editor .native-edit-context, .monaco-editor textarea.inputarea, .xterm-helper-textarea, .monaco-inputbox input, .monaco-inputbox textarea",
   "chatInput": ".part.auxiliarybar .interactive-input-editor .native-edit-context, .part.auxiliarybar .interactive-input-editor textarea",
   "dialog": ".monaco-dialog-box",

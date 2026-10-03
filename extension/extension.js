@@ -14,10 +14,12 @@
 //   editor        editor alone
 //   terminalDock  editor on top, terminal docked below (the layer's bottom drawer)
 //   terminal      terminal full screen (layer maximizes the panel; kept for key chords)
-//   ai            chat in the secondary side bar, maximized
+//   ai            the secondary side bar, maximized, on any extension's views (see below)
 //   search / git  that view in the panel, full screen (layer maximizes)
 // VS Code has no "maximize primary side bar", so Search and Source Control are moved
 // into panel containers this extension contributes. Files are the layer's own drawer.
+const fs = require('fs');
+const path = require('path');
 const vscode = require('vscode');
 
 const run = (id, ...args) => vscode.commands.executeCommand(id, ...args);
@@ -59,8 +61,11 @@ async function showView(args) {
 		return;
 	}
 	if (view === 'ai') {
+		// The secondary side bar, on the extension asked for or else the one shown last.
 		await run('workbench.action.closePanel');
-		await run('workbench.action.chat.open');
+		const pick = args?.agent && extensionViews().find((a) => a.id === args.agent);
+		if (pick?.views) await borrowViews(pick);
+		else await run(pick ? pick.id : 'workbench.action.focusAuxiliaryBar');
 		await run('workbench.action.maximizeAuxiliaryBar');
 		return;
 	}
@@ -68,6 +73,99 @@ async function showView(args) {
 	await run('workbench.action.closeAuxiliaryBar');
 	await run('workbench.action.maximizeEditorHideSidebar');
 	await run('workbench.action.focusActiveEditorGroup');
+}
+
+// ---------------------------------------------------------------- extension views
+
+// The phone hides the activity bar, the side bars' tabs and the primary side bar, so
+// the layer lists every extension's views itself and shows the chosen one in the
+// secondary side bar, which can be maximized. Containers already there (Claude Code,
+// Codex…) just open. Views living elsewhere (primary side bar, panel, built-in
+// containers like Explorer) are moved for the time being into this extension's
+// container there, and moved back home when another one is chosen.
+const BORROW_HOME = 'workbench.view.extension.handide-ext';
+const BUILTIN_HOMES = {
+	explorer: 'workbench.view.explorer',
+	scm: 'workbench.view.scm',
+	debug: 'workbench.view.debug',
+	test: 'workbench.view.testing',
+	remote: 'workbench.view.remote',
+};
+const BORROWED_KEY = 'handide.borrowed';
+// Global: VS Code keeps view locations per profile, not per workspace.
+let memento;
+let selfId;
+
+/** "%key%" titles are looked up in the extension's package.nls.json. */
+function localize(ext, text) {
+	const key = /^%(.+)%$/.exec(text ?? '')?.[1];
+	if (!key) return text;
+	try {
+		const nls = JSON.parse(fs.readFileSync(path.join(ext.extensionPath, 'package.nls.json'), 'utf8'));
+		const v = nls[key];
+		return (typeof v === 'string' ? v : v?.message) || ext.packageJSON.displayName;
+	} catch {
+		return ext.packageJSON.displayName;
+	}
+}
+
+/**
+ * Every extension's views, as {id, title, extension} plus, for views that have to be
+ * borrowed, {views: view ids, home: container to return them to}. VS Code's own chat last.
+ */
+function extensionViews() {
+	const list = [];
+	for (const ext of vscode.extensions.all) {
+		const pj = ext.packageJSON ?? {};
+		// The extensions the user installed; VS Code's built-in ones are its own UI.
+		if (ext.id === selfId || pj.isBuiltin) continue;
+		const containers = pj.contributes?.viewsContainers ?? {};
+		const views = pj.contributes?.views ?? {};
+		const extension = pj.displayName ? localize(ext, pj.displayName) : ext.id;
+		// Containers an extension offers in both places (secondary when supported) appear once.
+		const inSecondary = new Set();
+		for (const c of containers.secondarySidebar ?? []) {
+			const title = localize(ext, c.title) || c.id;
+			inSecondary.add(title);
+			list.push({ id: `workbench.view.extension.${c.id}`, title, extension });
+		}
+		const own = new Set();
+		for (const c of [...(containers.activitybar ?? []), ...(containers.panel ?? [])]) {
+			own.add(c.id);
+			const title = localize(ext, c.title) || c.id;
+			const ids = (views[c.id] ?? []).map((v) => v.id);
+			if (inSecondary.has(title) || !ids.length) continue;
+			list.push({ id: `workbench.view.extension.${c.id}`, title, extension, views: ids, home: `workbench.view.extension.${c.id}` });
+		}
+		for (const s of containers.secondarySidebar ?? []) own.add(s.id);
+		// Views added to containers the extension does not own (Explorer, Source Control…).
+		for (const [where, vs] of Object.entries(views)) {
+			if (own.has(where)) continue;
+			const home = BUILTIN_HOMES[where] ?? `workbench.view.extension.${where}`;
+			for (const v of vs) {
+				list.push({ id: `view:${v.id}`, title: localize(ext, v.name) || v.id, extension, views: [v.id], home });
+			}
+		}
+	}
+	list.push({ id: 'workbench.action.chat.open', title: 'Chat', extension: 'VS Code' });
+	return list;
+}
+
+async function returnBorrowed() {
+	const borrowed = memento?.get(BORROWED_KEY);
+	if (!borrowed) return;
+	await run('vscode.moveViews', { viewIds: borrowed.views, destinationId: borrowed.home }).catch(() => {});
+	await memento.update(BORROWED_KEY, undefined);
+}
+
+async function borrowViews(pick) {
+	const borrowed = memento?.get(BORROWED_KEY);
+	if (borrowed?.id !== pick.id) {
+		await returnBorrowed();
+		await memento?.update(BORROWED_KEY, { id: pick.id, views: pick.views, home: pick.home });
+	}
+	// Also opens the container; a no-op move when the views are already there.
+	await run('vscode.moveViews', { viewIds: pick.views, destinationId: BORROW_HOME });
 }
 
 function state() {
@@ -137,7 +235,10 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.view', showView),
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
+		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 	);
+	memento = context.globalState;
+	selfId = context.extension.id;
 	startBridge(context);
 	await moveViewsToPanel();
 }
