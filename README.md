@@ -104,6 +104,7 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 - The menu shows the active file (tap it for quick open) and tiles for Files, Terminal, AI, Find file, Command palette, Save, Undo and Redo. A dot on the floating button means unsaved changes.
 - The file drawer can switch to any folder on the PC (folder button).
 - **가** opens a native text box, so any IME (Korean, Japanese, …) types into the editor at the cursor.
+- **🎤 in the AI bar**: talk to the agent. Speech is recognized by the phone's browser (Chrome: Google, Safari: Apple) and typed into the chat input; tap the mic again or the transcript to stop. The language follows the phone (`"voiceLang": "en-US"` in the config overrides it).
 - Word wrap on, no minimap, autosave after 1.5 s.
 
 ## Customize
@@ -203,7 +204,7 @@ Without the token in the link, VS Code answers 403 and the connect page is only 
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 emulation, 18 checks each
+npm run check                  # Pixel 7 + iPhone 14 emulation, 19 checks each
 npm run check -- --android     # real Chrome on an emulator or USB phone
 ```
 
@@ -214,7 +215,7 @@ The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open t
 <details>
 <summary>Verification status and known limitations</summary>
 
-Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 36/36 (companion) and 34/34 (builtin); used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
+Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 38/38 (companion); builtin mode has an intermittent layout failure on iPhone 14; used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
 
 - The folder must be trusted once per browser and folder.
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.

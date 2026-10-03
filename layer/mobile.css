@@ -556,6 +556,46 @@ html.hd-mobile #hd-toast[hidden] {
 	display: none;
 }
 
+/* Voice input (AI chat): the mic in the AI bar while listening, and the live transcript. */
+html.hd-mobile #hd-viewbar .hd-listening {
+	color: #fff;
+	background: #d93025;
+	border-radius: 50%;
+	animation: hd-pulse 1.2s ease-in-out infinite;
+}
+@keyframes hd-pulse {
+	50% { box-shadow: 0 0 0 6px rgba(217, 48, 37, 0.25); }
+}
+html.hd-mobile #hd-voice {
+	position: fixed;
+	left: 50%;
+	top: calc(env(safe-area-inset-top) + 56px);
+	transform: translateX(-50%);
+	z-index: 2900;
+	max-width: calc(100vw - 32px);
+	padding: 10px 16px 10px 34px;
+	border-radius: 18px;
+	background: var(--hd-fg);
+	color: var(--hd-bg);
+	font: 15px/1.4 var(--vscode-font-family, system-ui, sans-serif);
+	box-shadow: 0 4px 12px var(--hd-shadow);
+	-webkit-tap-highlight-color: transparent;
+}
+html.hd-mobile #hd-voice::before {
+	content: '';
+	position: absolute;
+	left: 14px;
+	top: calc(50% - 5px);
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #d93025;
+	animation: hd-pulse 1.2s ease-in-out infinite;
+}
+html.hd-mobile #hd-voice[hidden] {
+	display: none;
+}
+
 /* ---------------------------------------------------------------- VS Code fixes [vscode-dom] */
 
 /* Dialogs (e.g. workspace trust): keep inside the screen, let buttons wrap. */

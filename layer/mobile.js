@@ -64,8 +64,10 @@ const VIEW_PARTS = {
 // `side` is where the drawer comes from, and so which way it closes.
 const VIEW_BARS = {
 	terminalDock: { part: 'panel', title: '터미널', side: 'bottom', actions: [['add', '새 터미널', 'newTerminal'], ['trash', '터미널 종료', 'killTerminal']] },
-	ai: { part: 'auxiliarybar', title: 'AI', side: 'right', actions: [['add', '새 채팅', 'newChat']] },
+	ai: { part: 'auxiliarybar', title: 'AI', side: 'right', actions: [['mic', '음성 입력', 'voice'], ['add', '새 채팅', 'newChat']] },
 };
+// Bar actions the layer handles itself instead of a VS Code command.
+const LAYER_ACTIONS = { voice: () => toggleVoice() };
 
 const state = {
 	config: null,
@@ -752,8 +754,80 @@ function renderViewbar() {
 	bar.append(
 		button({ class: 'hd-icon-btn', 'aria-label': '닫기', 'data-act': 'back' }, icon(def.side === 'bottom' ? 'chevron-down' : 'chevron-right'), () => showView('editor')),
 		el('span', { class: 'hd-viewbar-title' }, def.title),
-		...def.actions.map(([iconName, label, action]) => button({ class: 'hd-icon-btn', 'aria-label': label, 'data-act': action }, icon(iconName), () => runAction(action))),
+		...def.actions.map(([iconName, label, action]) =>
+			button({ class: 'hd-icon-btn', 'aria-label': label, 'data-act': action }, icon(iconName), () => (LAYER_ACTIONS[action] ? LAYER_ACTIONS[action]() : runAction(action))),
+		),
 	);
+	renderVoice();
+}
+
+// ---------------------------------------------------------------- voice input (AI chat)
+
+// The browser's own speech recognition (Chrome: Google's service; Safari: Apple's).
+// Final phrases go into the chat input at its cursor; the live transcript shows in a
+// pill above it. Tap the mic again, or leave the AI view, to stop.
+const voice = { rec: null, interim: '' };
+
+function toggleVoice() {
+	if (voice.rec) return stopVoice();
+	const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+	if (!Recognition) return toast('이 브라우저는 음성 인식을 지원하지 않습니다. 키보드의 마이크 버튼을 쓰세요.');
+	const rec = new Recognition();
+	rec.lang = state.config.voiceLang || (navigator.language?.startsWith('ko') ? 'ko-KR' : navigator.language || 'en-US');
+	rec.continuous = true;
+	rec.interimResults = true;
+	rec.onresult = (e) => {
+		let interim = '';
+		for (let i = e.resultIndex; i < e.results.length; i++) {
+			const r = e.results[i];
+			if (r.isFinal) insertVoiceText(r[0].transcript.trim());
+			else interim += r[0].transcript;
+		}
+		voice.interim = interim;
+		renderVoice();
+	};
+	rec.onerror = (e) => {
+		if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('마이크 권한이 필요합니다. 브라우저 설정에서 이 사이트의 마이크를 허용하세요.');
+		else if (e.error !== 'no-speech' && e.error !== 'aborted') toast(`음성 인식 오류: ${e.error}`);
+	};
+	rec.onend = () => {
+		if (voice.rec !== rec) return;
+		voice.rec = null;
+		voice.interim = '';
+		renderVoice();
+	};
+	voice.rec = rec;
+	voice.interim = '';
+	try {
+		rec.start();
+	} catch (err) {
+		voice.rec = null;
+		toast(`음성 인식을 시작하지 못했습니다: ${err.message}`);
+	}
+	renderVoice();
+}
+
+function stopVoice() {
+	const rec = voice.rec;
+	if (!rec) return;
+	rec.stop(); // delivers the last final result, then 'end'
+}
+
+function insertVoiceText(text) {
+	if (!text) return;
+	const target = document.querySelector(state.selectors.chatInput);
+	if (!target) return toast('채팅 입력창을 찾지 못했습니다.');
+	const before = target.editContext ? target.editContext.text.slice(0, target.editContext.selectionStart) : target.value?.slice(0, target.selectionStart) ?? '';
+	pasteInto(target, before && !/\s$/.test(before) ? ` ${text}` : text);
+}
+
+function renderVoice() {
+	const listening = !!voice.rec;
+	document.querySelector('#hd-viewbar [data-act="voice"]')?.classList.toggle('hd-listening', listening);
+	const pill = document.getElementById('hd-voice');
+	if (!pill) return;
+	pill.hidden = !listening;
+	pill.textContent = voice.interim || '듣는 중… 말하면 입력창에 들어갑니다';
 }
 
 function placeViewbar() {
@@ -928,9 +1002,10 @@ function build() {
 	// Tapping the buttons must not take the focus (and the keyboard) from the text box.
 	for (const b of sheet.querySelectorAll('button')) b.addEventListener('pointerdown', (e) => e.preventDefault());
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
+	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
 	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(safe, viewbar, root, fab, menuScrim, menu, scrim, drawer, sheet, toastEl);
+	document.body.append(safe, viewbar, root, fab, menuScrim, menu, scrim, drawer, sheet, toastEl, voicePill);
 	renderDrawer();
 }
 
@@ -959,6 +1034,7 @@ function render() {
 		b.classList.toggle('active', !!(def?.sticky && state.sticky[def.sticky]));
 	}
 	renderViewbar();
+	if (state.view !== 'ai') stopVoice();
 	requestAnimationFrame(relayout);
 }
 

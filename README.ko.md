@@ -104,6 +104,7 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 - 메뉴 상단에는 현재 파일(탭하면 빠른 열기), 아래에는 파일·터미널·AI·파일 찾기·명령 팔레트·저장·실행 취소·다시 실행이 있습니다. 플로팅 버튼의 점은 저장 안 된 변경이 있다는 뜻입니다.
 - 파일 드로어의 폴더 버튼으로 PC의 다른 폴더로 바꿀 수 있습니다.
 - **가** 키는 네이티브 입력창을 열어, 한글 등 어떤 IME로 입력해도 커서 위치에 들어갑니다.
+- **AI 바의 🎤**: 에이전트에게 말로 입력합니다. 폰 브라우저가 음성을 인식해(크롬은 Google, Safari는 Apple) 채팅 입력창에 넣어 줍니다. 마이크를 다시 누르거나 자막을 탭하면 멈춥니다. 언어는 폰 설정을 따르고, 설정 파일의 `"voiceLang": "en-US"`로 바꿀 수 있습니다.
 - 자동 줄바꿈, 미니맵 없음, 1.5초 뒤 자동 저장.
 
 ## 설정 바꾸기
@@ -203,7 +204,7 @@ flowchart LR
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 에뮬레이션, 기기당 18개 검사
+npm run check                  # Pixel 7 + iPhone 14 에뮬레이션, 기기당 19개 검사
 npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실제 크롬
 ```
 
@@ -214,7 +215,7 @@ npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실�
 <details>
 <summary>검증 상태와 알려진 제한</summary>
 
-마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 36/36(동반 확장), 34/34(builtin). 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
+마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 38/38(동반 확장). builtin 모드는 iPhone 14에서 레이아웃 검사가 간헐적으로 실패합니다. 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
 
 - 폴더 신뢰는 브라우저·폴더마다 한 번 필요합니다.
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.

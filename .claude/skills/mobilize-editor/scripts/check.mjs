@@ -246,6 +246,38 @@ async function checkDevice(target, ctx) {
 			}
 			return { ok: ok && hasContent, detail: describe(parts) + (hasContent ? '' : ', expected view missing') };
 		});
+		if (name === 'view:ai-drawer' && !builtinMode) await step('voice', voiceStep);
+	}
+
+	// Voice input in the AI bar. No microphone here: a stand-in recognizer "hears" one
+	// phrase, which must land in the chat input.
+	async function voiceStep() {
+		const phrase = '음성으로 입력한 문장';
+		await page.evaluate((text) => {
+			window.SpeechRecognition = class {
+				start() {
+					setTimeout(() => {
+						const result = Object.assign([{ transcript: text }], { isFinal: true });
+						this.onresult?.({ resultIndex: 0, results: [result] });
+						setTimeout(() => this.onend?.(), 300);
+					}, 500);
+				}
+				stop() {
+					this.onend?.();
+				}
+			};
+		}, phrase);
+		await tap('#hd-viewbar [data-act="voice"]');
+		await page.waitForTimeout(200);
+		const listening = await page.evaluate(() => !document.getElementById('hd-voice').hidden && !!document.querySelector('#hd-viewbar .hd-listening'));
+		await page.waitForTimeout(1500);
+		const text = await page.evaluate(() => (document.querySelector('.part.auxiliarybar .interactive-input-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' ')); // the editor renders spaces as nbsp
+		const stopped = await page.evaluate(() => document.getElementById('hd-voice').hidden);
+		await page.evaluate(() => delete window.SpeechRecognition);
+		return {
+			ok: listening && text.includes(phrase) && stopped,
+			detail: `${listening ? 'listening shown' : 'no listening state'}; chat input "${text.trim().slice(0, 40)}"; ${stopped ? 'stopped' : 'still listening'}`,
+		};
 	}
 
 	await step('drawer', async () => {
