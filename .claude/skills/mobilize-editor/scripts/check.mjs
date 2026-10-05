@@ -173,10 +173,21 @@ async function checkDevice(target, ctx) {
 	});
 
 	await step('trust', async () => {
+		// The way a user does it: the layer's notice button must bring up the trust screen,
+		// even from the AI drawer, which covers the editor area where that screen opens.
+		let viaNotice = '';
+		if (await page.locator('#hd-notice:not([hidden]) button').count()) {
+			await page.keyboard.press(apple ? 'Meta+Alt+B' : 'Control+Alt+B'); // the secondary side bar, like an open AI drawer
+			await page.waitForTimeout(800);
+			await tap('#hd-notice button');
+			await page.waitForTimeout(2500);
+			const trustEditor = await box('.workspace-trust-editor');
+			viaNotice = trustEditor?.shown && trustEditor.w >= vw * 0.95 ? 'notice opened the trust screen; ' : 'notice did NOT show the trust screen; ';
+		}
 		const how = await grantTrust(page);
 		await page.waitForTimeout(6000); // companion extension activation
 		const restricted = await page.evaluate(() => !document.getElementById('hd-notice')?.hidden);
-		return { ok: !restricted, detail: `granted via ${how}${restricted ? ', still restricted' : ''}` };
+		return { ok: !restricted && !viaNotice.includes('NOT'), detail: `${viaNotice}granted via ${how}${restricted ? ', still restricted' : ''}` };
 	});
 
 	await step('selectors', async () => {

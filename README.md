@@ -12,7 +12,7 @@ with your own VS Code, your extensions and your AI agents. Not a fork, not a clo
 ![VS Code 1.100+](https://img.shields.io/badge/VS%20Code-%E2%89%A51.100-007ACC?logo=visualstudiocode&logoColor=white)
 ![Android · iPhone](https://img.shields.io/badge/phone-Android%20%C2%B7%20iPhone-555)
 
-**English** · [한국어](README.ko.md)
+**English** · [한국어](README.ko.md) · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
 
 <br>
 
@@ -185,7 +185,7 @@ The host has to be VS Code, because forks don't ship `serve-web`. You can keep u
 <details>
 <summary><b>The phone shows "Restricted Mode" or the layout looks like desktop VS Code.</b></summary>
 
-Tap **Trust** for the folder. Until then VS Code keeps all extensions off, including handide's companion.
+Tap **Trust** for the folder. Until then VS Code keeps all extensions off, including handide's companion. The "신뢰 설정" (trust settings) button in the notice at the top opens the trust screen.
 
 </details>
 

@@ -1238,6 +1238,30 @@ function syncTheme(workbench) {
 	setTimeout(copy, 2000);
 }
 
+// The trust screen opens as an editor, which a drawer (the maximized AI side bar) would
+// cover. Restricted Mode means no companion, so the drawers are closed with VS Code's own
+// keys first. Without the banner's link, the command palette finds the same command.
+function openTrust() {
+	const workbench = document.querySelector(state.selectors.workbench);
+	if (state.view !== 'editor') {
+		state.view = 'editor';
+		render();
+	}
+	for (const part of visibleParts().filter((p) => CLOSE_PART_KEYS[p])) sendKey({ ...CLOSE_PART_KEYS[part], target: workbench });
+	setTimeout(() => {
+		const banner = document.querySelector(state.selectors.banner);
+		const manage = banner && [...banner.querySelectorAll('a')].find((a) => /Manage/i.test(a.textContent));
+		if (manage) return manage.click();
+		sendKey({ key: 'F1', keyCode: 112, code: 'F1', target: workbench });
+		setTimeout(() => {
+			const input = document.querySelector(state.selectors.quickInputBox);
+			if (!input) return;
+			input.value = 'Manage Workspace Trust';
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		}, 500);
+	}, 400);
+}
+
 // Restricted Mode disables the companion extension: bridge, views and file opening stop.
 function watchTrust() {
 	const notice = document.getElementById('hd-notice');
@@ -1249,7 +1273,7 @@ function watchTrust() {
 		if (restricted) {
 			notice.replaceChildren(
 				el('span', {}, '이 폴더를 신뢰해야 화면 전환, 파일 열기, 에이전트 확장이 동작합니다.'),
-				button({}, '신뢰 설정', () => [...banner.querySelectorAll('a')].find((a) => /Manage/i.test(a.textContent))?.click()),
+				button({}, '신뢰 설정', openTrust),
 			);
 		}
 		requestAnimationFrame(relayout);

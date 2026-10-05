@@ -12,7 +12,7 @@
 ![VS Code 1.100+](https://img.shields.io/badge/VS%20Code-%E2%89%A51.100-007ACC?logo=visualstudiocode&logoColor=white)
 ![Android · iPhone](https://img.shields.io/badge/phone-Android%20%C2%B7%20iPhone-555)
 
-[English](README.md) · **한국어**
+[English](README.md) · **한국어** · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
 
 <br>
 
@@ -185,7 +185,7 @@ flowchart LR
 <details>
 <summary><b>폰에 "제한 모드"가 뜨거나 데스크톱 화면처럼 보여요.</b></summary>
 
-폴더를 **신뢰**하세요. 그 전에는 VS Code가 handide 동반 확장을 포함한 모든 확장을 꺼 둡니다.
+폴더를 **신뢰**하세요. 그 전에는 VS Code가 handide 동반 확장을 포함한 모든 확장을 꺼 둡니다. 상단 알림의 "신뢰 설정" 버튼을 누르면 신뢰 화면이 열립니다.
 
 </details>
 

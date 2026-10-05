@@ -28,6 +28,7 @@
   "dialogButtons": ".monaco-dialog-box .dialog-buttons",
   "modalEditor": ".monaco-modal-editor-block",
   "quickInput": ".quick-input-widget",
+  "quickInputBox": ".quick-input-widget .quick-input-box input",
   "check": {
     "$comment": "Only used by the automated check to confirm each tab shows the right view.",
     "listRow": ".monaco-list-row",
