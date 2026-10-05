@@ -98,9 +98,9 @@ try {
 	}
 
 	for (const expr of args.evals) {
-		const value = await page.evaluate((e) => {
+		const value = await page.evaluate(async (e) => {
 			try {
-				return JSON.stringify((0, eval)(e));
+				return JSON.stringify(await (0, eval)(e)); // promises are awaited
 			} catch (err) {
 				return `error: ${err.message}`;
 			}

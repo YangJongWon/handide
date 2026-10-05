@@ -287,13 +287,25 @@ html.hd-mobile #hd-viewbar.hd-grab .hd-grip {
 }
 
 /* AI drawer title: the active agent's name opens the agent list. */
-html.hd-mobile .hd-agent-btn {
+/* A pill, so it reads as "tap to switch" and not as a title. */
+html.hd-mobile #hd-viewbar .hd-agent-btn {
+	flex: 0 1 auto;
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	height: 100%;
-	padding: 0 6px;
+	gap: 6px;
+	height: 30px;
+	margin-right: auto;
+	padding: 0 10px 0 12px;
+	border: 1px solid var(--hd-border);
+	border-radius: 15px;
+	background: var(--hd-surface);
 	text-align: left;
+}
+html.hd-mobile #hd-viewbar .hd-agent-btn::after {
+	content: attr(data-count);
+	font-size: 11px;
+	font-weight: 400;
+	opacity: 0.7;
 }
 html.hd-mobile .hd-agent-name {
 	overflow: hidden;
@@ -339,6 +351,10 @@ html.hd-mobile .hd-agent {
 html.hd-mobile .hd-agent small {
 	font-size: 12px;
 	opacity: 0.7;
+}
+html.hd-mobile .hd-agent-manage {
+	border-top: 1px solid var(--hd-border);
+	border-radius: 0 0 8px 8px;
 }
 html.hd-mobile .hd-agent.active {
 	background: var(--hd-btn-bg);

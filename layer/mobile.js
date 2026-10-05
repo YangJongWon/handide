@@ -64,11 +64,11 @@ const VIEW_PARTS = {
 // `side` is where the drawer comes from, and so which way it closes. `agents`: the
 // title picks which extension's views the drawer shows; their own title buttons stay visible.
 const VIEW_BARS = {
-	terminalDock: { part: 'panel', title: '터미널', side: 'bottom', actions: [['add', '새 터미널', 'newTerminal'], ['trash', '터미널 종료', 'killTerminal']] },
+	terminalDock: { part: 'panel', title: '터미널', side: 'bottom', actions: [['clippy', '붙여넣기', 'pasteTerminal'], ['add', '새 터미널', 'newTerminal'], ['trash', '터미널 종료', 'killTerminal']] },
 	ai: { part: 'auxiliarybar', title: 'AI·확장', side: 'right', agents: true, actions: [['mic', '음성 입력', 'voice']] },
 };
 // Bar actions the layer handles itself instead of a VS Code command.
-const LAYER_ACTIONS = { voice: () => toggleVoice() };
+const LAYER_ACTIONS = { voice: () => toggleVoice(), pasteTerminal: () => pasteToTerminal() };
 
 const state = {
 	config: null,
@@ -370,18 +370,23 @@ function onBeforeInput(e) {
 
 // ---------------------------------------------------------------- input sheet
 
-function openInputSheet() {
+/** @param {{ terminal?: boolean }} [opts] terminal: send the text to the terminal's shell */
+function openInputSheet(opts = {}) {
 	const target = focusTarget();
+	// A synthetic paste into the terminal goes missing on iOS; the shell gets it from VS Code instead.
+	const toTerminal = state.bridge && (opts.terminal || target?.classList?.contains('xterm-helper-textarea'));
 	const sheet = document.getElementById('hd-sheet');
 	const area = sheet.querySelector('textarea');
 	sheet.hidden = false;
 	area.value = '';
+	area.placeholder = opts.terminal ? '여기에 길게 눌러 붙여넣기 → 터미널로 보내기' : '여기에 입력 (한글 OK) → 삽입';
 	area.focus();
 	render();
 	sheet.onsubmit = (e) => {
 		e.preventDefault();
 		sheet.hidden = true;
-		if (area.value) pasteInto(target, area.value);
+		if (area.value && toTerminal) bridgeCall('workbench.action.terminal.sendSequence', { text: area.value });
+		else if (area.value) pasteInto(target, area.value);
 		render();
 	};
 }
@@ -465,7 +470,34 @@ async function toggleDir(path) {
 	const node = state.tree.get(path);
 	if (node) node.open = !node.open;
 	else await loadDir(path, true);
+	// New files and folders go into the folder opened last.
+	state.targetDir = state.tree.get(path)?.open ? path : parentOf(path);
 	renderDrawer();
+}
+
+/** New file or folder in the folder opened last (or the root); the name may contain subfolders. */
+async function createEntry(folder) {
+	const root = state.folder?.path;
+	if (!root) return;
+	if (!state.bridge) return toast('파일을 만들려면 handide 확장이 필요합니다 (폴더 신뢰 확인).');
+	const dir = state.targetDir && state.targetDir.toLowerCase().startsWith(root.toLowerCase()) ? state.targetDir : root;
+	const where = dir === root ? state.folder.name : `${state.folder.name}${dir.slice(root.length).replaceAll('\\', '/')}`;
+	const name = window.prompt(`${folder ? '새 폴더' : '새 파일'} 이름 (${where}/ 안에)`, '')?.trim();
+	if (!name) return;
+	const sep = dir.includes('\\') ? '\\' : '/';
+	const target = `${dir.replace(/[\\/]$/, '')}${sep}${name.replace(/[\\/]+/g, sep)}`;
+	const r = await bridgeCall('handide.create', { path: target, folder });
+	if (!r) return toast(`만들지 못했습니다: ${name} (이미 있거나 이름이 잘못됨)`);
+	await loadDir(dir, true);
+	if (folder) {
+		await loadDir(target, true);
+		state.targetDir = target;
+		renderDrawer();
+		return;
+	}
+	state.activePath = target;
+	closeDrawer();
+	if (state.view !== 'editor' && state.view !== 'terminalDock') showView('editor');
 }
 
 async function openFile(path) {
@@ -551,6 +583,8 @@ function renderDrawer() {
 	const folder = state.folder;
 	head.append(
 		el('div', { class: 'hd-drawer-title' }, el('strong', {}, folder?.name ?? '폴더 없음'), el('small', {}, folder?.path ?? '')),
+		folder ? el('button', { class: 'hd-icon-btn', 'aria-label': '새 파일', 'data-act': 'newFile', onclick: () => createEntry(false) }, icon('new-file')) : null,
+		folder ? el('button', { class: 'hd-icon-btn', 'aria-label': '새 폴더', 'data-act': 'newFolder', onclick: () => createEntry(true) }, icon('new-folder')) : null,
 		el('button', { class: 'hd-icon-btn', 'aria-label': '폴더 변경', title: '폴더 변경', onclick: () => openPicker(folder ? parentOf(folder.path) : '') }, icon('folder-opened')),
 		el('button', { class: 'hd-icon-btn', 'aria-label': '새로고침', onclick: async () => { state.tree.clear(); if (folder) await loadDir(folder.path, true); renderDrawer(); } }, icon('refresh')),
 		el('button', { class: 'hd-icon-btn', 'aria-label': '닫기', onclick: closeDrawer }, icon('close')),
@@ -763,6 +797,26 @@ function renderViewbar() {
 		),
 	);
 	renderVoice();
+	if (def.agents && state.bridge) {
+		// How many there are to switch between, so the pill does not read as a lone title.
+		bridgeCall('handide.extensionViews').then((items) => {
+			const btn = bar.querySelector('[data-act="agents"]');
+			if (btn && items?.length > 1) btn.dataset.count = `${items.length}개`;
+		});
+	}
+}
+
+// Phones offer no paste inside the terminal (xterm draws it; iOS shows no paste menu).
+// The clipboard goes to the shell with VS Code's own "send sequence"; where the browser
+// will not hand the clipboard over, the text box opens to paste into by hand.
+async function pasteToTerminal() {
+	let text = null;
+	try {
+		text = await navigator.clipboard.readText();
+	} catch {}
+	if (text == null) return openInputSheet({ terminal: true });
+	if (!text) return toast('클립보드가 비어 있습니다.');
+	await bridgeCall('workbench.action.terminal.sendSequence', { text });
 }
 
 function partLabel(def) {
@@ -791,12 +845,40 @@ async function toggleAgents() {
 				},
 			),
 		),
+		button({ class: 'hd-agent hd-agent-manage', 'data-agent': 'manage' }, [el('span', {}, '확장 관리 ›'), el('small', {}, '사용 안 함·제거·설정·설치')], showInstalled),
 	);
 	const bar = document.getElementById('hd-viewbar').getBoundingClientRect();
 	list.style.top = `${bar.bottom}px`;
 	list.style.left = `${bar.left}px`;
 	list.hidden = false;
 	setTimeout(() => document.addEventListener('pointerdown', closeAgentsOutside, true));
+}
+
+// VS Code's Extensions view cannot leave the primary side bar, so the installed extensions
+// are listed here; each opens its details page (enable/disable, uninstall, settings) as an editor.
+async function showInstalled() {
+	const list = document.getElementById('hd-agents');
+	const items = (await bridgeCall('handide.installedExtensions')) || [];
+	const openDetails = (id) => {
+		closeAgents();
+		showView('editor');
+		bridgeCall('extension.open', id);
+	};
+	list.replaceChildren(
+		button({ class: 'hd-agent hd-agent-manage', 'data-agent': 'back' }, el('span', {}, '‹ 뒤로'), () => {
+			closeAgents();
+			toggleAgents();
+		}),
+		button({ class: 'hd-agent', 'data-agent': 'install' }, [el('span', {}, '＋ 확장 설치'), el('small', {}, '마켓플레이스에서 이름으로 찾기')], () => {
+			closeAgents();
+			showView('editor');
+			bridgeCall('workbench.action.quickOpen', 'ext install ');
+		}),
+		...items.map((x) =>
+			button({ class: 'hd-agent', 'data-extension': x.id }, [el('span', {}, x.title), el('small', {}, x.enabled ? x.id : `사용 안 함 · ${x.id}`)], () => openDetails(x.id)),
+		),
+	);
+	if (!items.length) list.append(el('p', { class: 'hd-empty' }, '설치된 확장이 없습니다.'));
 }
 
 function closeAgentsOutside(e) {
@@ -895,9 +977,11 @@ function placeViewbar() {
 		return;
 	}
 	let width = r.width;
+	// Up to the view's first own button (the actions box itself stretches wider than its buttons).
+	const actionsSel = state.selectors.partTitleActions?.[def.part];
+	const lefts = actionsSel ? [...document.querySelectorAll(`${actionsSel} .action-item`)].map((a) => a.getBoundingClientRect()).filter((b) => b.width > 4).map((b) => b.left) : [];
+	if (lefts.length) width = Math.max(Math.min(...lefts) - r.left, r.width / 2);
 	if (def.agents) {
-		const actions = document.querySelector(state.selectors.partTitleActions?.[def.part])?.getBoundingClientRect();
-		if (actions?.width > 0) width = Math.max(actions.left - r.left, r.width / 2);
 		const name = bar.querySelector('.hd-agent-name');
 		const label = partLabel(def);
 		if (name && label && name.textContent !== label) name.textContent = label;

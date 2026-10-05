@@ -95,6 +95,7 @@ const BORROWED_KEY = 'handide.borrowed';
 // Global: VS Code keeps view locations per profile, not per workspace.
 let memento;
 let selfId;
+let selfPath;
 
 /** "%key%" titles are looked up in the extension's package.nls.json. */
 function localize(ext, text) {
@@ -151,6 +152,36 @@ function extensionViews() {
 	return list;
 }
 
+/**
+ * Installed extensions, for managing them on the phone: VS Code's Extensions view is
+ * stuck in the primary side bar (its views refuse to move), so the layer lists them and
+ * opens one's details page (`extension.open`): disable, uninstall, settings.
+ */
+function installedExtensions() {
+	// The server's registry, next to this extension: it also has the disabled ones, which
+	// vscode.extensions leaves out (and which must stay reachable to enable them again).
+	const extDir = path.dirname(selfPath);
+	let registry = [];
+	try {
+		registry = JSON.parse(fs.readFileSync(path.join(extDir, 'extensions.json'), 'utf8'));
+	} catch {}
+	const list = [];
+	for (const e of registry) {
+		const id = e.identifier?.id;
+		if (!id || id.toLowerCase() === selfId.toLowerCase()) continue;
+		const extensionPath = e.location?.fsPath ?? path.join(extDir, e.relativeLocation ?? '');
+		let packageJSON = {};
+		try {
+			packageJSON = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8'));
+		} catch {
+			continue; // folder gone
+		}
+		const title = localize({ extensionPath, packageJSON }, packageJSON.displayName) || id;
+		list.push({ id, title, enabled: !!vscode.extensions.getExtension(id) });
+	}
+	return list.sort((a, b) => a.title.localeCompare(b.title));
+}
+
 async function returnBorrowed() {
 	const borrowed = memento?.get(BORROWED_KEY);
 	if (!borrowed) return;
@@ -166,6 +197,21 @@ async function borrowViews(pick) {
 	}
 	// Also opens the container; a no-op move when the views are already there.
 	await run('vscode.moveViews', { viewIds: pick.views, destinationId: BORROW_HOME });
+}
+
+/** New file (opened) or folder at an absolute path, for the layer's file drawer. */
+async function create({ path: target, folder }) {
+	const uri = vscode.Uri.file(target);
+	const exists = await vscode.workspace.fs.stat(uri).then(() => true, () => false);
+	if (exists) throw new Error(`already exists: ${target}`);
+	if (folder) {
+		await vscode.workspace.fs.createDirectory(uri);
+		return { path: target };
+	}
+	await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(target)));
+	await vscode.workspace.fs.writeFile(uri, new Uint8Array());
+	await vscode.window.showTextDocument(uri);
+	return { path: target };
 }
 
 function state() {
@@ -236,9 +282,12 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
+		vscode.commands.registerCommand('handide.create', create),
+		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 	);
 	memento = context.globalState;
 	selfId = context.extension.id;
+	selfPath = context.extensionPath;
 	startBridge(context);
 	await moveViewsToPanel();
 }

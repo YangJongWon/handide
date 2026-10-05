@@ -253,10 +253,51 @@ async function checkDevice(target, ctx) {
 			}
 			return { ok: ok && hasContent, detail: describe(parts) + (hasContent ? '' : ', expected view missing') };
 		});
+		if (name === 'view:terminal-drawer' && !builtinMode && ctx.workspace) await step('terminal-paste', terminalPasteStep);
 		if (name === 'view:ai-drawer' && !builtinMode) {
 			await step('agents', agentsStep);
 			await step('voice', voiceStep);
+			await step('extensions-manager', extensionsManagerStep);
 		}
+	}
+
+	// The terminal bar's paste button: the clipboard (a stand-in here) reaches the shell.
+	// The pasted command writes a file, which is what gets checked: terminal text is drawn
+	// on a canvas, not in the DOM.
+	async function terminalPasteStep() {
+		const marker = `paste-${slug}.txt`;
+		const file = join(ctx.workspace, marker);
+		await page.evaluate((text) => {
+			Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: async () => text, writeText: async () => {} } });
+		}, `echo ok > ${marker}\r`);
+		await tap('#hd-viewbar [data-act="pasteTerminal"]');
+		for (let i = 0; i < 20 && !existsSync(file); i++) await page.waitForTimeout(500);
+		await page.evaluate(() => delete navigator.clipboard); // back to the real one: VS Code writes to it later
+		return { ok: existsSync(file), detail: existsSync(file) ? `${marker} written by the pasted command` : `${marker} not written` };
+	}
+
+	// VS Code's Extensions view cannot leave the primary side bar, so the AI bar's list
+	// has "확장 관리": the installed extensions, each opening its details page full screen.
+	async function extensionsManagerStep() {
+		await tap('#hd-viewbar [data-act="agents"]');
+		await page.waitForSelector('#hd-agents:not([hidden]) .hd-agent', { timeout: 10_000 }).catch(() => {});
+		await tap('#hd-agents [data-agent="manage"]');
+		await page.waitForTimeout(1500);
+		const installed = await page.locator('#hd-agents [data-extension]').count();
+		let detail = `${installed} installed`;
+		let ok = (await page.locator('#hd-agents [data-agent="install"]').count()) > 0; // no extensions: the install entry at least
+		if (installed) {
+			const id = await page.locator('#hd-agents [data-extension]').first().getAttribute('data-extension');
+			await tap(`#hd-agents [data-extension="${id}"]`);
+			await page.waitForTimeout(4000);
+			const parts = await shownParts();
+			const page_ = await page.locator(`${sel.parts.editor} ${sel.check.extensionEditor}`).count();
+			ok = Object.keys(parts).join() === 'editor' && parts.editor.w >= vw * 0.95 && page_ > 0;
+			detail += `; ${id}: ${describe(parts)}${page_ ? ', details page shown' : ', no details page'}`;
+		}
+		await menu('ai'); // the next check closes the AI drawer
+		await page.waitForTimeout(2500);
+		return { ok, detail };
 	}
 
 	// The AI bar's title lists the secondary side bar's agents (VS Code's tabs for them
@@ -456,6 +497,31 @@ async function checkDevice(target, ctx) {
 		if (!q?.shown) return { ok: false, detail: 'command palette did not open' };
 		return { ok: q.x >= 0 && q.x + q.w <= vw + 1, detail: `x ${Math.round(q.x)}, width ${Math.round(q.w)} of ${vw}` };
 	});
+
+	// The drawer's new file / new folder buttons: the name prompt (a browser dialog) is
+	// answered here; the folder appears in the tree, the file on disk and in the editor.
+	if (!builtinMode && ctx.workspace) {
+		await step('new-file', async () => {
+			const dirName = `made-${slug}`;
+			const fileName = `new-${slug}.txt`;
+			const answer = (text) => page.once('dialog', (d) => d.accept(text));
+			await menu('files');
+			await page.waitForTimeout(1500);
+			answer(dirName);
+			await tap('#hd-drawer-head [data-act="newFolder"]');
+			await page.waitForTimeout(2000);
+			const dirShown = (await page.locator('#hd-drawer .hd-row', { hasText: dirName }).count()) > 0;
+			answer(fileName);
+			await tap('#hd-drawer-head [data-act="newFile"]');
+			await page.waitForTimeout(3000);
+			const onDisk = existsSync(join(ctx.workspace, dirName, fileName));
+			const t = await title();
+			return {
+				ok: dirShown && onDisk && t === fileName,
+				detail: `folder ${dirShown ? 'in the tree' : 'missing'}; ${dirName}/${fileName} ${onDisk ? 'on disk' : 'missing'}; title "${t}"`,
+			};
+		});
+	}
 
 	if (!builtinMode && subFolder) {
 		await step('folder-change', async () => {

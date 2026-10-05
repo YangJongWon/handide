@@ -34,6 +34,7 @@
     "editorLine": ".part.editor .view-line",
     "cursor": ".part.editor .cursor",
     "searchView": ".search-view",
+    "extensionEditor": ".extension-editor",
     "terminal": ".xterm",
     "scmTitle": "Source Control"
   }
