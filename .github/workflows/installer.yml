@@ -1,0 +1,40 @@
+# Builds the Windows installer. On a v* tag it is attached to that tag's GitHub release
+# (created if needed); otherwise it is kept as a workflow artifact.
+name: Windows installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Build
+        run: node installer/build.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: handide-setup
+          path: installer/out/handide-setup-*.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = Get-ChildItem installer/out/handide-setup-*.exe | Select-Object -First 1
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:GITHUB_REF_NAME --generate-notes }
+          gh release upload $env:GITHUB_REF_NAME $exe.FullName --clobber

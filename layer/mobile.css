@@ -244,6 +244,42 @@ html.hd-mobile .hd-tile.active {
 	color: var(--hd-btn-fg) !important;
 }
 
+/* ---------------------------------------------------------------- settings (menu sheet) */
+
+html.hd-mobile #hd-settings[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-settings {
+	padding-top: 10px;
+}
+html.hd-mobile .hd-settings-label {
+	display: block;
+	margin-bottom: 6px;
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--hd-muted);
+}
+html.hd-mobile .hd-lang-list {
+	display: flex;
+	gap: 6px;
+}
+html.hd-mobile .hd-lang {
+	flex: 1;
+	min-height: 44px;
+	border-radius: 12px;
+	font-size: 14px;
+	background: var(--hd-key-bg);
+}
+html.hd-mobile .hd-lang[aria-pressed='true'] {
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+}
+/* The gear in the head swaps the tiles for the panel and back. */
+html.hd-mobile #hd-menu[data-panel='settings'] #hd-menu-grid {
+	display: none;
+}
+
 /* ---------------------------------------------------------------- view bar [vscode-dom: covers a part's title strip] */
 
 html.hd-mobile #hd-viewbar {
@@ -360,6 +396,25 @@ html.hd-mobile .hd-agent.active {
 	background: var(--hd-btn-bg);
 	color: var(--hd-btn-fg);
 }
+html.hd-mobile .hd-extension {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	border-bottom: 1px solid var(--hd-border);
+}
+html.hd-mobile .hd-extension-main {
+	min-width: 0;
+}
+html.hd-mobile .hd-extension-action {
+	margin-right: 6px;
+	padding: 7px 9px;
+	border: 1px solid var(--hd-border);
+	border-radius: 7px;
+	background: var(--hd-key-bg);
+	color: var(--hd-key-fg);
+	font: inherit;
+	font-size: 13px;
+}
 
 /* The agent's own title buttons (new chat, history…) stay visible next to the view bar:
    finger-sized, and without the maximize toggle the phone layout owns. [vscode-dom] */
@@ -438,7 +493,7 @@ html.hd-mobile #hd-keys [data-key='menu'] {
 }
 
 /* Notices */
-html.hd-mobile :is(#hd-notice, #hd-insecure) {
+html.hd-mobile :is(#hd-notice, #hd-insecure, #hd-network) {
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -446,7 +501,7 @@ html.hd-mobile :is(#hd-notice, #hd-insecure) {
 	padding-bottom: max(8px, env(safe-area-inset-bottom));
 	font-size: 13px;
 }
-html.hd-mobile :is(#hd-notice, #hd-insecure)[hidden] {
+html.hd-mobile :is(#hd-notice, #hd-insecure, #hd-network)[hidden] {
 	display: none;
 }
 html.hd-mobile #hd-notice {
@@ -457,10 +512,14 @@ html.hd-mobile #hd-insecure {
 	background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
 	color: var(--vscode-inputValidation-errorForeground, var(--hd-fg));
 }
-html.hd-mobile #hd-notice span {
+html.hd-mobile #hd-network {
+	background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+	color: var(--vscode-inputValidation-errorForeground, var(--hd-fg));
+}
+html.hd-mobile :is(#hd-notice, #hd-network) span {
 	flex: 1;
 }
-html.hd-mobile #hd-notice button {
+html.hd-mobile :is(#hd-notice, #hd-network) button {
 	flex: none;
 	padding: 6px 12px;
 	border-radius: 6px;
@@ -681,6 +740,36 @@ html.hd-mobile #hd-voice::before {
 	animation: hd-pulse 1.2s ease-in-out infinite;
 }
 html.hd-mobile #hd-voice[hidden] {
+	display: none;
+}
+
+/* A saved phone image: tap to copy its path for an extension agent's input. */
+html.hd-mobile #hd-upload {
+	position: fixed;
+	left: 50%;
+	top: calc(env(safe-area-inset-top) + 56px);
+	transform: translateX(-50%);
+	z-index: 2900;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-width: calc(100vw - 32px);
+	padding: 10px 16px;
+	border: 0;
+	border-radius: 14px;
+	background: var(--hd-fg);
+	color: var(--hd-bg);
+	font: 15px/1.4 var(--vscode-font-family, system-ui, sans-serif);
+	text-align: left;
+	box-shadow: 0 4px 12px var(--hd-shadow);
+	-webkit-tap-highlight-color: transparent;
+}
+html.hd-mobile #hd-upload small {
+	font-size: 12px;
+	opacity: 0.75;
+	overflow-wrap: anywhere;
+}
+html.hd-mobile #hd-upload[hidden] {
 	display: none;
 }
 

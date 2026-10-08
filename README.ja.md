@@ -37,6 +37,10 @@
 
 ## クイックスタート
 
+**Windows はワンクリック:** [Releases](https://github.com/YangJongWon/handide/releases/latest) から **handide-setup-<バージョン>.exe** をダウンロードして実行します。Node.js は同梱、VS Code がなければ一緒にインストールし、スタートメニューのショートカットとフォルダー右クリックメニューの項目を追加します。最後の画面で外出先からのアクセス(Tailscale)も設定でき、必要なのはサインインだけです。まだコード署名がないため、初回に「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」を押してください。
+
+または npm で(すべての OS):
+
 > PC に **VS Code** 1.100 以上と **Node.js** 20 以上が必要です。
 
 **1. インストール**
@@ -54,7 +58,7 @@ handide
 
 **3. スマホのカメラで QR コードを読み取る**（同じ Wi-Fi）。ターミナルの QR が小さい場合は、PC のブラウザで **http://localhost:9000/__handide/connect** を開くと大きく表示されます。
 
-初回だけ証明書の警告を許可し（handide が PC 用の HTTPS 証明書を自分で作るため）、VS Code にフォルダを信頼するか聞かれたら **信頼する** をタップしてください。
+初回だけ証明書の警告を許可してください（handide が PC 用の HTTPS 証明書を自分で作るため）。
 
 <details>
 <summary>証明書の警告を進める手順</summary>
@@ -131,6 +135,7 @@ PC に [Tailscale](https://tailscale.com) をインストールし、ブラウ�
 - `breakpoint`: これより狭い画面でスマホレイアウトになります。
 - `companion.mode: "builtin"`: コンパニオン拡張機能なしで動かします（VS Code 既定のショートカットを使用。ビューはスマホレイアウトで開かず、ドロワーからファイルを開けません）。
 - `importExtensions: false`: デスクトップの拡張機能（`~/.vscode/extensions` と `~/.cursor/extensions` の各拡張機能の最新版）のリンクを止めます。リンクした拡張機能は固定（pinned）され、handide ではなくデスクトップのエディターでのみ更新されます。
+- `workspaceTrust: true`: VS Code のワークスペースの信頼を再び有効にします。制限モードではスマホレイアウトやエージェントを含むすべての拡張機能が無効になり、新しいブラウザのたびに再確認されるため、handide はこれを無効にしています。サーバーはアクセストークンで守られています。
 - スマホ用の VS Code 設定はデスクトップの設定とは別に `~/.handide/data/Machine/settings.json` にあります。
 
 </details>
@@ -185,7 +190,7 @@ flowchart LR
 <details>
 <summary><b>スマホに「制限モード」が出る、またはデスクトップ版のような画面になる。</b></summary>
 
-フォルダを**信頼**してください。それまで VS Code は handide のコンパニオンを含むすべての拡張機能を無効にしています。画面上部のお知らせの「신뢰 설정」（信頼の設定）ボタンで信頼画面が開きます。
+handide はワークスペースの信頼を無効にしているため、設定に `"workspaceTrust": true` がある場合にだけ起こります。その場合はフォルダを**信頼**してください。それまで VS Code は handide のコンパニオンを含むすべての拡張機能を無効にしています。画面上部のお知らせの「신뢰 설정」（信頼の設定）ボタンで信頼画面が開きます。
 
 </details>
 
@@ -221,7 +226,6 @@ npm run check -- --android     # エミュレーターや USB 接続したスマ
 
 最終検証: Windows の VS Code 1.138.0（Web サーバー 1.139+）。エミュレーションの Pixel 7 / iPhone 14 で 46/46（コンパニオン）。builtin モードは iPhone 14 でレイアウトチェックが断続的に失敗します。実機の iPhone で LAN、Tailscale Funnel、モバイル回線での接続を確認済み。
 
-- フォルダの信頼はブラウザとフォルダごとに一度必要です。
 - コンパニオンが使うレイアウトコマンドのいくつかは VS Code の内部コマンドです。`npm run compat` が未検証のバージョンを知らせ、`npm run check` で確認します。
 - `serve-web` はデスクトップより新しい VS Code Web サーバーをダウンロードすることがあり、スマホ側の VS Code のほうが新しい場合があります。
 

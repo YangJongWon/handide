@@ -15,7 +15,8 @@
   "scripts": {
     "start": "node proxy/server.mjs",
     "check": "node .claude/skills/mobilize-editor/scripts/check.mjs",
-    "compat": "node .claude/skills/mobilize-editor/scripts/compat.mjs"
+    "compat": "node .claude/skills/mobilize-editor/scripts/compat.mjs",
+    "installer": "node installer/build.mjs"
   },
   "engines": {
     "node": ">=20"

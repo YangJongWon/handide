@@ -37,6 +37,10 @@ with your own VS Code, your extensions and your AI agents. Not a fork, not a clo
 
 ## Quick start
 
+**Windows, one click:** download **handide-setup-<version>.exe** from [Releases](https://github.com/YangJongWon/handide/releases/latest) and run it. It brings its own Node.js, installs VS Code if it is missing, adds a Start menu shortcut and **Open on phone (handide)** to the folder right-click menu, and on its last page sets up access from anywhere (Tailscale; you only sign in). Windows may show *Windows protected your PC* the first time, since the installer is not code-signed yet: *More info* → *Run anyway*.
+
+Or with npm, on any OS:
+
 > Requires **VS Code** 1.100+ and **Node.js** 20+ on the PC.
 
 **1. Install**
@@ -54,7 +58,7 @@ handide
 
 **3. Scan the QR code** with the phone camera (same Wi-Fi). The terminal QR too small? Open **http://localhost:9000/__handide/connect** on the PC for a big one.
 
-On the first visit, accept the certificate warning once (handide makes its own HTTPS certificate for your PC) and tap **Trust** when VS Code asks about the folder.
+On the first visit, accept the certificate warning once (handide makes its own HTTPS certificate for your PC).
 
 <details>
 <summary>Certificate warning, step by step</summary>
@@ -130,7 +134,9 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 - `accessoryKeys` can also hold `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen` and `palette` (☰ is always first).
 - `breakpoint`: screens narrower than this get the phone layout.
 - `companion.mode: "builtin"` runs without the companion extension (VS Code's default shortcuts; views open but not in the phone layout, and the drawer can't open files).
+- `workspaceTrust: true` brings back VS Code's workspace trust prompt. handide turns it off because Restricted Mode disables every extension, the companion and your agents included, and the prompt would return in every new browser; the access token guards the server.
 - `importExtensions: false` stops linking the desktop extensions (from `~/.vscode/extensions` and `~/.cursor/extensions`, newest version of each). Linked extensions are pinned: they are updated by the desktop editor, never by handide.
+- `workspaceTrust: true` turns VS Code's workspace trust back on. handide turns it off because Restricted Mode disables every extension (the phone layout and the agents included) and asks again in every new browser; the access token already guards the server.
 - The phone's VS Code settings live in `~/.handide/data/Machine/settings.json`, separate from your desktop settings.
 
 </details>
@@ -185,7 +191,7 @@ The host has to be VS Code, because forks don't ship `serve-web`. You can keep u
 <details>
 <summary><b>The phone shows "Restricted Mode" or the layout looks like desktop VS Code.</b></summary>
 
-Tap **Trust** for the folder. Until then VS Code keeps all extensions off, including handide's companion. The "신뢰 설정" (trust settings) button in the notice at the top opens the trust screen.
+handide turns workspace trust off, so this only happens with `"workspaceTrust": true` in the config. Then tap **Trust** for the folder: until then VS Code keeps all extensions off, including handide's companion. The "신뢰 설정" (trust settings) button in the notice at the top opens the trust screen.
 
 </details>
 
@@ -212,6 +218,8 @@ npm run check                  # Pixel 7 + iPhone 14 emulation, 23 checks each
 npm run check -- --android     # real Chrome on an emulator or USB phone
 ```
 
+The Windows installer: `npm run installer` (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)) writes `installer/out/handide-setup-<version>.exe`. Pushing a `v*` tag builds it on GitHub Actions and attaches it to the release.
+
 Each check run uses a private data dir and sample workspace under `check-output/` and writes a screenshot per step. `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` retakes the screenshots above.
 
 The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open the repo in Claude Code and ask it to set up handide, re-verify it after a VS Code update, fix what an update broke, or change your layout.
@@ -221,7 +229,6 @@ The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open t
 
 Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 46/46 (companion); builtin mode has an intermittent layout failure on iPhone 14; used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
 
-- The folder must be trusted once per browser and folder.
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.
 - `serve-web` can download a newer VS Code web server than your desktop version, so the phone may run a newer VS Code than the one you tested with.
 

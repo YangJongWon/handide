@@ -78,7 +78,8 @@ export function createBridge({ token, log }) {
 		if (!allowed(req)) return sendJson(res, 403, { ok: false, error: 'forbidden' });
 		try {
 			if (pathname === '/__handide/bridge/call' && req.method === 'POST') {
-				const { command, args } = JSON.parse(await readBody(req));
+				// Phone screenshots are base64 in this JSON request (15MB file max in the layer).
+				const { command, args } = JSON.parse(await readBody(req, 24 << 20));
 				if (typeof command !== 'string') return sendJson(res, 400, { ok: false, error: 'command required' });
 				return sendJson(res, 200, await call(command, Array.isArray(args) ? args : []));
 			}

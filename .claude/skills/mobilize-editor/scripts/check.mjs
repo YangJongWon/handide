@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OUT, ROOT, SAMPLE, killTree, loadPlaywright, startProxy } from './lib/proxy.mjs';
-import { grantTrust } from './lib/trust.mjs';
+import { grantTrust, trustDisabled } from './lib/trust.mjs';
 import { removeImportedExtensions } from '../../../../proxy/extensions.mjs';
 
 const TYPED = '// 모바일 입력 확인';
@@ -173,6 +173,11 @@ async function checkDevice(target, ctx) {
 	});
 
 	await step('trust', async () => {
+		if (await trustDisabled(page)) {
+			await page.waitForTimeout(6000); // companion extension activation
+			const restricted = await page.evaluate(() => !document.getElementById('hd-notice')?.hidden || /Restricted Mode/i.test(document.querySelector('.part.banner')?.textContent || ''));
+			return { ok: !restricted, detail: `workspace trust off${restricted ? ', but still restricted' : ': no Restricted Mode'}` };
+		}
 		// The way a user does it: the layer's notice button must bring up the trust screen,
 		// even from the AI drawer, which covers the editor area where that screen opens.
 		let viaNotice = '';
@@ -538,7 +543,7 @@ async function checkDevice(target, ctx) {
 		await step('folder-change', async () => {
 			await menu('files');
 			await page.waitForTimeout(1500);
-			await tap('#hd-drawer-head [aria-label="폴더 변경"]'); // the picker starts at the parent of the open folder
+			await tap('#hd-drawer-head [data-act="changeFolder"]'); // the picker starts at the parent of the open folder (data-act: language-neutral)
 			await page.waitForTimeout(1200);
 			await tap(page.locator('#hd-drawer .hd-row', { hasText: 'workspace' }).first());
 			await page.waitForTimeout(1200);
@@ -657,8 +662,18 @@ const opts = parseArgs(process.argv.slice(2));
 // be restored and can block autosave. The linked desktop extensions are unlinked first:
 // they point into the desktop editor's own folders.
 await removeImportedExtensions(join(OUT, 'data', 'extensions'));
-for (const dir of ['workspace', 'data']) rmSync(join(OUT, dir), { recursive: true, force: true });
-for (const d of opts.devices) rmSync(join(OUT, d.replace(/\W+/g, '-')), { recursive: true, force: true });
+// A stale run may leave a directory open in another process (e.g. an editor with the
+// workspace as its cwd), which makes rmSync throw EPERM. Clearing best-effort keeps
+// the run going: startProxy rewrites workspace/hello.js anyway.
+const clear = (p) => {
+	try {
+		rmSync(p, { recursive: true, force: true });
+	} catch (e) {
+		console.warn(`note: could not clear ${p} (${e.code}); reusing what is there`);
+	}
+};
+for (const dir of ['workspace', 'data']) clear(join(OUT, dir));
+for (const d of opts.devices) clear(join(OUT, d.replace(/\W+/g, '-')));
 mkdirSync(OUT, { recursive: true });
 
 let proxy;

@@ -64,6 +64,7 @@ async function showView(args) {
 		// The secondary side bar, on the extension asked for or else the one shown last.
 		await run('workbench.action.closePanel');
 		const pick = args?.agent && extensionViews().find((a) => a.id === args.agent);
+		if (pick?.extensionId) await memento?.update(LAST_AGENT_KEY, pick.extensionId);
 		if (pick?.views) await borrowViews(pick);
 		else await run(pick ? pick.id : 'workbench.action.focusAuxiliaryBar');
 		await run('workbench.action.maximizeAuxiliaryBar');
@@ -92,6 +93,7 @@ const BUILTIN_HOMES = {
 	remote: 'workbench.view.remote',
 };
 const BORROWED_KEY = 'handide.borrowed';
+const LAST_AGENT_KEY = 'handide.lastAgent';
 // Global: VS Code keeps view locations per profile, not per workspace.
 let memento;
 let selfId;
@@ -128,7 +130,7 @@ function extensionViews() {
 		for (const c of containers.secondarySidebar ?? []) {
 			const title = localize(ext, c.title) || c.id;
 			inSecondary.add(title);
-			list.push({ id: `workbench.view.extension.${c.id}`, title, extension });
+			list.push({ id: `workbench.view.extension.${c.id}`, title, extension, extensionId: ext.id });
 		}
 		const own = new Set();
 		for (const c of [...(containers.activitybar ?? []), ...(containers.panel ?? [])]) {
@@ -136,7 +138,7 @@ function extensionViews() {
 			const title = localize(ext, c.title) || c.id;
 			const ids = (views[c.id] ?? []).map((v) => v.id);
 			if (inSecondary.has(title) || !ids.length) continue;
-			list.push({ id: `workbench.view.extension.${c.id}`, title, extension, views: ids, home: `workbench.view.extension.${c.id}` });
+			list.push({ id: `workbench.view.extension.${c.id}`, title, extension, extensionId: ext.id, views: ids, home: `workbench.view.extension.${c.id}` });
 		}
 		for (const s of containers.secondarySidebar ?? []) own.add(s.id);
 		// Views added to containers the extension does not own (Explorer, Source Control…).
@@ -144,7 +146,7 @@ function extensionViews() {
 			if (own.has(where)) continue;
 			const home = BUILTIN_HOMES[where] ?? `workbench.view.extension.${where}`;
 			for (const v of vs) {
-				list.push({ id: `view:${v.id}`, title: localize(ext, v.name) || v.id, extension, views: [v.id], home });
+				list.push({ id: `view:${v.id}`, title: localize(ext, v.name) || v.id, extension, extensionId: ext.id, views: [v.id], home });
 			}
 		}
 	}
@@ -182,6 +184,23 @@ function installedExtensions() {
 	return list.sort((a, b) => a.title.localeCompare(b.title));
 }
 
+/** Opens extension management in a deterministic mobile-friendly editor layout. */
+async function manageExtension({ id, action = 'details' }) {
+	await showView({ view: 'editor' });
+	if (action === 'install') {
+		await run('workbench.action.quickOpen', 'ext install ');
+		return { ok: true };
+	}
+	if (typeof id !== 'string' || !id.includes('.')) throw new Error('invalid extension id');
+	if (action === 'settings') {
+		await run('workbench.action.openSettings', `@ext:${id}`);
+		return { ok: true };
+	}
+	// VS Code owns enable/disable/uninstall confirmation and reload requirements.
+	await run('extension.open', id);
+	return { ok: true };
+}
+
 async function returnBorrowed() {
 	const borrowed = memento?.get(BORROWED_KEY);
 	if (!borrowed) return;
@@ -199,6 +218,14 @@ async function borrowViews(pick) {
 	await run('vscode.moveViews', { viewIds: pick.views, destinationId: BORROW_HOME });
 }
 
+/** Activates the last-used agent on the PC while the phone stays in the editor. */
+async function warmLastAgent() {
+	const id = memento?.get(LAST_AGENT_KEY);
+	if (!id) return;
+	const extension = vscode.extensions.getExtension(id);
+	if (extension) await extension.activate().catch(() => {});
+}
+
 /** New file (opened) or folder at an absolute path, for the layer's file drawer. */
 async function create({ path: target, folder }) {
 	const uri = vscode.Uri.file(target);
@@ -212,6 +239,20 @@ async function create({ path: target, folder }) {
 	await vscode.workspace.fs.writeFile(uri, new Uint8Array());
 	await vscode.window.showTextDocument(uri);
 	return { path: target };
+}
+
+/** Saves a phone-selected image where every workspace agent can read it. */
+async function upload({ name, data }) {
+	const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+	if (!root) throw new Error('open a workspace folder first');
+	if (typeof data !== 'string') throw new Error('image data required');
+	const clean = path.basename(String(name || 'screenshot.png')).replace(/[^\p{L}\p{N}._-]+/gu, '-');
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const relative = `.handide/uploads/${stamp}-${clean || 'screenshot.png'}`;
+	const uri = vscode.Uri.joinPath(root, ...relative.split('/'));
+	await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, '.handide', 'uploads'));
+	await vscode.workspace.fs.writeFile(uri, Uint8Array.from(Buffer.from(data, 'base64')));
+	return { path: uri.fsPath, relative };
 }
 
 function state() {
@@ -283,13 +324,16 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.state', state),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 		vscode.commands.registerCommand('handide.create', create),
+		vscode.commands.registerCommand('handide.upload', upload),
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
+		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
 	);
 	memento = context.globalState;
 	selfId = context.extension.id;
 	selfPath = context.extensionPath;
 	startBridge(context);
 	await moveViewsToPanel();
+	setTimeout(warmLastAgent, 1200);
 }
 
 function deactivate() {}

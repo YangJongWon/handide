@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
-import { PHONE_APP_URL, setupRemote, startTailscale } from './tailscale.mjs';
+import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
@@ -87,6 +87,7 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
   --cert <file> --key <file>  serve HTTPS with your own certificate (e.g. from "tailscale cert")
   --data-dir <path>   handide home (default ~/.handide, or $HANDIDE_HOME)
   --config <path>     layout config (default <handide home>/layer.config.json)
+  --open              open the connect page (large QR code) in this PC's browser
   --reset-profile     overwrite the mobile VS Code settings with handide's defaults
   --upstream <port>   use an already running serve-web on localhost:<port>
 
@@ -114,6 +115,7 @@ function parseArgs(argv) {
 		cert: undefined,
 		key: undefined,
 		remote: 'tailscale', // 'tailscale' | 'private' | 'cloudflare' | 'off'
+		open: false,
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
@@ -128,6 +130,7 @@ function parseArgs(argv) {
 		else if (a === '--editor') opts.editor = next();
 		else if (a === '--upstream') opts.upstream = Number(next());
 		else if (a === '--reset-profile') opts.resetProfile = true;
+		else if (a === '--open') opts.open = true;
 		else if (a === '--config') opts.config = resolve(next());
 		else if (a === '--cert') opts.cert = resolve(next());
 		else if (a === '--key') opts.key = resolve(next());
@@ -258,7 +261,7 @@ async function addNewProfileSettings(settingsPath) {
 	const current = parseJsonc(await readFile(settingsPath, 'utf8'));
 	let changed = false;
 	// Defaults handide itself changed: replaced only while the user still has the old default.
-	const UPGRADES = [['workbench.editor.showTabs', 'single']];
+	const UPGRADES = [['workbench.editor.showTabs', 'single'], ['workbench.editor.showTabs', 'none']];
 	for (const [key, oldDefault] of UPGRADES) {
 		if (current[key] === oldDefault && profile[key] !== undefined && profile[key] !== oldDefault) {
 			current[key] = profile[key];
@@ -356,6 +359,18 @@ async function serveLayer(req, res) {
 	}
 }
 
+// Restricted Mode turns every extension off, the companion included, which leaves the
+// phone without its layout and agents. The trust prompt is per browser, so it would
+// come back on every new phone or browser; the access token already guards the server.
+async function workspaceTrustWanted() {
+	const config = await readFile(CONFIG_PATH, 'utf8').then(parseJsonc, () => ({}));
+	return config.workspaceTrust === true;
+}
+
+function disableWorkspaceTrust(html) {
+	return html.replace(/(&quot;|")enableWorkspaceTrust\1:true/, '$1enableWorkspaceTrust$1:false');
+}
+
 function injectLayer(html, version) {
 	const css = `<link rel="stylesheet" href="${LAYER_PREFIX}mobile.css?v=${version}">`;
 	const js = `<script type="module" src="${LAYER_PREFIX}mobile.js?v=${version}"></script>`;
@@ -380,6 +395,11 @@ function createProxy({ upstreamPort, log, tls, bridge }) {
 	const handler = async (req, res) => {
 		if (isConnectRequest(req)) return serveConnect(req, res);
 		const pathname = req.url.split('?')[0];
+		// A tiny, disk-free reachability probe for mobile network transitions.
+		if (pathname === `${LAYER_PREFIX}health`) {
+			res.writeHead(204, { 'cache-control': 'no-store' });
+			return res.end();
+		}
 		if (bridge && (pathname.startsWith('/__handide/bridge/') || pathname === '/__handide/fs')) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
@@ -406,6 +426,7 @@ function createProxy({ upstreamPort, log, tls, bridge }) {
 			let html = Buffer.concat(chunks).toString('utf8');
 			html = html.replaceAll(upHost, host);
 			if (upRes.statusCode === 200 && html.includes('vscode-workbench-web-configuration')) {
+				if (!(await workspaceTrustWanted())) html = disableWorkspaceTrust(html);
 				html = injectLayer(html, await layerVersion());
 			}
 			delete out['content-length'];
@@ -569,10 +590,12 @@ async function main() {
 		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls, remote }), selfSigned };
 		printAccess(CONNECT.info, { selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
 	};
+	// The connect page has no live updates, so it opens once the away-from-home link is settled.
+	const openConnect = () => opts.open && openBrowser(`http://localhost:${opts.port}${CONNECT_PATH}`);
 	server.listen(opts.port, host, async () => {
 		log(`mobile VS Code ready. Open on your phone:`);
 		announce();
-		if (opts.remote === 'off') return;
+		if (opts.remote === 'off') return openConnect();
 		// Tunnels can wait for a one-time approval in the browser, so the LAN QR code comes first.
 		const r = opts.remote === 'cloudflare'
 			? { ...(await startCloudflare({ port: opts.port, tls, dataDir: opts.dataDir, log })), public: true, changes: true }
@@ -588,6 +611,7 @@ async function main() {
 		} else {
 			log(`Away-from-home link not available (${r.reason})${r.hint ? `: ${r.hint.trim()}` : ''}`);
 		}
+		openConnect();
 	});
 
 	// serve-web spawns its own server process; kill the whole tree so nothing is orphaned.

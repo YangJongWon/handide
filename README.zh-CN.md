@@ -54,7 +54,7 @@ handide
 
 **3. 用手机相机扫描二维码**（同一 Wi-Fi）。终端里的二维码太小？在电脑浏览器打开 **http://localhost:9000/__handide/connect** 查看大图。
 
-首次访问时接受一次证书警告（handide 会为你的电脑自行生成 HTTPS 证书），VS Code 询问是否信任文件夹时点 **信任**。
+首次访问时接受一次证书警告（handide 会为你的电脑自行生成 HTTPS 证书）。
 
 <details>
 <summary>如何跳过证书警告</summary>
@@ -131,6 +131,7 @@ handide remote   # 只需一次
 - `breakpoint`：比这更窄的屏幕使用手机布局。
 - `companion.mode: "builtin"`：不使用配套扩展运行（使用 VS Code 默认快捷键；视图不会以手机布局打开，抽屉也无法打开文件）。
 - `importExtensions: false`：停止链接桌面扩展（来自 `~/.vscode/extensions` 和 `~/.cursor/extensions`，每个扩展取最新版本）。链接的扩展会被固定（pinned）：只由桌面编辑器更新，handide 不会更新它们。
+- `workspaceTrust: true`：重新启用 VS Code 的工作区信任。受限模式会关闭所有扩展（包括手机布局和智能体），并且每个新浏览器都要重新确认，所以 handide 默认关闭它；服务器由访问令牌保护。
 - 手机端的 VS Code 设置独立于桌面设置，位于 `~/.handide/data/Machine/settings.json`。
 
 </details>
@@ -185,7 +186,7 @@ flowchart LR
 <details>
 <summary><b>手机上显示"受限模式"，或界面看起来像桌面版 VS Code。</b></summary>
 
-请**信任**该文件夹。在此之前 VS Code 会关闭所有扩展，包括 handide 的配套扩展。点顶部提示中的"신뢰 설정"（信任设置）按钮即可打开信任界面。
+handide 默认关闭工作区信任，只有在配置中设置 `"workspaceTrust": true` 时才会出现。此时请**信任**该文件夹。在此之前 VS Code 会关闭所有扩展，包括 handide 的配套扩展。点顶部提示中的"신뢰 설정"（信任设置）按钮即可打开信任界面。
 
 </details>
 

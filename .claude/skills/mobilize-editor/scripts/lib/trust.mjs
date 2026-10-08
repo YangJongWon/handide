@@ -1,14 +1,22 @@
 // Grants workspace trust whichever way VS Code asks, and keeps trying until
 // Restricted Mode is actually gone: the trust dialog, the trust editor's
 // "Trust" button, or the Restricted Mode banner's "Manage" link.
-// Returns the path that worked ('dialog' | 'editor' | 'banner'), or 'failed'.
+// Returns the path that worked ('dialog' | 'editor' | 'banner'), 'disabled' when
+// handide turned workspace trust off for the page, or 'failed'.
 const isRestricted = (page) =>
 	page.evaluate(() => {
 		const banner = document.querySelector('.part.banner');
 		return !!banner && banner.getBoundingClientRect().height > 0 && /Restricted Mode/i.test(banner.textContent);
 	});
 
+export const trustDisabled = (page) =>
+	page.evaluate(() => {
+		const raw = document.getElementById('vscode-workbench-web-configuration')?.dataset.settings;
+		return !!raw && JSON.parse(raw).enableWorkspaceTrust === false;
+	});
+
 export async function grantTrust(page, { timeoutMs = 90000 } = {}) {
+	if (await trustDisabled(page)) return 'disabled';
 	const deadline = Date.now() + timeoutMs;
 	let how = null;
 	let sawRestricted = false;

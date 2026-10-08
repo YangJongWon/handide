@@ -4,6 +4,9 @@
 // set X-Forwarded-Proto, so the proxy's host rewriting keeps working unchanged.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import os from 'node:os';
 
 const CANDIDATES = {
 	win32: ['C:\\Program Files\\Tailscale\\tailscale.exe', 'C:\\Program Files (x86)\\Tailscale\\tailscale.exe'],
@@ -126,6 +129,28 @@ const INSTALL = {
 	linux: { cmd: 'sh', args: ['-c', 'curl -fsSL https://tailscale.com/install.sh | sh'] },
 };
 
+const WINDOWS_INSTALLER_URL = 'https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe';
+
+/** For PCs without winget (older Windows 10): the official installer, run with its own UI. */
+async function runWindowsInstaller(log) {
+	const file = join(os.tmpdir(), 'tailscale-setup-latest.exe');
+	try {
+		const resp = await fetch(WINDOWS_INSTALLER_URL);
+		if (!resp.ok) return { code: -1, out: `download failed: HTTP ${resp.status}` };
+		await writeFile(file, Buffer.from(await resp.arrayBuffer()));
+	} catch (err) {
+		return { code: -1, out: `download failed: ${err.message}` };
+	}
+	log('     Follow the Tailscale installer that just opened.');
+	// Through Start-Process so Windows can ask for admin rights (a plain spawn cannot); it shows
+	// the installer window itself, so hiding the PowerShell console is fine.
+	return new Promise((resolve) => {
+		const child = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process -Wait -FilePath '${file.replace(/'/g, "''")}'`], { stdio: 'ignore', windowsHide: true });
+		child.on('error', (err) => resolve({ code: -1, out: err.message }));
+		child.on('close', (code) => resolve({ code, out: '' }));
+	});
+}
+
 async function waitFor(check, ms) {
 	const end = Date.now() + ms;
 	while (Date.now() < end) {
@@ -147,8 +172,13 @@ export async function setupRemote({ log, private: tailnetOnly }) {
 		const inst = INSTALL[process.platform];
 		log('1/3  Installing Tailscale on this PC...');
 		if (process.platform === 'win32') log('     Windows may ask for permission: choose Yes.');
-		const res = inst ? await run(inst.cmd, inst.args, { timeout: 900000 }) : { code: -1 };
+		let res = inst ? await run(inst.cmd, inst.args, { timeout: 900000 }) : { code: -1 };
 		cli = await waitFor(findCli, 30000);
+		if (!cli && process.platform === 'win32') {
+			log('     winget did not install it; downloading the Tailscale installer instead...');
+			res = await runWindowsInstaller(log);
+			cli = await waitFor(findCli, 30000);
+		}
 		if (!cli) {
 			log(`     Could not install it automatically${res.out ? ` (${res.out.trim().split('\n').pop()})` : ''}.`);
 			log(`     Install it from ${PHONE_APP_URL}, then run "handide remote" again.`);

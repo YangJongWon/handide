@@ -20,7 +20,9 @@
   "workbench.editor.useModal": "off",
 
   // Editor: one file at a time, no horizontal scrolling.
-  "workbench.editor.showTabs": "none", // the menu sheet shows the active file
+  // One row of tabs for the open files; it scrolls sideways instead of wrapping.
+  "workbench.editor.showTabs": "multiple",
+  "workbench.editor.wrapTabs": false,
   // Without tabs VS Code moves editor actions into its title bar; the menu replaces both.
   "workbench.editor.editorActionsLocation": "hidden",
   "breadcrumbs.enabled": false,

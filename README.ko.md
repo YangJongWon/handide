@@ -37,6 +37,10 @@
 
 ## 빠른 시작
 
+**Windows는 클릭 한 번으로:** [Releases](https://github.com/YangJongWon/handide/releases/latest)에서 **handide-setup-<버전>.exe**를 받아 실행하세요. Node.js는 설치 파일에 들어 있고, VS Code가 없으면 함께 설치합니다. 시작 메뉴 바로가기와 폴더 우클릭 메뉴의 **휴대폰에서 열기 (handide)**가 생기고, 마지막 화면에서 집 밖 접속(Tailscale)까지 설정합니다. 직접 할 일은 로그인뿐입니다. 아직 코드 서명이 없어 처음 실행할 때 *Windows의 PC 보호* 창이 뜨면 *추가 정보* → *실행*을 누르세요.
+
+또는 npm으로 (모든 OS):
+
 > PC에 **VS Code** 1.100+와 **Node.js** 20+가 필요합니다.
 
 **1. 설치**
@@ -54,7 +58,7 @@ handide
 
 **3. 폰 카메라로 QR 촬영** (같은 Wi-Fi). 터미널 QR이 작으면 PC 브라우저에서 **http://localhost:9000/__handide/connect** 를 열면 크게 보입니다.
 
-처음 한 번은 인증서 경고를 넘기고(handide가 PC용 HTTPS 인증서를 직접 만들기 때문), VS Code가 폴더를 신뢰할지 물으면 **신뢰**를 누르세요.
+처음 한 번은 인증서 경고를 넘기세요(handide가 PC용 HTTPS 인증서를 직접 만들기 때문).
 
 <details>
 <summary>인증서 경고 넘기는 법</summary>
@@ -130,7 +134,9 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 - `accessoryKeys`에는 `alt`, `shift`, `home`, `end`, `redo`, `save`, `find`, `quickOpen`, `palette`도 넣을 수 있습니다(☰는 항상 맨 앞).
 - `breakpoint`: 이보다 좁은 화면에서 폰 레이아웃이 적용됩니다.
 - `companion.mode: "builtin"`: 동반 확장 없이 실행합니다(VS Code 기본 단축키 사용, 뷰가 폰 레이아웃으로 열리지 않고 드로어에서 파일을 열 수 없음).
+- `workspaceTrust: true`: VS Code의 작업 영역 신뢰 확인을 다시 켭니다. 제한 모드에서는 동반 확장과 에이전트를 포함한 모든 확장이 꺼지고, 신뢰 확인이 새 브라우저마다 다시 뜨기 때문에 handide는 기본으로 끕니다. 서버는 접속 토큰이 지킵니다.
 - `importExtensions: false`: 데스크톱 확장(`~/.vscode/extensions`, `~/.cursor/extensions`의 확장별 최신 버전) 연결을 끕니다. 연결된 확장은 고정(pinned)되어 handide가 아니라 데스크톱 에디터에서만 업데이트됩니다.
+- `workspaceTrust: true`: VS Code의 작업 영역 신뢰를 다시 켭니다. 제한 모드에서는 폰 레이아웃과 에이전트를 포함한 모든 확장이 꺼지고 새 브라우저마다 다시 물어보기 때문에 handide는 이 기능을 끕니다. 서버는 접속 토큰이 지킵니다.
 - 폰용 VS Code 설정은 데스크톱 설정과 따로 `~/.handide/data/Machine/settings.json`에 있습니다.
 
 </details>
@@ -185,7 +191,7 @@ flowchart LR
 <details>
 <summary><b>폰에 "제한 모드"가 뜨거나 데스크톱 화면처럼 보여요.</b></summary>
 
-폴더를 **신뢰**하세요. 그 전에는 VS Code가 handide 동반 확장을 포함한 모든 확장을 꺼 둡니다. 상단 알림의 "신뢰 설정" 버튼을 누르면 신뢰 화면이 열립니다.
+handide는 작업 영역 신뢰를 꺼 두므로, 설정에 `"workspaceTrust": true`를 넣었을 때만 생깁니다. 그때는 handide는 작업 영역 신뢰를 꺼 두므로, 설정에 `"workspaceTrust": true`를 넣었을 때만 생깁니다. 그때는 폴더를 **신뢰**하세요. 그 전에는 VS Code가 handide 동반 확장을 포함한 모든 확장을 꺼 둡니다. 상단 알림의 "신뢰 설정" 버튼을 누르면 신뢰 화면이 열립니다.
 
 </details>
 
@@ -221,7 +227,6 @@ npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실�
 
 마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 46/46(동반 확장). builtin 모드는 iPhone 14에서 레이아웃 검사가 간헐적으로 실패합니다. 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
 
-- 폴더 신뢰는 브라우저·폴더마다 한 번 필요합니다.
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.
 - `serve-web`이 데스크톱보다 새 VS Code 웹 서버를 받을 수 있어서, 폰 쪽 VS Code 버전이 더 높을 수 있습니다.
 
