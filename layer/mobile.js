@@ -1965,7 +1965,65 @@ function waitFor(selector) {
 	});
 }
 
+// ---------------------------------------------------------------- localhost links
+//
+// "http://localhost:3300" in a chat answer or the terminal means the PC, but on the phone
+// it would open the phone itself. Such links go through the proxy instead
+// (proxy/ports.mjs), unless this browser runs on the PC. VS Code opens links with
+// window.open(url), or on Safari window.open() and then newTab.location.href = url.
+const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/;
+
+function localUrl(href) {
+	if (LOOPBACK.test(location.hostname)) return href;
+	let url;
+	try {
+		url = new URL(String(href), location.href);
+	} catch {
+		return href;
+	}
+	if (!/^https?:$/.test(url.protocol) || !LOOPBACK.test(url.hostname)) return href;
+	const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+	return `${location.origin}${BASE}port/${port}${url.pathname}${url.search}${url.hash}`;
+}
+
+function installLocalLinks() {
+	const open = window.open;
+	window.open = function (url, ...rest) {
+		if (url) return open.call(window, localUrl(url), ...rest);
+		const win = open.call(window, url, ...rest);
+		if (!win) return win;
+		const loc = {
+			get href() { return win.location.href; },
+			set href(v) { win.location.href = localUrl(v); },
+			assign: (v) => win.location.assign(localUrl(v)),
+			replace: (v) => win.location.replace(localUrl(v)),
+		};
+		return new Proxy(win, {
+			get: (target, key) => {
+				if (key === 'location') return loc;
+				const v = Reflect.get(target, key);
+				return typeof v === 'function' ? v.bind(target) : v;
+			},
+			set: (target, key, v) => {
+				if (key === 'location') target.location.href = localUrl(v);
+				else Reflect.set(target, key, v);
+				return true;
+			},
+		});
+	};
+	// Plain <a href> links that VS Code leaves to the browser.
+	document.addEventListener(
+		'click',
+		(e) => {
+			const a = e.target.closest?.('a[href]');
+			if (a && localUrl(a.href) !== a.href) a.href = localUrl(a.href);
+		},
+		true,
+	);
+}
+
 async function main() {
+	installLocalLinks(); // desktop browsers on another machine need it too
 	const [config, commands, selectors] = await Promise.all([loadJson('config.json'), loadJson('commands.json'), loadJson('selectors.json')]);
 	config.menu ??= DEFAULT_MENU;
 	config.accessoryKeys ??= ['esc', 'tab', 'ctrl', 'left', 'up', 'down', 'right', 'undo', 'input'];

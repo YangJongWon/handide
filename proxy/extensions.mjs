@@ -3,7 +3,8 @@
 // serve-web keeps its own extensions dir and has no option to point elsewhere, so each
 // extension folder is *linked* there (a junction on Windows: no copy, no admin rights)
 // and listed in the server's registry. Folders and registry entries handide's own VS Code
-// installed are never touched.
+// installed are never touched. One the user uninstalls on the phone stays uninstalled:
+// it is remembered in IMPORT_STATE and not linked again on later runs.
 import { lstat, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +25,8 @@ const cmpVersion = (a, b) => {
 	return 0;
 };
 const readJson = (file) => readFile(file, 'utf8').then(JSON.parse, () => null);
+// { imported: [ids linked last run], removed: [ids the user uninstalled] }
+const IMPORT_STATE = '.handide-imports.json';
 
 /** Newest copy of every desktop extension, across editors: id → { entry, folder, source }. */
 async function desktopExtensions(skipIds) {
@@ -53,10 +56,32 @@ const isLink = (p) => lstat(p).then((s) => s.isSymbolicLink(), () => false);
 export async function importDesktopExtensions(extDir, { skipIds = [] } = {}) {
 	const registryPath = join(extDir, 'extensions.json');
 	const registry = (await readJson(registryPath)) || [];
-	const own = new Set(registry.filter((e) => !e.metadata?.handideImported).map((e) => e.identifier?.id?.toLowerCase()));
-	const wanted = await desktopExtensions(new Set([...skipIds.map((s) => s.toLowerCase()), ...own]));
+	const statePath = join(extDir, IMPORT_STATE);
+	const state = (await readJson(statePath)) || {};
+	const removed = new Set(state.removed || []);
+	// Uninstalling in VS Code drops the registry entry and marks the folder in .obsolete
+	// (VS Code deletes it on its next start). Either sign means the user removed it.
+	const obsoletePath = join(extDir, '.obsolete');
+	const obsolete = (await readJson(obsoletePath)) || {};
+	const listed = new Set(registry.map((e) => e.identifier?.id?.toLowerCase()));
+	for (const id of state.imported || []) if (!listed.has(id)) removed.add(id);
+	let obsoleteChanged = false;
+	for (const name of Object.keys(obsolete)) {
+		const p = join(extDir, name);
+		if (!(await isLink(p))) continue; // handide's own folders are VS Code's to clean up
+		const id = name.match(/^(.+?)-\d+\.\d+/)?.[1]?.toLowerCase();
+		if (id) removed.add(id);
+		// Unlinked here, so VS Code's cleanup never reaches into the desktop editor's folder.
+		await unlink(p).catch(() => {});
+		delete obsolete[name];
+		obsoleteChanged = true;
+	}
+	if (obsoleteChanged) await writeFile(obsoletePath, JSON.stringify(obsolete));
 
-	// Drop links from earlier runs that are no longer wanted (uninstalled or updated on the desktop).
+	const own = new Set(registry.filter((e) => !e.metadata?.handideImported).map((e) => e.identifier?.id?.toLowerCase()));
+	const wanted = await desktopExtensions(new Set([...skipIds.map((s) => s.toLowerCase()), ...own, ...removed]));
+
+	// Drop links from earlier runs that are no longer wanted (uninstalled here or on the desktop, or updated).
 	const keep = [];
 	for (const e of registry) {
 		const id = e.identifier?.id?.toLowerCase();
@@ -84,6 +109,7 @@ export async function importDesktopExtensions(extDir, { skipIds = [] } = {}) {
 		(imported[source] ??= []).push(id);
 	}
 	await writeFile(registryPath, JSON.stringify(keep));
+	await writeFile(statePath, JSON.stringify({ imported: [...wanted.keys()], removed: [...removed].sort() }));
 	return imported;
 }
 

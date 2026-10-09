@@ -22,6 +22,7 @@ import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
+import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import QRCode from 'qrcode';
 
@@ -378,7 +379,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, bridge }) {
+function createProxy({ upstreamPort, log, tls, bridge, ports }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -400,6 +401,8 @@ function createProxy({ upstreamPort, log, tls, bridge }) {
 			res.writeHead(204, { 'cache-control': 'no-store' });
 			return res.end();
 		}
+		// localhost:<port> links opened on the phone (dev servers on the PC).
+		if (ports?.handle(req, res)) return;
 		if (bridge && (pathname.startsWith('/__handide/bridge/') || pathname === '/__handide/fs')) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
@@ -446,6 +449,7 @@ function createProxy({ upstreamPort, log, tls, bridge }) {
 
 	// WebSockets (extension host, terminals, file system) are passed through byte for byte.
 	server.on('upgrade', (req, socket, head) => {
+		if (ports?.upgrade(req, socket, head)) return;
 		const upstream = net.connect(upstreamPort, '127.0.0.1', () => {
 			const headers = toUpstreamHeaders(req);
 			const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
@@ -579,7 +583,8 @@ async function main() {
 		tls = { cert: cert.cert, key: cert.key };
 		selfSigned = cert.fingerprint;
 	}
-	const server = createProxy({ upstreamPort, log, tls, bridge });
+	const ports = createPortForwarder({ token: opts.token, log });
+	const server = createProxy({ upstreamPort, log, tls, bridge, ports });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);
