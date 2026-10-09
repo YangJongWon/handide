@@ -276,8 +276,55 @@ html.hd-mobile .hd-lang[aria-pressed='true'] {
 	color: var(--hd-btn-fg);
 }
 /* The gear in the head swaps the tiles for the panel and back. */
-html.hd-mobile #hd-menu[data-panel='settings'] #hd-menu-grid {
+html.hd-mobile #hd-menu[data-panel='settings'] #hd-menu-grid,
+html.hd-mobile #hd-menu[data-panel='settings'] #hd-devices {
 	display: none;
+}
+
+/* ---------------------------------------------------------------- other PCs (menu sheet) */
+
+html.hd-mobile #hd-devices[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-devices {
+	padding-top: 10px;
+}
+html.hd-mobile .hd-device-list {
+	display: flex;
+	gap: 6px;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+html.hd-mobile .hd-device {
+	flex: none;
+	min-height: 44px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 14px;
+	border-radius: 12px;
+	font-size: 14px;
+	white-space: nowrap;
+	color: var(--hd-fg);
+	background: var(--hd-key-bg) !important;
+}
+html.hd-mobile .hd-device[aria-pressed='true'] {
+	background: var(--hd-btn-bg) !important;
+	color: var(--hd-btn-fg) !important;
+}
+html.hd-mobile .hd-device[aria-pressed='true'] small {
+	color: inherit;
+}
+/* "PCs" must keep its lowercase s. */
+html.hd-mobile #hd-devices .hd-settings-label {
+	text-transform: none;
+}
+html.hd-mobile .hd-device[data-online='false'] {
+	opacity: 0.55;
+}
+html.hd-mobile .hd-device small {
+	font-size: 11px;
+	color: var(--hd-muted);
 }
 
 /* ---------------------------------------------------------------- view bar [vscode-dom: covers a part's title strip] */

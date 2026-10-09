@@ -88,6 +88,24 @@ PC に [Tailscale](https://tailscale.com) をインストールし、ブラウ�
 > [!IMPORTANT]
 > リンクに含まれるアクセストークン（`~/.handide/token`）は、ターミナルを含めあなたの VS Code を開く鍵です。パスワードと同じように扱ってください。`handide --new-token` で再発行すると、古いリンクは使えなくなります。
 
+## 複数の PC を 1 台のスマホで
+
+PC ごとに handide を起動し、スマホが開く PC にほかの PC を 1 回ずつ登録します。
+
+```sh
+# ほかの PC（例: ノート PC）で: いつもどおり起動し、表示されたリンクをコピー
+handide
+
+# スマホが開く PC で
+handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
+```
+
+スマホのメニューに **PC** の行が出ます。タップするとその PC の VS Code が、その PC のフォルダ・ターミナル・拡張機能のまま開きます。選んだ PC は記憶され、スマホのリンクと QR コードは 1 つのままです。スマホが開く PC がすべて中継するので、ほかの PC はその PC から届けば十分です（同じ Wi-Fi か Tailscale のアドレス）。
+
+- `handide devices` で一覧と接続状態、`handide devices remove laptop` で削除します。
+- アクセストークンは PC ごとに別で、各 PC が自分で確認します。自己署名証明書は登録時に固定されるので、変わったら（IP の変更など）新しいリンクで登録し直してください。
+- すべての PC で同じバージョンの handide を使ってください。
+
 ## スマホの画面構成
 
 ```
@@ -146,6 +164,8 @@ PC に [Tailscale](https://tailscale.com) をインストールし、ブラウ�
 ```
 handide [folder] [options]       folder の既定値はカレントディレクトリ
 handide remote [--private]       外出先アクセスの初回設定
+handide devices add <name> <link>  ほかの PC を登録（その PC が表示したリンク）、メニューで切り替え
+handide devices [remove <name>]    一覧、または削除
 
   --private          外出先リンクを自分の tailnet の端末に限定
   --cloudflare       アカウントなしの外出先リンク（実行ごとにアドレスが変わる）

@@ -126,6 +126,10 @@ const STRINGS = {
 		'trust.manage': 'Manage trust',
 		'settings.language': 'Language',
 		'settings.title': 'Settings',
+		'devices.label': 'PCs',
+		'devices.offline': 'Offline',
+		'devices.switching': 'Opening {1}…',
+		'devices.unreachable': '{1} is offline. Start handide on that PC.',
 	},
 	ko: {
 		'key.input': '가',
@@ -229,6 +233,10 @@ const STRINGS = {
 		'trust.manage': '신뢰 설정',
 		'settings.language': '언어',
 		'settings.title': '설정',
+		'devices.label': 'PC',
+		'devices.offline': '꺼짐',
+		'devices.switching': '{1} 여는 중…',
+		'devices.unreachable': '{1}이(가) 꺼져 있습니다. 그 PC에서 handide를 실행하세요.',
 	},
 	ja: {
 		'key.input': 'あ',
@@ -332,6 +340,10 @@ const STRINGS = {
 		'trust.manage': '信頼の設定',
 		'settings.language': '言語',
 		'settings.title': '設定',
+		'devices.label': 'PC',
+		'devices.offline': 'オフライン',
+		'devices.switching': '{1} を開いています…',
+		'devices.unreachable': '{1} はオフラインです。その PC で handide を起動してください。',
 	},
 	zh: {
 		'key.input': '中',
@@ -435,6 +447,10 @@ const STRINGS = {
 		'trust.manage': '管理信任',
 		'settings.language': '语言',
 		'settings.title': '设置',
+		'devices.label': '电脑',
+		'devices.offline': '离线',
+		'devices.switching': '正在打开 {1}…',
+		'devices.unreachable': '{1} 离线。请在那台电脑上启动 handide。',
 	},
 };
 
@@ -545,6 +561,7 @@ const state = {
 	agentsLoading: null,
 	managerStandalone: false,
 	previewOpen: false, // a localhost page shown over the code view
+	devices: null, // { current, devices: [{ id, name, online }] } when other PCs are set up
 };
 
 // ---------------------------------------------------------------- bridge + fs
@@ -941,6 +958,7 @@ function openMenu() {
 	document.activeElement?.blur?.(); // no soft keyboard under the sheet
 	renderMenuHead();
 	render();
+	loadDevices(); // their online state may have changed since
 }
 
 function closeMenu() {
@@ -967,6 +985,7 @@ function setLang(code) {
 	render();
 	renderDrawer();
 	renderMenuHead();
+	renderDevices();
 	if (voice.rec) renderVoice();
 }
 
@@ -993,7 +1012,51 @@ function buildSettings() {
 
 function renderMenuHead() {
 	const folder = document.getElementById('hd-menu-folder');
-	if (folder) folder.textContent = state.folder?.name ?? '';
+	const pc = currentDevice();
+	if (folder) folder.textContent = [pc?.name, state.folder?.name].filter(Boolean).join(' · ');
+}
+
+// ---------------------------------------------------------------- other PCs
+//
+// With other PCs set up ("handide devices add"), the PC this link belongs to relays the
+// page to the one picked here (proxy/devices.mjs). Switching is a plain navigation, so
+// it reloads the editor of that PC with its own folder, terminals and extensions.
+
+const currentDevice = () => (state.devices?.devices.length > 1 ? state.devices.devices.find((d) => d.id === state.devices.current) : null);
+
+async function loadDevices() {
+	const r = await api(`${BASE}devices`).catch(() => null);
+	state.devices = r?.ok ? r : null;
+	renderDevices();
+	renderMenuHead();
+}
+
+function renderDevices() {
+	const box = document.getElementById('hd-devices');
+	if (!box) return;
+	const list = state.devices?.devices ?? [];
+	box.hidden = list.length < 2;
+	box.replaceChildren(
+		el('span', { class: 'hd-settings-label', 'data-i18n': 'devices.label' }, t('devices.label')),
+		el(
+			'div',
+			{ class: 'hd-device-list' },
+			list.map((d) =>
+				button(
+					{ class: 'hd-device', 'aria-pressed': String(d.id === state.devices.current), 'data-online': String(d.online) },
+					[icon('vm'), el('span', {}, d.name), d.online ? null : el('small', {}, t('devices.offline'))],
+					() => useDevice(d),
+				),
+			),
+		),
+	);
+}
+
+function useDevice(d) {
+	if (d.id === state.devices.current) return closeMenu();
+	if (!d.online) return toast(t('devices.unreachable', d.name));
+	toast(t('devices.switching', d.name));
+	location.href = `${BASE}devices/use?id=${encodeURIComponent(d.id)}`;
 }
 
 // ---------------------------------------------------------------- drawer
@@ -1704,6 +1767,7 @@ function build() {
 			button({ class: 'hd-icon-btn', 'aria-label': t('aria.save'), 'data-i18n-aria': 'aria.save', 'data-act': 'save' }, icon('save'), () => runAction('save')),
 			button({ class: 'hd-icon-btn', 'aria-label': t('aria.close'), 'data-i18n-aria': 'aria.close', 'data-act': 'close' }, icon('close'), closeMenu),
 		),
+		el('div', { id: 'hd-devices', hidden: true }),
 		buildSettings(),
 		tiles,
 	);
@@ -2165,6 +2229,7 @@ async function main() {
 	watchTitle();
 	state.folder = pageFolder();
 	renderMenuHead();
+	loadDevices();
 	if (state.folder) loadDir(state.folder.path, true).then(renderDrawer);
 	if (!builtin() && (await waitForBridge())) {
 		loadAgents(); // make the extension picker instant when it is opened later

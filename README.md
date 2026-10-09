@@ -88,6 +88,24 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 > [!IMPORTANT]
 > The link contains an access token (kept in `~/.handide/token`) that unlocks your VS Code, including its terminal. Treat it like a password. `handide --new-token` replaces it; old links stop working.
 
+## Several PCs from one phone
+
+Run handide on each PC, then tell the PC your phone opens about the others, once each:
+
+```sh
+# on the other PC (e.g. a laptop): run handide as usual and copy the link it prints
+handide
+
+# on the PC the phone opens
+handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
+```
+
+The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Code, with its own folder, terminals and extensions. The choice is remembered, and the phone keeps a single link and QR code. The PC the phone opens relays everything, so the other PCs only need to be reachable from it (same Wi-Fi, or a Tailscale address).
+
+- `handide devices` lists them with their online state, `handide devices remove laptop` removes one.
+- Every PC keeps its own access token and checks it. A self-signed certificate is pinned when the PC is added; if it changes (a new IP address), add the PC again with its new link.
+- Use the same handide version on every PC.
+
 ## The phone layout
 
 ```
@@ -147,6 +165,8 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 ```
 handide [folder] [options]       folder defaults to the current directory
 handide remote [--private]       one-time setup for access away from home
+handide devices add <name> <link>  add another PC (the link it prints); switch in the phone menu
+handide devices [remove <name>]    list them, or remove one
 
   --private          away-from-home link only for your tailnet devices
   --cloudflare       away-from-home link without any account (new address each run)

@@ -24,6 +24,7 @@ import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
+import { createDeviceRouter, devicesCommand } from './devices.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -72,6 +73,10 @@ const USAGE = `handide — your VS Code on your phone
 
 Usage:  handide [folder] [options]      (folder defaults to the current directory)
         handide remote [--private]      one-time setup to use it away from home (Tailscale)
+        handide devices add <name> <link>
+                                        add another PC running handide (its printed link);
+                                        the phone then switches PCs in the menu
+        handide devices [remove <name>] list (with online state) or remove those PCs
 
   (default)           open on the LAN with HTTPS and print a QR code + link for the phone
   --local             this PC only (http://localhost), no LAN, no certificate
@@ -379,7 +384,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, bridge, ports }) {
+function createProxy({ upstreamPort, log, tls, bridge, ports, devices }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -395,6 +400,8 @@ function createProxy({ upstreamPort, log, tls, bridge, ports }) {
 
 	const handler = async (req, res) => {
 		if (isConnectRequest(req)) return serveConnect(req, res);
+		// Another PC picked on the phone: everything else is that PC's (proxy/devices.mjs).
+		if (devices?.handle(req, res, clientBase(req).proto)) return;
 		const pathname = req.url.split('?')[0];
 		// A tiny, disk-free reachability probe for mobile network transitions.
 		if (pathname === `${LAYER_PREFIX}health`) {
@@ -449,6 +456,7 @@ function createProxy({ upstreamPort, log, tls, bridge, ports }) {
 
 	// WebSockets (extension host, terminals, file system) are passed through byte for byte.
 	server.on('upgrade', (req, socket, head) => {
+		if (devices?.upgrade(req, socket, head, clientBase(req).proto)) return;
 		if (ports?.upgrade(req, socket, head)) return;
 		const upstream = net.connect(upstreamPort, '127.0.0.1', () => {
 			const headers = toUpstreamHeaders(req);
@@ -545,6 +553,12 @@ async function remoteCommand(log, tailnetOnly) {
 async function main() {
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
 	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
+	if (process.argv[2] === 'devices') {
+		const args = process.argv.slice(3);
+		const at = args.indexOf('--data-dir');
+		const dataDir = at >= 0 ? resolve(args.splice(at, 2)[1]) : HOME_DIR;
+		return devicesCommand(args, { dataDir, log });
+	}
 	const opts = parseArgs(process.argv.slice(2));
 	await resolveHome(opts);
 	CONFIG_PATH = opts.config;
@@ -584,7 +598,10 @@ async function main() {
 		selfSigned = cert.fingerprint;
 	}
 	const ports = createPortForwarder({ token: opts.token, log });
-	const server = createProxy({ upstreamPort, log, tls, bridge, ports });
+	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log });
+	await devices.refresh();
+	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
+	const server = createProxy({ upstreamPort, log, tls, bridge, ports, devices });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);

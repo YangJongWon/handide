@@ -88,6 +88,24 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 > [!IMPORTANT]
 > 링크 안의 접속 토큰(`~/.handide/token`)은 터미널을 포함해 내 VS Code를 여는 열쇠입니다. 비밀번호처럼 다루세요. `handide --new-token`으로 바꾸면 예전 링크는 더 이상 동작하지 않습니다.
 
+## 여러 PC를 폰 하나로
+
+PC마다 handide를 실행하고, 폰이 여는 PC에 다른 PC를 한 번씩 등록합니다.
+
+```sh
+# 다른 PC(예: 노트북)에서: 평소처럼 실행하고 출력된 링크를 복사
+handide
+
+# 폰이 여는 PC에서
+handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
+```
+
+그러면 폰 메뉴에 **PC** 줄이 생깁니다. 탭하면 그 PC의 VS Code가 그 PC의 폴더·터미널·확장 그대로 열립니다. 고른 PC는 기억되고, 폰의 링크와 QR은 하나 그대로입니다. 폰이 여는 PC가 모든 요청을 중계하므로, 다른 PC는 그 PC에서만 닿으면 됩니다(같은 Wi-Fi 또는 Tailscale 주소).
+
+- `handide devices`로 목록과 접속 상태를, `handide devices remove laptop`으로 삭제합니다.
+- 접속 토큰은 PC마다 따로이고 각 PC가 직접 확인합니다. 자체 서명 인증서는 등록할 때 고정되므로, 바뀌면(IP 변경 등) 새 링크로 다시 등록하세요.
+- 모든 PC에서 같은 버전의 handide를 쓰세요.
+
 ## 폰 화면 구성
 
 ```
@@ -147,6 +165,8 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 ```
 handide [폴더] [옵션]            폴더 기본값은 현재 디렉터리
 handide remote [--private]       집 밖 접속 1회 설정
+handide devices add <이름> <링크>  다른 PC 등록 (그 PC가 출력한 링크), 폰 메뉴에서 전환
+handide devices [remove <이름>]    목록 보기, 또는 삭제
 
   --private          집 밖 링크를 내 tailnet 기기로만 제한
   --cloudflare       계정 없이 집 밖 링크 (실행마다 주소가 바뀜)

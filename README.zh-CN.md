@@ -84,6 +84,24 @@ handide remote   # 只需一次
 > [!IMPORTANT]
 > 链接中包含访问令牌（保存在 `~/.handide/token`），它能打开你的 VS Code，包括终端。请像密码一样保管。`handide --new-token` 会更换令牌，旧链接随即失效。
 
+## 一部手机使用多台电脑
+
+在每台电脑上运行 handide，然后在手机打开的那台电脑上把其他电脑各登记一次：
+
+```sh
+# 在另一台电脑（例如笔记本）上：照常运行，复制它打印的链接
+handide
+
+# 在手机打开的那台电脑上
+handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
+```
+
+手机菜单里会出现 **电脑** 一行，点一下就打开那台电脑的 VS Code，以及它自己的文件夹、终端和扩展。选择会被记住，手机上的链接和二维码仍然只有一个。所有请求都由手机打开的那台电脑转发，所以其他电脑只需能从它访问到（同一 Wi-Fi 或 Tailscale 地址）。
+
+- `handide devices` 列出它们及在线状态，`handide devices remove laptop` 删除。
+- 每台电脑各有自己的访问令牌并自行校验。自签名证书在登记时固定，如果变了（例如 IP 变化），请用新链接重新登记。
+- 所有电脑请使用相同版本的 handide。
+
 ## 手机界面
 
 ```
@@ -142,6 +160,8 @@ handide remote   # 只需一次
 ```
 handide [folder] [options]       folder 默认为当前目录
 handide remote [--private]       一次性设置外网访问
+handide devices add <name> <link>  登记另一台电脑（它打印的链接），在手机菜单中切换
+handide devices [remove <name>]    列出，或删除
 
   --private          外网链接仅限你 tailnet 中的设备
   --cloudflare       无需账号的外网链接（每次运行地址都会变）
