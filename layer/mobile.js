@@ -119,6 +119,8 @@ const STRINGS = {
 		'voice.copied': 'Copied: long-press the input box to paste\n{1}',
 		'voice.listening': 'Listening… your words go into the input box',
 		'notice.insecure': 'VS Code connects only over HTTPS or localhost (this page is http). Open the QR code or link handide shows on the PC.',
+		'link.open': 'Open link',
+		'preview.browser': 'Open in browser',
 		'notice.offline': 'The connection was lost. It is checked again automatically once the network is back.',
 		'trust.notice': 'Trust this folder so that views, file opening and agent extensions work.',
 		'trust.manage': 'Manage trust',
@@ -220,6 +222,8 @@ const STRINGS = {
 		'voice.copied': '복사됨: 입력창을 길게 눌러 붙여넣으세요\n{1}',
 		'voice.listening': '듣는 중… 말하면 입력창에 들어갑니다',
 		'notice.insecure': 'HTTPS나 localhost로 접속해야 VS Code가 연결됩니다 (현재 http). PC에서 handide가 띄운 QR이나 링크로 여세요.',
+		'link.open': '링크 열기',
+		'preview.browser': '브라우저로 열기',
 		'notice.offline': '연결이 끊겼습니다. 네트워크가 돌아오면 자동으로 다시 확인합니다.',
 		'trust.notice': '이 폴더를 신뢰해야 화면 전환, 파일 열기, 에이전트 확장이 동작합니다.',
 		'trust.manage': '신뢰 설정',
@@ -321,6 +325,8 @@ const STRINGS = {
 		'voice.copied': 'コピーしました: 入力欄を長押しして貼り付けてください\n{1}',
 		'voice.listening': '聞き取り中… 話した内容が入力欄に入ります',
 		'notice.insecure': 'VS Code に接続するには HTTPS か localhost で開いてください（現在は http）。PC で handide が表示する QR コードかリンクを開いてください。',
+		'link.open': 'リンクを開く',
+		'preview.browser': 'ブラウザで開く',
 		'notice.offline': '接続が切れました。ネットワークが戻ると自動で再確認します。',
 		'trust.notice': 'このフォルダを信頼すると、画面の切り替え・ファイルを開く・エージェント拡張機能が使えます。',
 		'trust.manage': '信頼の設定',
@@ -422,6 +428,8 @@ const STRINGS = {
 		'voice.copied': '已复制：请长按输入框粘贴\n{1}',
 		'voice.listening': '正在聆听… 说话内容会进入输入框',
 		'notice.insecure': '必须通过 HTTPS 或 localhost 访问才能连接 VS Code（当前为 http）。请打开 PC 上 handide 显示的二维码或链接。',
+		'link.open': '打开链接',
+		'preview.browser': '在浏览器中打开',
 		'notice.offline': '连接已断开。网络恢复后会自动重新检查。',
 		'trust.notice': '信任此文件夹后，视图切换、打开文件和智能体扩展才能工作。',
 		'trust.manage': '管理信任',
@@ -536,6 +544,7 @@ const state = {
 	agents: null,
 	agentsLoading: null,
 	managerStandalone: false,
+	previewOpen: false, // a localhost page shown over the code view
 };
 
 // ---------------------------------------------------------------- bridge + fs
@@ -1045,6 +1054,7 @@ async function createEntry(folder) {
 async function openFile(path) {
 	if (!state.bridge) return toast(t('need.open'));
 	closeDrawer();
+	closePreview(); // opening a file means the code
 	await bridgeCall('vscode.open', { $file: path });
 	state.activePath = path;
 	if (state.view !== 'editor' && state.view !== 'terminalDock') showView('editor');
@@ -1831,6 +1841,8 @@ function render() {
 		const def = KEY_DEFS[b.dataset.key];
 		b.classList.toggle('active', !!(def?.sticky && state.sticky[def.sticky]));
 	}
+	const preview = document.getElementById('hd-preview');
+	if (preview) preview.hidden = !state.previewOpen || state.view !== 'editor';
 	renderViewbar();
 	if (state.view !== 'ai') {
 		stopVoice();
@@ -1971,7 +1983,14 @@ function waitFor(selector) {
 // it would open the phone itself. Such links go through the proxy instead
 // (proxy/ports.mjs), unless this browser runs on the PC. VS Code opens links with
 // window.open(url), or on Safari window.open() and then newTab.location.href = url.
+//
+// On the phone a localhost link opens in the code view first (a preview over the editor,
+// same origin, so the app works as usual); "Open in browser" takes it full screen in a
+// tab. Other links open in a tab. Safari blocks a tab that no tap opened, and links from
+// the AI chat reach the page only after a round trip to the PC (the agent hands them to
+// $BROWSER); such a link is offered as a banner to tap instead of being lost.
 const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/;
+const PORT_BASE = `${BASE}port/`;
 
 function localUrl(href) {
 	if (LOOPBACK.test(location.hostname)) return href;
@@ -1983,40 +2002,124 @@ function localUrl(href) {
 	}
 	if (!/^https?:$/.test(url.protocol) || !LOOPBACK.test(url.hostname)) return href;
 	const port = url.port || (url.protocol === 'https:' ? '443' : '80');
-	return `${location.origin}${BASE}port/${port}${url.pathname}${url.search}${url.hash}`;
+	return `${location.origin}${PORT_BASE}${port}${url.pathname}${url.search}${url.hash}`;
+}
+
+const isForwarded = (href) => String(href).startsWith(`${location.origin}${PORT_BASE}`);
+const shownUrl = (href) => String(href).replace(`${location.origin}${PORT_BASE}`, 'localhost:');
+const mobileUi = () => document.documentElement.classList.contains('hd-mobile');
+const tapped = () => !navigator.userActivation || navigator.userActivation.isActive;
+
+function offerLink(href) {
+	document.getElementById('hd-link')?.remove();
+	const close = () => box.remove();
+	// A plain link (not onTap, which cancels the click): the tap itself opens the tab.
+	const link = el('a', { href, target: '_blank', rel: 'noopener' }, el('b', {}, t('link.open')), el('small', {}, shownUrl(href)));
+	link.addEventListener('click', () => setTimeout(close));
+	const box = el('div', { id: 'hd-link', role: 'status' }, link, el('button', { type: 'button', 'aria-label': 'Close', onclick: close }, icon('close')));
+	document.body.append(box);
+	setTimeout(close, 20000);
+}
+
+const preview = { port: null };
+
+/** What the preview shows now, as a link that opens the same page in a tab. */
+function previewHref() {
+	const frame = document.querySelector('#hd-preview iframe');
+	let path = '/';
+	try {
+		const loc = frame.contentWindow.location;
+		path = (loc.pathname.startsWith(PORT_BASE) ? loc.pathname.replace(/^\/__handide\/port\/\d+/, '') || '/' : loc.pathname) + loc.search + loc.hash;
+	} catch {}
+	return `${location.origin}${PORT_BASE}${preview.port}${path}`;
+}
+
+function setPreviewBar(href) {
+	const box = document.getElementById('hd-preview');
+	box.querySelector('.hd-preview-url').textContent = shownUrl(href);
+	box.querySelector('.hd-preview-open').href = href;
+}
+
+function showPreview(href) {
+	preview.port = href.slice(`${location.origin}${PORT_BASE}`.length).match(/^\d+/)?.[0];
+	let box = document.getElementById('hd-preview');
+	if (!box) {
+		const frame = el('iframe', { title: 'Preview' });
+		frame.addEventListener('load', () => frame.src !== 'about:blank' && setPreviewBar(previewHref()));
+		// A plain link: the tap opens the tab, so Safari lets it through.
+		const open = el('a', { class: 'hd-preview-open', target: '_blank', rel: 'noopener' }, icon('link-external'), el('span', { 'data-i18n': 'preview.browser' }, t('preview.browser')));
+		const bar = el(
+			'div',
+			{ class: 'hd-preview-bar' },
+			el('button', { type: 'button', 'aria-label': 'Close', onclick: closePreview }, icon('close')),
+			el('span', { class: 'hd-preview-url' }),
+			el('button', { type: 'button', 'aria-label': 'Reload', onclick: () => frame.contentWindow?.location.reload() }, icon('refresh')),
+			open,
+		);
+		box = el('div', { id: 'hd-preview', hidden: true }, bar, frame);
+		document.body.append(box);
+	}
+	box.querySelector('iframe').src = href;
+	setPreviewBar(href);
+	state.previewOpen = true;
+	if (state.view === 'editor') render();
+	else showView('editor');
+}
+
+function closePreview() {
+	const box = document.getElementById('hd-preview');
+	if (!box || !state.previewOpen) return;
+	state.previewOpen = false;
+	box.querySelector('iframe').src = 'about:blank';
+	render();
+}
+
+/** Opens a link as described above; `openTab` opens a real tab (only while tapped). */
+function openLink(href, openTab) {
+	const local = localUrl(href);
+	if (isForwarded(local) && mobileUi()) return showPreview(local);
+	if (tapped()) return openTab(local);
+	offerLink(local);
+}
+
+/** Stands in for the tab VS Code opens first on Safari; the address it then sets goes to openLink. */
+function deferredTab(openTab) {
+	const go = (v) => openLink(v, openTab);
+	const tab = {
+		closed: false,
+		opener: null,
+		focus() {},
+		close() { tab.closed = true; },
+		document: { documentElement: { style: {} }, body: { style: {} } },
+		get location() {
+			return { set href(v) { go(v); }, assign: go, replace: go };
+		},
+		set location(v) { go(v); },
+	};
+	return tab;
 }
 
 function installLocalLinks() {
 	const open = window.open;
 	window.open = function (url, ...rest) {
-		if (url) return open.call(window, localUrl(url), ...rest);
-		const win = open.call(window, url, ...rest);
-		if (!win) return win;
-		const loc = {
-			get href() { return win.location.href; },
-			set href(v) { win.location.href = localUrl(v); },
-			assign: (v) => win.location.assign(localUrl(v)),
-			replace: (v) => win.location.replace(localUrl(v)),
-		};
-		return new Proxy(win, {
-			get: (target, key) => {
-				if (key === 'location') return loc;
-				const v = Reflect.get(target, key);
-				return typeof v === 'function' ? v.bind(target) : v;
-			},
-			set: (target, key, v) => {
-				if (key === 'location') target.location.href = localUrl(v);
-				else Reflect.set(target, key, v);
-				return true;
-			},
-		});
+		const openTab = (u) => open.call(window, u, ...rest);
+		if (!url) return deferredTab((u) => open.call(window, u, '_blank', 'noopener'));
+		let win = null;
+		openLink(url, (u) => (win = openTab(u)));
+		return win;
 	};
 	// Plain <a href> links that VS Code leaves to the browser.
 	document.addEventListener(
 		'click',
 		(e) => {
 			const a = e.target.closest?.('a[href]');
-			if (a && localUrl(a.href) !== a.href) a.href = localUrl(a.href);
+			if (!a || a.closest('#hd-link, #hd-preview')) return;
+			const local = localUrl(a.href);
+			if (local === a.href) return;
+			if (mobileUi()) {
+				e.preventDefault();
+				showPreview(local);
+			} else a.href = local;
 		},
 		true,
 	);

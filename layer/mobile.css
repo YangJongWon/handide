@@ -703,6 +703,104 @@ html.hd-mobile #hd-toast[hidden] {
 	display: none;
 }
 
+/* A localhost page shown over the code view; its bar opens it full screen in a tab. */
+html.hd-mobile #hd-preview {
+	position: fixed;
+	inset: 0;
+	z-index: 2300;
+	display: flex;
+	flex-direction: column;
+	padding-top: env(safe-area-inset-top);
+	background: var(--hd-bg);
+}
+html.hd-mobile #hd-preview[hidden] {
+	display: none;
+}
+html.hd-mobile .hd-preview-bar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 48px;
+	padding: 0 6px;
+	border-bottom: 1px solid var(--hd-border, rgba(128, 128, 128, 0.3));
+	color: var(--hd-fg);
+	font: 14px/1.3 var(--vscode-font-family, system-ui, sans-serif);
+}
+html.hd-mobile .hd-preview-bar button {
+	flex: none;
+	width: 40px;
+	height: 40px;
+	border: 0;
+	background: none;
+	color: inherit;
+}
+html.hd-mobile .hd-preview-url {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.75;
+}
+html.hd-mobile .hd-preview-open {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	border-radius: 8px;
+	background: var(--hd-btn-bg, #0e639c);
+	color: var(--hd-btn-fg, #fff);
+	text-decoration: none;
+}
+html.hd-mobile #hd-preview iframe {
+	flex: 1;
+	width: 100%;
+	border: 0;
+	background: #fff;
+}
+
+/* A link Safari would not open by itself (no tap behind it): offered to tap. Also on desktop. */
+#hd-link {
+	position: fixed;
+	left: 50%;
+	top: calc(12px + env(safe-area-inset-top));
+	transform: translateX(-50%);
+	z-index: 3000;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	max-width: calc(100vw - 32px);
+	padding: 4px 4px 4px 16px;
+	border-radius: 12px;
+	background: var(--hd-fg, #1f1f1f);
+	color: var(--hd-bg, #fff);
+	box-shadow: 0 4px 12px var(--hd-shadow, rgba(0, 0, 0, 0.3));
+	font: 14px/1.3 var(--vscode-font-family, system-ui, sans-serif);
+}
+#hd-link a {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 6px 0;
+	color: inherit;
+	text-decoration: none;
+}
+#hd-link small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.75;
+}
+#hd-link button {
+	flex: none;
+	width: 40px;
+	height: 40px;
+	border: 0;
+	background: none;
+	color: inherit;
+}
+
 /* Voice input (AI chat): the mic in the AI bar while listening, and the live transcript. */
 html.hd-mobile #hd-viewbar .hd-listening {
 	color: #fff;
