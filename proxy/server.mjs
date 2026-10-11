@@ -16,7 +16,7 @@ import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectEditorCli, editorVersion, startServeWeb } from './editor.mjs';
+import { detectEditorCli, editorVersion, startServeWeb, stopOrphanedServers } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
@@ -572,6 +572,7 @@ async function main() {
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
 		log(`editor: ${cli} (${editorVersion(cli)})`);
+		stopOrphanedServers(opts.dataDir, log);
 		await seedProfile(opts.dataDir, opts.resetProfile, log);
 		upstreamPort = await freePort();
 		const started = startServeWeb({
