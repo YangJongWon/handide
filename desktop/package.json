@@ -1,0 +1,27 @@
+{
+	"name": "handide-desktop",
+	"publisher": "handide",
+	"displayName": "handide",
+	"description": "Open a project of your other PCs where it lives, in this editor (Remote - SSH over your tailnet).",
+	"version": "0.1.0",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"extensionKind": [
+		"ui"
+	],
+	"main": "./extension.js",
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"contributes": {
+		"commands": [
+			{
+				"command": "handide.openOnPC",
+				"title": "Open Project on Another PC",
+				"category": "handide"
+			}
+		]
+	}
+}

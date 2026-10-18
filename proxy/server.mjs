@@ -25,8 +25,9 @@ import { createBridge } from './bridge.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
-import { createPeerRelay, createProjectShare, peerFolders, writeWorkspace } from './projects.mjs';
+import { createPeerRelay, createProjectShare, peerFolders, rememberFolder, writeWorkspace } from './projects.mjs';
 import { peerCommand, peerLauncherEnv } from './peer.mjs';
+import { desktopCommand, sshCommand } from './desktop.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -81,6 +82,10 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
         handide devices [remove <name>] list (with online state) or remove those PCs
         handide peer [<pc> ls|cat|stat|grep ...]  read another PC's project, from a
                                         terminal in the editor (see "handide peer help")
+        handide ssh                     once per PC: SSH server on, so the other PCs'
+                                        desktop editors can open projects here
+        handide desktop                 VS Code / Cursor here: "Open Project on Another PC"
+                                        (opens it on that PC through Remote - SSH)
 
   (default)           open on the LAN with HTTPS and print a QR code + link for the phone
   --local             this PC only (http://localhost), no LAN, no certificate
@@ -562,11 +567,12 @@ async function main() {
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
 	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
 	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
-	if (process.argv[2] === 'devices') {
+	const sub = { devices: devicesCommand, ssh: sshCommand, desktop: desktopCommand }[process.argv[2]];
+	if (sub) {
 		const args = process.argv.slice(3);
 		const at = args.indexOf('--data-dir');
 		const dataDir = at >= 0 ? resolve(args.splice(at, 2)[1]) : HOME_DIR;
-		return devicesCommand(args, { dataDir, log });
+		return sub(args, { dataDir, log, serverPath: fileURLToPath(import.meta.url) });
 	}
 	const opts = parseArgs(process.argv.slice(2));
 	await resolveHome(opts);
@@ -587,7 +593,8 @@ async function main() {
 	await devices.refresh();
 	await devices.scan();
 	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
-	const share = createProjectShare({ token: opts.token, folder: opts.folder });
+	const share = createProjectShare({ token: opts.token, folder: opts.folder, dataDir: opts.dataDir });
+	await rememberFolder(opts.dataDir, opts.folder).catch(() => {});
 	const relay = createPeerRelay({ devices });
 	bridge.route('/peer/', relay.handle);
 	// A workspace only when there are other PCs: a single folder otherwise, as before.

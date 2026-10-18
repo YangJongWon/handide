@@ -17,6 +17,9 @@ const SOURCES = [
 ];
 // Editor-specific builds that only work inside their own editor.
 const SKIP_PUBLISHERS = new Set(['anysphere']);
+// For the desktop editor only: handide's own (desktop/) and the remote connectors it uses,
+// which have nothing to connect to inside the phone's editor (already a remote).
+const SKIP_IDS = new Set(['handide.handide-desktop', 'ms-vscode-remote.remote-ssh', 'ms-vscode-remote.remote-ssh-edit', 'ms-vscode.remote-explorer']);
 
 const cmpVersion = (a, b) => {
 	const pa = String(a).split(/[.-]/).map((x) => parseInt(x, 10) || 0);
@@ -36,7 +39,7 @@ async function desktopExtensions(skipIds) {
 		if (!Array.isArray(registry)) continue;
 		for (const entry of registry) {
 			const id = entry.identifier?.id?.toLowerCase();
-			if (!id || skipIds.has(id) || SKIP_PUBLISHERS.has(id.split('.')[0])) continue;
+			if (!id || skipIds.has(id) || SKIP_IDS.has(id) || SKIP_PUBLISHERS.has(id.split('.')[0])) continue;
 			const name = entry.relativeLocation || entry.location?.fsPath?.split(/[\\/]/).pop();
 			const folder = name && join(src.dir, name);
 			if (!folder || !existsSync(join(folder, 'package.json'))) continue;

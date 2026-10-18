@@ -167,8 +167,18 @@ function createWatcher(folder) {
 	};
 }
 
+const RECENT_MAX = 12;
+const recentFile = (dataDir) => join(dataDir, 'recent.json');
+
+/** Folders handide served here, most recent first: what the other PCs' desktop editors offer to open. */
+export async function rememberFolder(dataDir, folder) {
+	const list = await readFile(recentFile(dataDir), 'utf8').then(JSON.parse, () => []);
+	const next = [folder, ...(Array.isArray(list) ? list : []).filter((f) => typeof f === 'string' && f !== folder)].slice(0, RECENT_MAX);
+	await writeFile(recentFile(dataDir), JSON.stringify(next, null, '\t') + '\n');
+}
+
 /** Serves this PC's project to the other PCs: the same access token as the editor. */
-export function createProjectShare({ token, folder }) {
+export function createProjectShare({ token, folder, dataDir }) {
 	const watcher = createWatcher(folder);
 
 	async function handle(req, res, endpoint, url) {
@@ -177,7 +187,10 @@ export function createProjectShare({ token, folder }) {
 			res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
 			res.end(JSON.stringify(body));
 		};
-		if (endpoint === 'info') return json(200, { project: basename(folder) });
+		if (endpoint === 'info') {
+			const recent = dataDir ? await readFile(recentFile(dataDir), 'utf8').then(JSON.parse, () => []) : [];
+			return json(200, { project: basename(folder), folder, recent });
+		}
 		if (endpoint === 'search') {
 			const q = url.searchParams.get('q') ?? '';
 			if (!q) return json(400, { error: 'q required' });

@@ -19,7 +19,9 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import os from 'node:os';
 import { sameTailnetOwner, tailnetPeers } from './tailscale.mjs';
+import { authorizeKey, ensureKey, sshInfo, writeClientConfig } from './ssh.mjs';
 
 export const DEVICE_COOKIE = '__handide_device';
 const TOKEN_COOKIE = 'vscode-tkn';
@@ -192,14 +194,22 @@ async function verifyDevice(name, link) {
 	return device;
 }
 
-/** Asks handide on a tailnet peer for its token; null when it does not run there or refuses. */
-async function pairWith(peer) {
+/** The name this PC goes by in the other PCs' authorized_keys. */
+const selfLabel = () => os.hostname().replace(/\.local$/, '').replace(/\s+/g, '-');
+
+/**
+ * Asks handide on a tailnet peer for its token, handing it this PC's SSH key; null when
+ * it does not run there or refuses.
+ */
+async function pairWith(peer, key) {
 	const device = { name: peer.name, url: `https://${peer.ip}:${DEFAULT_PORT}` };
 	device.fingerprint = await peekCertificate(device, 2500);
-	const r = await deviceRequest(device, PAIR_PATH, { headers: { 'x-handide': '1' }, timeoutMs: 2500 });
-	const { token, remote } = r.status === 200 ? JSON.parse(r.body) : {};
+	const headers = { 'x-handide': '1', ...(key ? { 'x-handide-key': key, 'x-handide-name': encodeURIComponent(selfLabel()) } : {}) };
+	const r = await deviceRequest(device, PAIR_PATH, { headers, timeoutMs: 4000 });
+	const { token, remote, ssh } = r.status === 200 ? JSON.parse(r.body) : {};
 	// remote: its away-from-home address, where the phone goes when the PC it opened is off.
-	return token ? { ...device, token, ...(remote ? { remote } : {}) } : null;
+	// ssh: how to log in there (proxy/ssh.mjs), for the desktop editor.
+	return token ? { ...device, token, ...(remote ? { remote } : {}), ...(ssh ? { ssh } : {}) } : null;
 }
 
 /**
@@ -209,15 +219,16 @@ async function pairWith(peer) {
 export async function discoverDevices(dataDir) {
 	const peers = await tailnetPeers();
 	if (!peers.length) return [];
-	const found = (await Promise.all(peers.map((p) => pairWith(p).catch(() => null)))).filter(Boolean);
+	const key = await ensureKey(dataDir).catch(() => null); // no ssh-keygen: pairing without SSH
+	const found = (await Promise.all(peers.map((p) => pairWith(p, key).catch(() => null)))).filter(Boolean);
 	const list = await loadDevices(dataDir);
 	const added = [];
 	let changed = false;
 	for (const d of found) {
 		const known = list.find((x) => x.url === d.url);
 		if (known) {
-			if (known.token !== d.token || known.fingerprint !== d.fingerprint || known.remote !== d.remote) {
-				Object.assign(known, { token: d.token, fingerprint: d.fingerprint, remote: d.remote });
+			if (known.token !== d.token || known.fingerprint !== d.fingerprint || known.remote !== d.remote || JSON.stringify(known.ssh) !== JSON.stringify(d.ssh)) {
+				Object.assign(known, { token: d.token, fingerprint: d.fingerprint, remote: d.remote, ssh: d.ssh });
 				changed = true;
 			}
 		} else if (NAME.test(d.name) && !list.some((x) => x.name === d.name)) {
@@ -226,11 +237,38 @@ export async function discoverDevices(dataDir) {
 			changed = true;
 		}
 	}
-	if (changed) await saveDevices(dataDir, list);
+	if (changed) {
+		await saveDevices(dataDir, list);
+		await writeClientConfig(dataDir, list).catch(() => {});
+	}
 	return added;
 }
 
-/** "handide devices [add <name> <link> | remove <name>]" */
+/**
+ * The other PCs as the desktop editor offers them (desktop/extension.js): online state,
+ * the SSH host to open them through, and the folders handide served there.
+ */
+export async function describeDevices(dataDir) {
+	await discoverDevices(dataDir).catch(() => {});
+	const list = await loadDevices(dataDir);
+	return Promise.all(
+		list.map(async (d) => {
+			const r = await deviceRequest(d, '/__handide/project/info', { headers: { 'x-handide-token': d.token }, timeoutMs: 3000 }).catch(() => null);
+			const info = r?.status === 200 ? JSON.parse(r.body) : null;
+			return {
+				name: d.name,
+				online: !!r,
+				host: d.ssh?.user ? `handide-${d.name}` : null,
+				platform: d.ssh?.platform ?? null,
+				sshServer: d.ssh?.server ?? false,
+				folder: info?.folder ?? null,
+				recent: info?.recent ?? [],
+			};
+		}),
+	);
+}
+
+/** "handide devices [add <name> <link> | remove <name> | --json]" */
 export async function devicesCommand(args, { dataDir, log }) {
 	const [sub, name, link] = args;
 	let list = await loadDevices(dataDir);
@@ -250,7 +288,8 @@ export async function devicesCommand(args, { dataDir, log }) {
 		log(`removed "${name}"`);
 		return;
 	}
-	if (sub && sub !== 'list') throw new Error(`unknown devices command "${sub}" (add, remove, list)`);
+	if (sub === '--json') return console.log(JSON.stringify(await describeDevices(dataDir)));
+	if (sub && sub !== 'list') throw new Error(`unknown devices command "${sub}" (add, remove, list, --json)`);
 	const added = await discoverDevices(dataDir);
 	if (added.length) log(`found on your tailnet: ${added.join(', ')}`);
 	list = await loadDevices(dataDir);
@@ -308,8 +347,14 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 			res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden');
 			return;
 		}
+		// The asking PC's key may log in here over SSH (its desktop editor opens projects here).
+		const key = req.headers['x-handide-key'];
+		if (key) {
+			const name = decodeURIComponent(req.headers['x-handide-name'] || ip).replace(/\s+/g, '-');
+			await authorizeKey(String(key), name).then((added) => added && log(`SSH: ${name} may now open projects here`), (err) => log(`SSH key from ${name}: ${err.message}`));
+		}
 		res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-		res.end(JSON.stringify({ token, remote: remote() }));
+		res.end(JSON.stringify({ token, remote: remote(), ssh: await sshInfo() }));
 	}
 
 	const query = (req) => new URL(req.url, 'http://x').searchParams;
