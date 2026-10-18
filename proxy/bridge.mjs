@@ -95,8 +95,11 @@ export function createBridge({ token, log }) {
 	}
 
 	/** Private listener for the companion extension (127.0.0.1 only, secret header). */
+	const routes = []; // [prefix, handler]: more for the extension (and terminals) than calls
 	const internal = http.createServer(async (req, res) => {
 		if (req.headers['x-handide-secret'] !== secret) return sendJson(res, 403, { error: 'forbidden' });
+		const route = routes.find(([prefix]) => req.url.startsWith(prefix));
+		if (route) return route[1](req, res);
 		lastPoll = Date.now();
 		if (req.url === '/next' && req.method === 'GET') {
 			polls.push(res);
@@ -138,7 +141,10 @@ export function createBridge({ token, log }) {
 		return { HANDIDE_BRIDGE_URL: `http://127.0.0.1:${port}`, HANDIDE_BRIDGE_SECRET: secret };
 	}
 
-	return { call, handleLayer, listen, extensionConnected, close: () => internal.close() };
+	/** Serves `prefix` on the private listener (same secret) with `handler(req, res)`. */
+	const route = (prefix, handler) => routes.push([prefix, handler]);
+
+	return { call, handleLayer, listen, route, extensionConnected, close: () => internal.close() };
 }
 
 /**

@@ -256,18 +256,286 @@ async function upload({ name, data }) {
 }
 
 /**
- * The other PCs' mirrored projects after this PC's folder (proxy/projects.mjs), in the
- * open editor. The first folder stays, so no extension restarts. In a single-folder
- * window there is nothing to do: the next page load opens the workspace.
+ * The other PCs' projects after this PC's folder (proxy/projects.mjs), in the open
+ * editor. The first folder stays, so no extension restarts. In a single-folder window
+ * there is nothing to do: the next page load opens the workspace.
  */
 async function setFolders({ folders }) {
 	const current = vscode.workspace.workspaceFolders ?? [];
 	if (!vscode.workspace.workspaceFile || !current.length) return false;
-	const { scheme, authority } = current[0].uri;
-	const want = folders.map((f) => ({ uri: vscode.Uri.file(f.path).with({ scheme, authority }), name: f.name }));
+	const want = folders.map((f) => ({ uri: vscode.Uri.parse(f.uri), name: f.name }));
 	const rest = current.slice(1);
-	if (rest.length === want.length && want.every((w, i) => rest[i].uri.fsPath === w.uri.fsPath && rest[i].name === w.name)) return true;
+	if (rest.length === want.length && want.every((w, i) => rest[i].uri.toString() === w.uri.toString() && rest[i].name === w.name)) return true;
 	return vscode.workspace.updateWorkspaceFolders(1, rest.length, ...want);
+}
+
+// ---------------------------------------------------------------- other PCs' projects
+
+const PEER_SCHEME = 'handide-peer';
+const DIRECTORY = 2; // entry type in proxy/projects.mjs (1: file)
+
+/** handide-peer://<pc>/<path> → that PC's project, through this PC's handide (/peer/ on the bridge). */
+async function peerFetch(pc, endpoint, query = {}, init = {}) {
+	const url = process.env.HANDIDE_BRIDGE_URL;
+	const secret = process.env.HANDIDE_BRIDGE_SECRET;
+	if (!url || !secret) throw new Error('not started by handide');
+	return fetch(`${url}/peer/${encodeURIComponent(pc)}/${endpoint}?${new URLSearchParams(query)}`, {
+		...init,
+		headers: { 'x-handide-secret': secret, ...init.headers },
+	});
+}
+
+const peerPath = (uri) => uri.path.replace(/^\/+/, '');
+
+// What is read is kept only while it is being used: files up to this many bytes in all
+// (least recently used dropped first), anything not read again within IDLE_MS dropped.
+const CACHE_BYTES = 32 << 20;
+const CACHE_DIRS = 500;
+const IDLE_MS = 10 * 60_000;
+const SWEEP_MS = 60_000;
+const KNOWN_MAX = 2000;
+
+/**
+ * The other PCs' projects as read-only folders. Nothing is fetched until the editor asks:
+ * a folder's entries when it is expanded, a file when it is opened. A PC's change stream
+ * is open only while its files are being read: after IDLE_MS without a read it is closed
+ * (so that PC stops watching its folder too) and what was cached of it is dropped; the
+ * next read opens it again.
+ */
+class PeerFileSystem {
+	constructor() {
+		this._emitter = new vscode.EventEmitter();
+		this.onDidChangeFile = this._emitter.event;
+		this.dirs = new Map(); // uri → { entries, at }, oldest first
+		this.files = new Map(); // uri → { etag, data, at }, oldest first
+		this.bytes = 0;
+		this.streams = new Map(); // pc → { users, abort: AbortController | null, lastUsed, known: Set<uri> }
+		setInterval(() => this._sweep(), SWEEP_MS).unref?.();
+	}
+
+	_stream(pc) {
+		let s = this.streams.get(pc);
+		if (!s) this.streams.set(pc, (s = { users: 0, abort: null, lastUsed: 0, known: new Set() }));
+		return s;
+	}
+
+	/** A read: keeps the PC's change stream open (opening it if the editor watches the PC). */
+	_touch(uri) {
+		const s = this._stream(uri.authority);
+		s.lastUsed = Date.now();
+		if (s.users > 0 && !s.abort) {
+			s.abort = new AbortController();
+			this._listen(uri.authority, s, s.abort);
+		}
+	}
+
+	/** Cache entries are trusted only while that PC's change stream is open. */
+	_live(uri) {
+		return !!this.streams.get(uri.authority)?.abort;
+	}
+
+	_forget(key) {
+		const f = this.files.get(key);
+		if (f) this.bytes -= f.data.byteLength;
+		this.files.delete(key);
+		this.dirs.delete(key);
+	}
+
+	_keepFile(key, entry) {
+		this._forget(key);
+		if (entry.data.byteLength > CACHE_BYTES / 4) return; // one big file must not evict everything
+		this.files.set(key, entry);
+		this.bytes += entry.data.byteLength;
+		for (const [k] of this.files) {
+			if (this.bytes <= CACHE_BYTES) break;
+			this._forget(k);
+		}
+	}
+
+	_keepDir(key, entries) {
+		this.dirs.delete(key);
+		this.dirs.set(key, { entries, at: Date.now() });
+		for (const [k] of this.dirs) {
+			if (this.dirs.size <= CACHE_DIRS) break;
+			this.dirs.delete(k);
+		}
+	}
+
+	_sweep() {
+		const now = Date.now();
+		for (const [key, f] of this.files) if (now - f.at > IDLE_MS) this._forget(key);
+		for (const [key, d] of this.dirs) if (now - d.at > IDLE_MS) this.dirs.delete(key);
+		for (const [pc, s] of this.streams) {
+			if (!s.abort || now - s.lastUsed <= IDLE_MS) continue;
+			s.abort.abort(); // idle: the other PC stops watching its folder for us
+			s.abort = null;
+			this._drop(pc);
+		}
+	}
+
+	/** Everything cached of a PC; the paths read stay known, without their contents. */
+	_drop(pc) {
+		const prefix = `${PEER_SCHEME}://${pc}/`;
+		for (const k of [...this.files.keys()]) if (k.startsWith(prefix)) this._forget(k);
+		for (const k of [...this.dirs.keys()]) if (k.startsWith(prefix)) this.dirs.delete(k);
+	}
+
+	async _get(uri, endpoint, init) {
+		let res;
+		try {
+			res = await peerFetch(uri.authority, endpoint, { path: peerPath(uri) }, init);
+		} catch {
+			throw vscode.FileSystemError.Unavailable(uri);
+		}
+		if (res.status === 404 || res.status === 400) throw vscode.FileSystemError.FileNotFound(uri);
+		if (res.status === 502) throw vscode.FileSystemError.Unavailable(uri);
+		return res;
+	}
+
+	async stat(uri) {
+		const res = await this._get(uri, 'stat');
+		if (!res.ok) throw vscode.FileSystemError.Unavailable(uri);
+		const [type, size, mtime] = await res.json();
+		return { type: type === DIRECTORY ? vscode.FileType.Directory : vscode.FileType.File, ctime: mtime, mtime, size, permissions: vscode.FilePermission.Readonly };
+	}
+
+	async readDirectory(uri) {
+		const key = uri.toString();
+		const live = this._live(uri);
+		this._touch(uri);
+		const cached = live && this.dirs.get(key);
+		if (cached) {
+			this._keepDir(key, cached.entries); // most recently used
+			return cached.entries;
+		}
+		const res = await this._get(uri, 'list');
+		if (!res.ok) throw vscode.FileSystemError.Unavailable(uri);
+		const { entries } = await res.json();
+		const mapped = entries.map(([name, type]) => [name, type === DIRECTORY ? vscode.FileType.Directory : vscode.FileType.File]);
+		this._keepDir(key, mapped);
+		return mapped;
+	}
+
+	async readFile(uri) {
+		const key = uri.toString();
+		this._touch(uri);
+		const s = this._stream(uri.authority);
+		if (s.known.size < KNOWN_MAX) s.known.add(key);
+		const cached = this.files.get(key);
+		// Even a cached file is checked: a 304 costs a round trip, not the file.
+		const res = await this._get(uri, 'file', cached ? { headers: { 'if-none-match': cached.etag } } : {});
+		if (res.status === 304 && cached) {
+			this._keepFile(key, { ...cached, at: Date.now() });
+			return cached.data;
+		}
+		if (!res.ok) throw vscode.FileSystemError.Unavailable(uri);
+		const data = new Uint8Array(await res.arrayBuffer());
+		const etag = res.headers.get('etag');
+		if (etag) this._keepFile(key, { etag, data, at: Date.now() });
+		return data;
+	}
+
+	/**
+	 * The editor watches each PC folder for as long as it is in the workspace; the change
+	 * stream itself opens on the first read (_touch) and closes when idle (_sweep).
+	 */
+	watch(uri) {
+		const s = this._stream(uri.authority);
+		s.users += 1;
+		if (Date.now() - s.lastUsed <= IDLE_MS) this._touch(uri);
+		return new vscode.Disposable(() => {
+			if (--s.users > 0 || !s.abort) return;
+			s.abort.abort();
+			s.abort = null;
+			this._drop(uri.authority);
+		});
+	}
+
+	async _listen(pc, stream, abort) {
+		while (!abort.signal.aborted) {
+			try {
+				const res = await peerFetch(pc, 'events', {}, { signal: abort.signal });
+				if (!res.ok || !res.body) throw new Error(`events ${res.status}`);
+				// (Re)connected: whatever was read while no stream was open may be stale, open
+				// tabs included -- they are told to look again.
+				this._changed(pc, ['*'], [...stream.known]);
+				const decoder = new TextDecoder();
+				let buffered = '';
+				for await (const chunk of res.body) {
+					buffered += decoder.decode(chunk, { stream: true });
+					let end;
+					while ((end = buffered.indexOf('\n\n')) >= 0) {
+						const event = buffered.slice(0, end);
+						buffered = buffered.slice(end + 2);
+						const data = event.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('');
+						if (data) this._changed(pc, JSON.parse(data));
+					}
+				}
+			} catch {
+				// the PC went off or the stream dropped; try again below
+			}
+			if (!abort.signal.aborted) {
+				this._drop(pc); // not watched while disconnected: nothing cached can be trusted
+				await new Promise((r) => setTimeout(r, 5000));
+			}
+		}
+	}
+
+	_changed(pc, paths, known = []) {
+		const root = vscode.Uri.from({ scheme: PEER_SCHEME, authority: pc, path: '/' });
+		if (paths.includes('*')) {
+			this._drop(pc);
+			return this._emitter.fire([root, ...known.map((k) => vscode.Uri.parse(k))].map((uri) => ({ type: vscode.FileChangeType.Changed, uri })));
+		}
+		const events = [];
+		for (const p of paths) {
+			const uri = vscode.Uri.joinPath(root, p);
+			const parent = vscode.Uri.joinPath(uri, '..');
+			this._forget(uri.toString());
+			this.dirs.delete(parent.toString());
+			events.push({ type: vscode.FileChangeType.Changed, uri }, { type: vscode.FileChangeType.Changed, uri: parent });
+		}
+		this._emitter.fire(events);
+	}
+
+	createDirectory(uri) {
+		throw vscode.FileSystemError.NoPermissions(uri);
+	}
+	writeFile(uri) {
+		throw vscode.FileSystemError.NoPermissions(uri);
+	}
+	delete(uri) {
+		throw vscode.FileSystemError.NoPermissions(uri);
+	}
+	rename(uri) {
+		throw vscode.FileSystemError.NoPermissions(uri);
+	}
+}
+
+/**
+ * Text search in the other PCs' projects, run on each PC (ripgrep over its folder) so
+ * nothing is downloaded to search. The editor's own search does not reach these folders.
+ */
+async function searchPeers() {
+	const pcs = (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === PEER_SCHEME);
+	if (!pcs.length) return vscode.window.showInformationMessage('No other PC is open in this workspace.');
+	const q = await vscode.window.showInputBox({ prompt: 'Search the other PCs (text, case-insensitive)' });
+	if (!q) return;
+	const items = [];
+	await Promise.all(
+		pcs.map(async (f) => {
+			const res = await peerFetch(f.uri.authority, 'search', { q }).catch(() => null);
+			if (!res?.ok) return items.push({ label: `$(warning) ${f.name}`, description: res ? `HTTP ${res.status}` : 'not reachable' });
+			for (const [path, line, text] of (await res.json()).matches) {
+				items.push({ label: `${path}:${line}`, description: f.name, detail: text, uri: vscode.Uri.joinPath(f.uri, path), line });
+			}
+		}),
+	);
+	const pick = await vscode.window.showQuickPick(items, { matchOnDescription: true, matchOnDetail: true, placeHolder: `${items.length} result(s) for "${q}"` });
+	if (!pick?.uri) return;
+	const doc = await vscode.workspace.openTextDocument(pick.uri);
+	const at = new vscode.Position(Math.max(0, pick.line - 1), 0);
+	await vscode.window.showTextDocument(doc, { selection: new vscode.Range(at, at) });
 }
 
 function state() {
@@ -343,6 +611,8 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.upload', upload),
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
+		vscode.commands.registerCommand('handide.searchPeers', searchPeers),
+		vscode.workspace.registerFileSystemProvider(PEER_SCHEME, new PeerFileSystem(), { isCaseSensitive: true, isReadonly: true }),
 	);
 	memento = context.globalState;
 	selfId = context.extension.id;

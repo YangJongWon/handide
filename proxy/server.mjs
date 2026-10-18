@@ -25,7 +25,8 @@ import { createBridge } from './bridge.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
-import { createProjectMirror, createProjectShare, mirrorFolders, writeWorkspace } from './projects.mjs';
+import { createPeerRelay, createProjectShare, peerFolders, writeWorkspace } from './projects.mjs';
+import { peerCommand } from './peer.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,6 +79,8 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
                                         add another PC running handide (its printed link);
                                         the phone then switches PCs in the menu
         handide devices [remove <name>] list (with online state) or remove those PCs
+        handide peer [<pc> ls|cat|stat|grep ...]  read another PC's project, from a
+                                        terminal in the editor (see "handide peer help")
 
   (default)           open on the LAN with HTTPS and print a QR code + link for the phone
   --local             this PC only (http://localhost), no LAN, no certificate
@@ -558,6 +561,7 @@ async function remoteCommand(log, tailnetOnly) {
 async function main() {
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
 	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
+	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
 	if (process.argv[2] === 'devices') {
 		const args = process.argv.slice(3);
 		const at = args.indexOf('--data-dir');
@@ -575,29 +579,33 @@ async function main() {
 	const bridge = createBridge({ token: opts.token });
 	const bridgeEnv = await bridge.listen();
 
-	// Other PCs, and their projects mirrored here: known before the editor starts, so its
-	// workspace holds them from the first page load.
+	// Other PCs, and the projects they serve: known before the editor starts, so its
+	// workspace holds them from the first page load. Their files are fetched as they are
+	// opened (proxy/projects.mjs), through the bridge's private listener.
 	let remoteUrl = null;
 	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log, remote: () => remoteUrl });
 	await devices.refresh();
 	await devices.scan();
 	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
 	const share = createProjectShare({ token: opts.token, folder: opts.folder });
+	const relay = createPeerRelay({ devices });
+	bridge.route('/peer/', relay.handle);
 	// A workspace only when there are other PCs: a single folder otherwise, as before.
 	let workspace = null;
-	const mirror = createProjectMirror({
-		dataDir: opts.dataDir,
-		devices,
-		log,
-		onChange: async (mirrors) => {
-			if (workspace) {
-				await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, mirrors });
-				await bridge.call('handide.setFolders', [{ folders: mirrorFolders(mirrors) }]); // an open editor too
-			} else log(`other PCs' projects: ${mirrors.map((m) => `${m.name} · ${m.project}`).join(', ')}. Restart handide to add them to the editor.`);
-		},
-	});
-	const mirrors = await mirror.loadKnown();
-	if (devices.list().length) workspace = await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, mirrors });
+	let peersSeen = JSON.stringify(await relay.list());
+	if (devices.list().length) workspace = await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, peers: JSON.parse(peersSeen) });
+	// A PC found or removed, or serving another project: names only, no file listing.
+	const watchPeers = setInterval(async () => {
+		await devices.refresh();
+		const peers = await relay.list();
+		if (JSON.stringify(peers) === peersSeen) return;
+		peersSeen = JSON.stringify(peers);
+		if (workspace) {
+			await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, peers });
+			await bridge.call('handide.setFolders', [{ folders: peerFolders(peers) }]); // an open editor too
+		} else log(`other PCs' projects: ${peers.map((p) => `${p.name} · ${p.project ?? '?'}`).join(', ')}. Restart handide to add them to the editor.`);
+	}, 30_000);
+	watchPeers.unref();
 
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
@@ -612,8 +620,8 @@ async function main() {
 			dataDir: opts.dataDir,
 			folder: opts.folder,
 			workspace,
-			// Where agents in the editor's terminals find the other PCs' projects.
-			env: { ...bridgeEnv, HANDIDE_PEERS: mirror.peersDir },
+			// How agents in the editor's terminals read the other PCs' projects.
+			env: { ...bridgeEnv, HANDIDE_PEER: `"${process.execPath}" "${fileURLToPath(import.meta.url)}" peer` },
 			log: (t) => { if (process.env.HANDIDE_VERBOSE) log(t); },
 		});
 		child = started.child;
@@ -648,7 +656,6 @@ async function main() {
 	server.listen(opts.port, host, async () => {
 		log(`mobile VS Code ready. Open on your phone:`);
 		announce();
-		mirror.start();
 		if (opts.remote === 'off') return openConnect();
 		// Tunnels can wait for a one-time approval in the browser, so the LAN QR code comes first.
 		const r = opts.remote === 'cloudflare'

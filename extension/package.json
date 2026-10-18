@@ -13,7 +13,8 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onFileSystem:handide-peer"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -23,6 +24,11 @@
   },
   "contributes": {
     "commands": [
+      {
+        "command": "handide.searchPeers",
+        "title": "Search Other PCs",
+        "category": "handide"
+      },
       {
         "command": "handide.view",
         "title": "Show Mobile View",

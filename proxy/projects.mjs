@@ -1,100 +1,230 @@
-// Each PC's project, readable on the others. handide shares the folder it serves (to
-// its own access token only), and mirrors the projects of the other PCs it knows into
-// <data dir>/peers/<pc>/<project>, read-only. Those mirrors are added to the editor's
-// workspace, so search, quick open and the agents on this PC see the code of every PC,
-// also while another PC is off (as it was when last seen).
+// Each PC's project, readable from the others, fetched only when it is looked at.
+// handide shares the folder it serves (to its own access token only); the editor on
+// another PC shows it as a read-only handide-peer://<pc>/ folder (extension/extension.js)
+// whose folders and files are asked for as they are opened. Nothing is copied ahead of
+// time, so there is no file limit and nothing to poll: the owning PC watches its folder
+// and pushes the paths that changed.
 //
-//   PC A  ──GET /__handide/project/manifest──>  PC B   paths, sizes, mtimes
-//         ──GET /__handide/project/file?path──>        changed files only
+//   PC A  ──GET /__handide/project/list?path──>    PC B   one folder's entries
+//         ──GET /__handide/project/file?path──>           one file (ETag, 304)
+//         ──GET /__handide/project/events──>              changed paths (SSE, fs.watch)
+//         ──GET /__handide/project/search?q──>            matches, searched on PC B
+//
+// On PC A the editor and the `handide peer` command reach PC B through the bridge's
+// private listener: /peer/<pc>/<endpoint> (createPeerRelay below).
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { chmod, mkdir, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
-import { deviceRequest } from './devices.mjs';
+import { createReadStream, readdirSync, statSync, watch } from 'node:fs';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { basename, join, sep } from 'node:path';
+import os from 'node:os';
+import { deviceRequest, openDeviceRequest } from './devices.mjs';
 
-const MANIFEST_PATH = '/__handide/project/manifest';
-const FILE_PATH = '/__handide/project/file';
-const MAX_FILE = 1 << 20; // larger files (builds, media) are not mirrored
-const MAX_FILES = 20_000;
-const LIST_TTL_MS = 5_000;
-const SYNC_INTERVAL_MS = 15_000;
-const SYNC_CONCURRENCY = 8;
-// Walked folders without git: the usual generated and dependency folders are left out.
-const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build', 'out', 'target', '.next', '.cache', '.handide']);
+const PREFIX = '/__handide/project/';
+const ENDPOINTS = new Set(['info', 'list', 'stat', 'file', 'events', 'search']);
+// Shown nowhere: git's own store is noise in a file tree and huge.
+const HIDDEN = new Set(['.git']);
+const MAX_FILE = 64 << 20;
+const MAX_MATCHES = 500;
+const EVENT_BATCH_MS = 300;
+const EVENT_MAX_PATHS = 1000; // more at once (a checkout, an install): "everything changed"
+const HEARTBEAT_MS = 20_000;
+export const PEER_SCHEME = 'handide-peer';
+const FILE = 1;
+const DIRECTORY = 2;
 
-const run = (cmd, args, cwd) =>
-	new Promise((ok) => {
-		const chunks = [];
+/** "a/b.txt" → an absolute path inside `folder`, or null when it would leave it. */
+function inside(folder, path) {
+	const parts = String(path ?? '').split('/').filter(Boolean);
+	if (parts.some((p) => p === '.' || p === '..' || /[\\:\0]/.test(p))) return null;
+	return join(folder, ...parts);
+}
+
+async function entryOf(abs) {
+	const s = await stat(abs);
+	return [s.isDirectory() ? DIRECTORY : FILE, s.size, Math.round(s.mtimeMs)];
+}
+
+/** ripgrep: on PATH, or the one every VS Code (and its serve-web) ships. */
+function findRipgrep() {
+	const exe = process.platform === 'win32' ? 'rg.exe' : 'rg';
+	const candidates = [];
+	const serveWeb = join(os.homedir(), '.vscode', 'cli', 'serve-web');
+	const plat = `${process.platform}-${process.arch}`;
+	try {
+		for (const commit of readdirSync(serveWeb)) {
+			candidates.push(join(serveWeb, commit, 'node_modules', '@vscode', 'ripgrep-universal', 'bin', plat, exe));
+			candidates.push(join(serveWeb, commit, 'node_modules', '@vscode', 'ripgrep', 'bin', exe));
+		}
+	} catch {
+		// no serve-web yet
+	}
+	const app = process.platform === 'darwin'
+		? '/Applications/Visual Studio Code.app/Contents/Resources/app'
+		: join(process.env.LOCALAPPDATA || '', 'Programs', 'Microsoft VS Code', 'resources', 'app');
+	candidates.push(join(app, 'node_modules', '@vscode', 'ripgrep', 'bin', exe));
+	const found = candidates
+		.map((p) => ({ p, t: statSync(p, { throwIfNoEntry: false })?.mtimeMs }))
+		.filter((c) => c.t)
+		.sort((a, b) => b.t - a.t);
+	return found[0]?.p ?? 'rg';
+}
+
+/** Up to `max` matches of the literal `q` (case-insensitive), as [path, line, text]. */
+function search(folder, q, max) {
+	return new Promise((ok) => {
+		const matches = [];
+		let buffered = '';
 		let child;
 		try {
-			child = spawn(cmd, args, { cwd, windowsHide: true });
+			child = spawn(findRipgrep(), ['--json', '-F', '-i', '--max-filesize', '1M', '--max-count', '50', '--', q, '.'], { cwd: folder, windowsHide: true });
 		} catch {
 			return ok(null);
 		}
-		child.stdout.on('data', (d) => chunks.push(d));
+		child.stdout.on('data', (d) => {
+			buffered += d;
+			let nl;
+			while ((nl = buffered.indexOf('\n')) >= 0) {
+				const line = buffered.slice(0, nl);
+				buffered = buffered.slice(nl + 1);
+				try {
+					const m = JSON.parse(line);
+					if (m.type !== 'match') continue;
+					const path = (m.data.path.text ?? '').replace(/^\.[\\/]/, '').split(sep).join('/');
+					matches.push([path, m.data.line_number, (m.data.lines.text ?? '').trim().slice(0, 240)]);
+				} catch {
+					// a partial or non-JSON line
+				}
+				if (matches.length >= max) {
+					child.kill();
+					break;
+				}
+			}
+		});
 		child.on('error', () => ok(null));
-		child.on('close', (code) => ok(code === 0 ? Buffer.concat(chunks).toString('utf8') : null));
+		child.on('close', () => ok(matches));
 	});
-
-/** Project files, "/"-separated: git's view (tracked and untracked, minus ignored) when it is a repo. */
-async function projectPaths(folder) {
-	if (existsSync(join(folder, '.git'))) {
-		const out = await run('git', ['-c', 'core.quotepath=off', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], folder);
-		if (out !== null) return [...new Set(out.split('\0').filter(Boolean))].slice(0, MAX_FILES);
-	}
-	const found = [];
-	const walk = async (dir, rel) => {
-		for (const d of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-			if (found.length >= MAX_FILES) return;
-			const path = rel ? `${rel}/${d.name}` : d.name;
-			if (d.isDirectory() && !SKIP_DIRS.has(d.name)) await walk(join(dir, d.name), path);
-			else if (d.isFile()) found.push(path);
-		}
-	};
-	await walk(folder, '');
-	return found;
 }
 
-async function listProject(folder) {
-	const files = [];
-	for (const path of await projectPaths(folder)) {
-		const s = await stat(join(folder, ...path.split('/'))).catch(() => null);
-		if (s?.isFile() && s.size <= MAX_FILE) files.push([path, s.size, Math.round(s.mtimeMs)]);
-	}
-	return { project: basename(folder), files };
+/** Paths that changed under `folder`, batched, for as long as anyone listens. */
+function createWatcher(folder) {
+	const listeners = new Set();
+	let watcher = null;
+	let pending = new Set();
+	let timer = null;
+
+	const send = (paths) => {
+		for (const fn of listeners) fn(paths);
+	};
+	const flush = () => {
+		timer = null;
+		const paths = pending.size > EVENT_MAX_PATHS ? ['*'] : [...pending];
+		pending = new Set();
+		if (paths.length) send(paths);
+	};
+	const start = () => {
+		try {
+			watcher = watch(folder, { recursive: true }, (_event, name) => {
+				if (!name) return pending.add('*');
+				const path = String(name).split(sep).join('/');
+				if (path === '.git' || path.startsWith('.git/')) return;
+				pending.add(path);
+				timer ??= setTimeout(flush, EVENT_BATCH_MS);
+			});
+			watcher.on('error', () => {
+				watcher?.close();
+				watcher = null;
+				send(['*']); // lost track: the editor rereads what it shows
+			});
+		} catch {
+			watcher = null;
+		}
+	};
+
+	return {
+		subscribe(fn) {
+			listeners.add(fn);
+			if (!watcher) start();
+			return () => {
+				listeners.delete(fn);
+				if (!listeners.size && watcher) {
+					watcher.close();
+					watcher = null;
+				}
+			};
+		},
+	};
 }
 
 /** Serves this PC's project to the other PCs: the same access token as the editor. */
 export function createProjectShare({ token, folder }) {
-	let cached = null;
-	const list = () => {
-		if (!cached || Date.now() - cached.at > LIST_TTL_MS) cached = { at: Date.now(), value: listProject(folder) };
-		return cached.value;
-	};
+	const watcher = createWatcher(folder);
 
-	async function handle(req, res, pathname) {
-		if (req.headers['x-handide-token'] !== token) return res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden');
-		const manifest = await list();
-		if (pathname === MANIFEST_PATH) {
-			res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-			return res.end(JSON.stringify(manifest));
+	async function handle(req, res, endpoint, url) {
+		const path = url.searchParams.get('path') ?? '';
+		const json = (status, body) => {
+			res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+			res.end(JSON.stringify(body));
+		};
+		if (endpoint === 'info') return json(200, { project: basename(folder) });
+		if (endpoint === 'search') {
+			const q = url.searchParams.get('q') ?? '';
+			if (!q) return json(400, { error: 'q required' });
+			const max = Math.min(Number(url.searchParams.get('max')) || MAX_MATCHES, MAX_MATCHES);
+			const matches = await search(folder, q, max);
+			return matches ? json(200, { matches }) : json(501, { error: 'ripgrep not found on this PC' });
 		}
-		// Only paths of the listing: nothing outside the project, nothing it leaves out.
-		const path = new URL(req.url, 'http://x').searchParams.get('path');
-		if (!manifest.files.some((f) => f[0] === path)) return res.writeHead(404).end();
-		const body = await readFile(join(folder, ...path.split('/'))).catch(() => null);
-		if (!body) return res.writeHead(404).end();
-		res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
-		res.end(body);
+		if (endpoint === 'events') {
+			res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+			res.write(': connected\n\n');
+			const unsubscribe = watcher.subscribe((paths) => res.write(`data: ${JSON.stringify(paths)}\n\n`));
+			const beat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
+			req.on('close', () => {
+				clearInterval(beat);
+				unsubscribe();
+			});
+			return;
+		}
+		const abs = inside(folder, path);
+		if (!abs) return json(400, { error: 'bad path' });
+		if (endpoint === 'stat') {
+			const entry = await entryOf(abs).catch(() => null);
+			return entry ? json(200, entry) : json(404, { error: 'not found' });
+		}
+		if (endpoint === 'list') {
+			const dirents = await readdir(abs, { withFileTypes: true }).catch(() => null);
+			if (!dirents) return json(404, { error: 'not found' });
+			const entries = [];
+			for (const d of dirents) {
+				if (HIDDEN.has(d.name)) continue;
+				const entry = await entryOf(join(abs, d.name)).catch(() => null); // broken links are left out
+				if (entry) entries.push([d.name, ...entry]);
+			}
+			return json(200, { entries });
+		}
+		// file
+		const s = await stat(abs).catch(() => null);
+		if (!s) return json(404, { error: 'not found' });
+		if (s.isDirectory()) return json(400, { error: 'is a folder' });
+		if (s.size > MAX_FILE) return json(413, { error: 'too large' });
+		const etag = `"${s.size}-${Math.round(s.mtimeMs)}"`;
+		if (req.headers['if-none-match'] === etag) return res.writeHead(304, { etag }).end();
+		res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': s.size, etag, 'cache-control': 'no-store' });
+		createReadStream(abs).on('error', () => res.destroy()).pipe(res);
 	}
 
 	return {
 		/** Handles the request if it is one of the project paths. */
 		handle(req, res) {
-			const pathname = req.url.split('?')[0];
-			if (pathname !== MANIFEST_PATH && pathname !== FILE_PATH) return false;
-			handle(req, res, pathname).catch((err) => {
+			const url = new URL(req.url, 'http://x');
+			if (!url.pathname.startsWith(PREFIX)) return false;
+			const endpoint = url.pathname.slice(PREFIX.length);
+			if (!ENDPOINTS.has(endpoint)) return false;
+			if (req.headers['x-handide-token'] !== token) {
+				res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden');
+				return true;
+			}
+			handle(req, res, endpoint, url).catch((err) => {
 				if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
 				res.end(err.message);
 			});
@@ -103,149 +233,81 @@ export function createProjectShare({ token, folder }) {
 	};
 }
 
-// ---------------------------------------------------------------- mirrors
-
-/** A manifest path as a path under `root`, or null when it would leave it. */
-function localPath(root, path) {
-	const parts = String(path).split('/');
-	if (parts.some((p) => !p || p === '.' || p === '..' || /[\\:]/.test(p))) return null;
-	return join(root, ...parts);
-}
-
-/** Read-only files are kept read-only on purpose; Windows refuses to delete them otherwise. */
-async function removeFile(file) {
-	await chmod(file, 0o644).catch(() => {});
-	await unlink(file).catch(() => {});
-}
+// ---------------------------------------------------------------- relay
 
 /**
- * Keeps <dataDir>/peers/<pc>/<project> in step with the other PCs' projects and
- * calls onChange(mirrors) when the set of mirrored projects changes.
+ * /peer/<pc>/<endpoint>?… on the bridge's private listener → that PC's project endpoint,
+ * streamed through (files byte for byte, the change stream as it comes). /peer/ lists the
+ * PCs and their projects.
  */
-export function createProjectMirror({ dataDir, devices, log, onChange }) {
-	const peersDir = join(dataDir, 'peers');
-	const mirrors = new Map(); // pc name → { name, project, path }
-	let timer;
-	let running = false;
+export function createPeerRelay({ devices }) {
+	const projects = new Map(); // pc → project name, once seen
 
-	const indexFile = (pc) => join(peersDir, pc, '.index.json');
-	const readIndex = (pc) => readFile(indexFile(pc), 'utf8').then(JSON.parse, () => ({ project: null, files: {} }));
-
-	/** Mirrors already on disk, e.g. of a PC that is off now. */
-	async function loadKnown() {
-		for (const d of devices.list()) {
-			const index = await readIndex(d.name);
-			if (index.project && existsSync(join(peersDir, d.name, index.project))) {
-				mirrors.set(d.name, { name: d.name, project: index.project, path: join(peersDir, d.name, index.project) });
-			}
+	async function projectOf(device) {
+		const r = await deviceRequest(device, `${PREFIX}info`, { headers: { 'x-handide-token': device.token }, timeoutMs: 2500 }).catch(() => null);
+		if (r?.status === 200) {
+			const { project } = JSON.parse(r.body.toString('utf8'));
+			if (typeof project === 'string') projects.set(device.name, project);
 		}
-		return list();
+		return projects.get(device.name) ?? null;
 	}
 
-	async function syncDevice(device) {
-		const auth = { 'x-handide-token': device.token };
-		const r = await deviceRequest(device, MANIFEST_PATH, { headers: auth, timeoutMs: 10_000 });
-		if (r.status !== 200) return; // offline handled by the caller; an older handide has no project to share
-		const manifest = JSON.parse(r.body);
-		if (!manifest.project || /[\\/:]/.test(manifest.project) || manifest.project.startsWith('.')) return;
-		const pcDir = join(peersDir, device.name);
-		const root = join(pcDir, manifest.project);
-		const index = await readIndex(device.name);
-		if (index.project !== manifest.project) {
-			// The PC serves another project now: only its current one is kept.
-			if (index.project) await rm(join(pcDir, index.project), { recursive: true, force: true }).catch(() => {});
-			index.project = manifest.project;
-			index.files = {};
-		}
-		await mkdir(root, { recursive: true });
-
-		const wanted = new Map(manifest.files.map(([p, size, mtime]) => [p, `${size}:${mtime}`]));
-		const stale = [...wanted].filter(([p, v]) => index.files[p] !== v);
-		const gone = Object.keys(index.files).filter((p) => !wanted.has(p));
-		for (const p of gone) {
-			const file = localPath(root, p);
-			if (file) await removeFile(file);
-			delete index.files[p];
-		}
-		let next = 0;
-		const worker = async () => {
-			while (next < stale.length) {
-				const [p, v] = stale[next++];
-				const file = localPath(root, p);
-				if (!file) continue;
-				const got = await deviceRequest(device, `${FILE_PATH}?path=${encodeURIComponent(p)}`, { headers: auth, timeoutMs: 15_000 }).catch(() => null);
-				if (got?.status !== 200) continue;
-				await mkdir(dirname(file), { recursive: true });
-				await removeFile(file);
-				await writeFile(file, got.body);
-				await chmod(file, 0o444).catch(() => {});
-				index.files[p] = v;
-			}
-		};
-		await Promise.all(Array.from({ length: SYNC_CONCURRENCY }, worker));
-		await writeFile(indexFile(device.name), JSON.stringify(index));
-		if (stale.length || gone.length) log(`${device.name}: ${manifest.project} mirrored (${stale.length} updated, ${gone.length} removed)`);
-		mirrors.set(device.name, { name: device.name, project: manifest.project, path: root });
+	/** The other PCs with the project each serves (the last one seen while a PC is off). */
+	async function list() {
+		return Promise.all(devices.list().map(async (d) => ({ name: d.name, project: await projectOf(d) })));
 	}
 
-	const list = () => [...mirrors.values()].sort((a, b) => a.name.localeCompare(b.name));
-	const signature = () => JSON.stringify(list());
-
-	async function syncAll() {
-		if (running) return;
-		running = true;
-		const before = signature();
+	async function handle(req, res) {
+		const url = new URL(req.url, 'http://x');
+		const [, , pc, endpoint] = url.pathname.split('/').map(decodeURIComponent);
+		if (!pc) {
+			res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+			return res.end(JSON.stringify(await list()));
+		}
+		const device = devices.list().find((d) => d.name === pc);
+		if (!device || !ENDPOINTS.has(endpoint)) return res.writeHead(404).end();
+		const headers = { 'x-handide-token': device.token };
+		if (req.headers['if-none-match']) headers['if-none-match'] = req.headers['if-none-match'];
+		let up;
 		try {
-			await devices.refresh();
-			const names = new Set(devices.list().map((d) => d.name));
-			for (const name of mirrors.keys()) if (!names.has(name)) mirrors.delete(name); // removed PCs
-			for (const d of devices.list()) {
-				await syncDevice(d).catch((err) => {
-					if (!/did not answer|ECONNREFUSED|EHOSTUNREACH|ETIMEDOUT/.test(err.message)) log(`${d.name}: mirror: ${err.message}`);
-				});
-			}
-		} finally {
-			running = false;
+			up = await openDeviceRequest(device, `${PREFIX}${endpoint}${url.search}`, { headers });
+		} catch (err) {
+			res.writeHead(502, { 'content-type': 'text/plain' });
+			return res.end(`${pc} is not reachable: ${err.message}`);
 		}
-		if (signature() !== before) onChange?.(list());
+		const pass = {};
+		for (const h of ['content-type', 'content-length', 'etag', 'cache-control']) if (up.headers[h]) pass[h] = up.headers[h];
+		res.writeHead(up.statusCode, pass);
+		up.pipe(res);
+		req.on('close', () => up.destroy());
 	}
 
 	return {
-		loadKnown,
-		start() {
-			syncAll();
-			timer = setInterval(syncAll, SYNC_INTERVAL_MS);
-			timer.unref?.();
-		},
-		stop: () => clearInterval(timer),
 		list,
-		peersDir,
+		handle: (req, res) =>
+			handle(req, res).catch((err) => {
+				if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
+				res.end(err.message);
+			}),
 	};
 }
 
 // ---------------------------------------------------------------- workspace
 
-/** Workspace folders for the mirrors, as the editor shows them. */
-export const mirrorFolders = (mirrors) => mirrors.map((m) => ({ name: `${m.name} · ${m.project} (read-only)`, path: m.path }));
+/** Workspace folders for the other PCs, as the editor shows them. */
+export const peerFolders = (peers) =>
+	peers.map((p) => ({ uri: `${PEER_SCHEME}://${p.name}/`, name: `${p.name}${p.project ? ` · ${p.project}` : ''} (read-only)` }));
 
 /**
- * The workspace the editor opens: this PC's folder first, the other PCs' mirrors after
+ * The workspace the editor opens: this PC's folder first, the other PCs' projects after
  * it. The editor reads it on each page load; an editor that is open already gets the
  * same folders from the companion extension (handide.setFolders), without a restart as
  * the first folder stays the same.
  */
-export async function writeWorkspace({ dataDir, folder, mirrors }) {
+export async function writeWorkspace({ dataDir, folder, peers }) {
 	const dir = join(dataDir, 'workspaces', createHash('sha1').update(folder).digest('hex').slice(0, 12));
 	const file = join(dir, `${basename(folder) || 'project'}.code-workspace`);
-	const body = JSON.stringify(
-		{
-			folders: [{ path: folder }, ...mirrorFolders(mirrors)],
-			// Mirrored files are read-only on disk: show them so instead of failing on save.
-			settings: { 'files.readonlyFromPermissions': true },
-		},
-		null,
-		'\t',
-	) + '\n';
+	const body = JSON.stringify({ folders: [{ path: folder }, ...peerFolders(peers)] }, null, '\t') + '\n';
 	await mkdir(dir, { recursive: true });
 	if ((await readFile(file, 'utf8').catch(() => null)) !== body) await writeFile(file, body);
 	return file;

@@ -142,6 +142,29 @@ export function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, in
 	});
 }
 
+/** A request to a device whose response is streamed, not buffered (files, change events). */
+export function openDeviceRequest(device, path, { headers = {}, timeoutMs = 8000 } = {}) {
+	return new Promise((ok, fail) => {
+		const req = http.request(
+			{
+				method: 'GET',
+				path,
+				headers: { host: new URL(device.url).host, ...headers },
+				agent: deviceAgent(device, { timeoutMs }),
+				setHost: false,
+				timeout: timeoutMs,
+			},
+			(res) => {
+				req.setTimeout(0); // a change stream stays open; the connect timeout did its job
+				ok(res);
+			},
+		);
+		req.on('timeout', () => req.destroy(new Error(`${device.url} did not answer`)));
+		req.on('error', fail);
+		req.end();
+	});
+}
+
 /** The certificate a device presents (SHA-1, as handide prints it), without verifying it. */
 function peekCertificate(device, timeoutMs) {
 	return connectDevice({ ...device, fingerprint: undefined }, { insecure: true, timeoutMs }).then((socket) => {
