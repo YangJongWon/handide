@@ -79,46 +79,119 @@ function listProcesses() {
 		.map(([, pid, ppid, cmd]) => ({ pid: Number(pid), ppid: Number(ppid), start: 0, cmd }));
 }
 
+/** The process's live parent, or undefined once it is gone (or its pid was reused). */
+function parentOf(p, byPid) {
+	const parent = p.ppid > 1 && byPid.get(p.ppid);
+	if (!parent || parent.pid === p.pid || (p.start && parent.start > p.start)) return undefined;
+	return parent;
+}
+
+function killTree(pid) {
+	if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 });
+	else {
+		try {
+			process.kill(pid, 'SIGTERM');
+		} catch {
+			// already gone
+		}
+	}
+}
+
+const isHandide = (p) => p.pid === process.pid || /proxy[\\/]server\.mjs/i.test(p.cmd ?? '');
+
 /**
- * Stops serve-web servers left on `dataDir` by a handide that did not exit cleanly (its
- * console closed, or it was killed): only a clean exit tears the server tree down, so
- * each crash left one running for good. A server still under a live handide is kept,
- * so a second handide on the same data dir is left alone.
+ * The top of each serve-web tree on `dataDir` whose launcher chain no longer reaches a
+ * live handide. A server still under one is kept, so a second handide on the same data
+ * dir is left alone. Servers younger than `minAgeMs` are kept too.
  */
-export function stopOrphanedServers(dataDir, log) {
-	const procs = listProcesses();
+function orphanedServers(procs, dataDir, minAgeMs = 0) {
 	const byPid = new Map(procs.map((p) => [p.pid, p]));
 	const dir = dataDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	const usesDir = new RegExp(`--server-data-dir[ =]"?${dir}(?=["\\s]|$)`, 'i');
-	const isHandide = (p) => p.pid === process.pid || /proxy[\\/]server\.mjs/i.test(p.cmd ?? '');
-
+	// FILETIME: 100 ns ticks since 1601.
+	const newest = minAgeMs && (Date.now() + 11_644_473_600_000 - minAgeMs) * 10_000;
 	const roots = new Set();
 	for (const p of procs) {
 		if (!p.cmd || !usesDir.test(p.cmd)) continue;
+		if (newest && p.start > newest) continue;
 		// Walk up the launcher chain (serve-web CLI, cmd, ...) until it reaches a handide.
-		// A missing parent, or a parent younger than its child (the pid was reused), ends it.
 		let top = p;
 		for (;;) {
 			if (isHandide(top)) break;
-			const parent = top.ppid > 1 && byPid.get(top.ppid);
-			if (!parent || parent.pid === top.pid || (top.start && parent.start > top.start)) {
+			const parent = parentOf(top, byPid);
+			if (!parent) {
 				roots.add(top.pid);
 				break;
 			}
 			top = parent;
 		}
 	}
-	for (const pid of roots) {
-		if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 });
-		else {
-			try {
-				process.kill(pid, 'SIGTERM');
-			} catch {
-				// already gone
+	return roots;
+}
+
+/**
+ * Stops serve-web servers left on `dataDir` by a handide that did not exit cleanly (its
+ * console closed, or it was killed): only a clean exit tears the server tree down, so
+ * each crash left one running for good.
+ */
+export function stopOrphanedServers(dataDir, log) {
+	const roots = orphanedServers(listProcesses(), dataDir);
+	for (const pid of roots) killTree(pid);
+	if (roots.size) log(`stopped ${roots.size} editor server(s) left running by an earlier handide`);
+}
+
+// Agent CLIs an extension starts beside its extension host. Windows does not end a
+// child with its parent, so each phone session that ended left one behind: 14
+// opencode processes (1.1 GB) from one handide run on 2026-10-18.
+const AGENT_CLI_RE = /(?:^|[\\/"\s])(?:opencode|codex|claude)(?:\.exe)?"?(?:\s|$)/i;
+
+/**
+ * While handide runs, every `intervalMs`: stops orphaned editor servers (as at start,
+ * but never one younger than ten minutes), and agent CLIs whose extension host has
+ * ended. Only CLIs seen under one of this handide's extension hosts are touched, and
+ * only once that host is gone -- so nothing started from a terminal, and nothing an
+ * agent detached on purpose while its session was alive, is ever stopped.
+ */
+export function startReaper({ dataDir, log, intervalMs = 5 * 60_000 }) {
+	const tracked = new Map(); // "pid:start" -> { pid, start, host: "pid:start" }
+	const sweep = () => {
+		const procs = listProcesses();
+		if (!procs.length) return;
+		const byPid = new Map(procs.map((p) => [p.pid, p]));
+		const key = (p) => `${p.pid}:${p.start}`;
+		const ours = (p) => {
+			for (let at = p; at; at = parentOf(at, byPid)) if (at.pid === process.pid) return true;
+			return false;
+		};
+
+		const servers = orphanedServers(procs, dataDir, 10 * 60_000);
+		for (const pid of servers) killTree(pid);
+
+		const hosts = new Set(procs.filter((p) => /--type=extensionHost/.test(p.cmd ?? '') && ours(p)).map(key));
+		for (const p of procs) {
+			if (!AGENT_CLI_RE.test(p.cmd ?? '') || tracked.has(key(p))) continue;
+			for (let at = parentOf(p, byPid); at; at = parentOf(at, byPid)) {
+				if (hosts.has(key(at))) {
+					tracked.set(key(p), { pid: p.pid, start: p.start, host: key(at) });
+					break;
+				}
 			}
 		}
-	}
-	if (roots.size) log(`stopped ${roots.size} editor server(s) left running by an earlier handide`);
+		const live = new Set(procs.map(key));
+		let agents = 0;
+		for (const [id, t] of tracked) {
+			if (!live.has(id)) tracked.delete(id);
+			else if (!live.has(t.host)) {
+				killTree(t.pid);
+				tracked.delete(id);
+				agents += 1;
+			}
+		}
+		if (servers.size || agents) log(`cleaned up ${servers.size} orphaned editor server(s), ${agents} agent process(es) of closed sessions`);
+	};
+	const timer = setInterval(sweep, intervalMs);
+	timer.unref();
+	return { stop: () => clearInterval(timer), sweep };
 }
 
 /**

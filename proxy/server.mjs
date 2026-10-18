@@ -16,7 +16,7 @@ import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectEditorCli, editorVersion, startServeWeb, stopOrphanedServers } from './editor.mjs';
+import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
@@ -566,6 +566,7 @@ async function main() {
 	log(`handide home: ${opts.dataDir}${opts.dataDir === LEGACY_DATA_DIR ? ' (existing data from before the global command; move it to ~/.handide to switch)' : ''}`);
 	let upstreamPort = opts.upstream;
 	let child;
+	let reaper;
 	const bridge = createBridge({ token: opts.token });
 	const bridgeEnv = await bridge.listen();
 
@@ -586,6 +587,7 @@ async function main() {
 		});
 		child = started.child;
 		await started.ready;
+		reaper = startReaper({ dataDir: opts.dataDir, log });
 	}
 
 	const host = opts.host ?? (opts.local ? '127.0.0.1' : '0.0.0.0');
@@ -645,6 +647,7 @@ async function main() {
 		else child.kill('SIGTERM');
 	};
 	const cleanup = () => {
+		reaper?.stop();
 		killEditor();
 		stopRemote?.();
 		stopRemote = undefined;
