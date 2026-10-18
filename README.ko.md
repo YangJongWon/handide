@@ -90,7 +90,9 @@ PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어
 
 ## 여러 PC를 폰 하나로
 
-PC마다 handide를 실행하고, 폰이 여는 PC에 다른 PC를 한 번씩 등록합니다.
+PC마다 handide를 실행합니다. 같은 계정으로 Tailscale에 로그인한 PC(`handide remote`)끼리는 **서로 자동으로 찾습니다.** 복사할 것이 없습니다. 각 PC는 접속 토큰을 같은 계정의 기기에만 넘겨줍니다.
+
+그 밖의 PC(같은 Wi-Fi에만 있는 PC 등)는 폰이 여는 PC에 한 번씩 등록합니다.
 
 ```sh
 # 다른 PC(예: 노트북)에서: 평소처럼 실행하고 출력된 링크를 복사

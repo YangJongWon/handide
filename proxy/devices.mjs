@@ -10,13 +10,16 @@
 // protocol, so it cannot be swapped on the way). The hub's own token is kept aside to
 // switch back, and switching needs it.
 //
-// PCs are added once with "handide devices add <name> <link>", the link the other PC
-// prints. Its self-signed certificate is pinned then (trust on first use).
+// PCs signed in to Tailscale with the same account are found by themselves: each handide
+// hands its token to the same account's devices only (proxy/tailscale.mjs checks who is
+// asking). Other PCs are added once with "handide devices add <name> <link>", the link the
+// other PC prints. A self-signed certificate is pinned then (trust on first use).
 import http from 'node:http';
 import net from 'node:net';
 import tls from 'node:tls';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { sameTailnetOwner, tailnetPeers } from './tailscale.mjs';
 
 export const DEVICE_COOKIE = '__handide_device';
 const TOKEN_COOKIE = 'vscode-tkn';
@@ -25,6 +28,9 @@ const HUB_COOKIE = '__handide_hub'; // this PC's token while the phone uses anot
 const PRIVATE_COOKIES = new Set(['__handide_port', 'vscode-cli-secret-half']);
 const LIST_PATH = '/__handide/devices';
 const USE_PATH = '/__handide/devices/use';
+const PAIR_PATH = '/__handide/pair';
+const DEFAULT_PORT = 9000;
+const SCAN_INTERVAL_MS = 30_000;
 const NAME = /^[A-Za-z0-9][\w.-]{0,31}$/;
 const CERT_ERRORS = /SELF_SIGNED|UNABLE_TO_VERIFY|ALTNAME|CERT_/;
 
@@ -125,8 +131,10 @@ function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, insecure 
 				timeout: timeoutMs,
 			},
 			(res) => {
-				res.resume();
-				res.on('end', () => ok({ status: res.statusCode }));
+				let body = '';
+				res.setEncoding('utf8');
+				res.on('data', (d) => (body += d));
+				res.on('end', () => ok({ status: res.statusCode, body }));
 			},
 		);
 		req.on('timeout', () => req.destroy(new Error(`${device.url} did not answer`)));
@@ -136,8 +144,8 @@ function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, insecure 
 }
 
 /** The certificate a device presents (SHA-1, as handide prints it), without verifying it. */
-function peekCertificate(device) {
-	return connectDevice({ ...device, fingerprint: undefined }, { insecure: true }).then((socket) => {
+function peekCertificate(device, timeoutMs) {
+	return connectDevice({ ...device, fingerprint: undefined }, { insecure: true, timeoutMs }).then((socket) => {
 		const fp = socket.getPeerCertificate().fingerprint;
 		socket.destroy();
 		return fp;
@@ -162,10 +170,47 @@ async function verifyDevice(name, link) {
 	return device;
 }
 
+/** Asks handide on a tailnet peer for its token; null when it does not run there or refuses. */
+async function pairWith(peer) {
+	const device = { name: peer.name, url: `https://${peer.ip}:${DEFAULT_PORT}` };
+	device.fingerprint = await peekCertificate(device, 2500);
+	const r = await deviceRequest(device, PAIR_PATH, { headers: { 'x-handide': '1' }, timeoutMs: 2500 });
+	const token = r.status === 200 ? JSON.parse(r.body).token : null;
+	return token ? { ...device, token } : null;
+}
+
+/**
+ * Keeps handide on this account's other tailnet computers in the device list (new ones
+ * added, a changed token or certificate updated). Returns the names it added.
+ */
+export async function discoverDevices(dataDir) {
+	const peers = await tailnetPeers();
+	if (!peers.length) return [];
+	const found = (await Promise.all(peers.map((p) => pairWith(p).catch(() => null)))).filter(Boolean);
+	const list = await loadDevices(dataDir);
+	const added = [];
+	let changed = false;
+	for (const d of found) {
+		const known = list.find((x) => x.url === d.url);
+		if (known) {
+			if (known.token !== d.token || known.fingerprint !== d.fingerprint) {
+				Object.assign(known, { token: d.token, fingerprint: d.fingerprint });
+				changed = true;
+			}
+		} else if (NAME.test(d.name) && !list.some((x) => x.name === d.name)) {
+			list.push(d);
+			added.push(d.name);
+			changed = true;
+		}
+	}
+	if (changed) await saveDevices(dataDir, list);
+	return added;
+}
+
 /** "handide devices [add <name> <link> | remove <name>]" */
 export async function devicesCommand(args, { dataDir, log }) {
 	const [sub, name, link] = args;
-	const list = await loadDevices(dataDir);
+	let list = await loadDevices(dataDir);
 	if (sub === 'add') {
 		if (!name || !link) throw new Error('usage: handide devices add <name> <link from the other PC>');
 		if (!NAME.test(name)) throw new Error('the name may use letters, digits, ".", "_" and "-" (up to 32)');
@@ -183,8 +228,12 @@ export async function devicesCommand(args, { dataDir, log }) {
 		return;
 	}
 	if (sub && sub !== 'list') throw new Error(`unknown devices command "${sub}" (add, remove, list)`);
+	const added = await discoverDevices(dataDir);
+	if (added.length) log(`found on your tailnet: ${added.join(', ')}`);
+	list = await loadDevices(dataDir);
 	if (!list.length) {
-		log('No other PCs yet. On the other PC run "handide", then here:');
+		log('No other PCs yet. Run "handide" on the other PC: signed in to Tailscale with the same');
+		log('account, it shows up by itself. Otherwise add it with the link it prints:');
 		log('  handide devices add <name> "<the link it prints>"');
 		return;
 	}
@@ -213,6 +262,32 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 		agents.clear();
 		for (const d of devices) agents.set(d.name, deviceAgent(d, { keepAlive: true }));
 	};
+
+	// At most one tailnet scan per interval; callers wait for the one under way.
+	let lastScan = 0;
+	let scanning = Promise.resolve();
+	const scan = () => {
+		if (Date.now() - lastScan < SCAN_INTERVAL_MS) return scanning;
+		lastScan = Date.now();
+		scanning = discoverDevices(dataDir)
+			.then(
+				(added) => added.length && log(`found on your tailnet: ${added.join(', ')} (switch in the phone menu)`),
+				(err) => log(`tailnet scan: ${err.message}`),
+			)
+			.then(refresh);
+		return scanning;
+	};
+
+	/** Hands this PC's token to a device signed in to Tailscale with the same account. */
+	async function pair(req, res) {
+		const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+		if (req.headers['x-handide'] !== '1' || !(await sameTailnetOwner(ip))) {
+			res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden');
+			return;
+		}
+		res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+		res.end(JSON.stringify({ token }));
+	}
 
 	const query = (req) => new URL(req.url, 'http://x').searchParams;
 	/** Allowed to list and switch PCs: this PC's token, wherever the phone is now. */
@@ -264,7 +339,7 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 	}
 
 	async function list(req, res) {
-		await refresh();
+		await scan();
 		const current = selected(req)?.name ?? '';
 		const status = await Promise.all(
 			devices.map((d) => deviceRequest(d, '/__handide/health', { timeoutMs: 2500 }).then((r) => r.status === 204, () => false)),
@@ -329,6 +404,10 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 	/** Handles the request if it is about devices or belongs to another PC. */
 	function handle(req, res, proto) {
 		const pathname = req.url.split('?')[0];
+		if (pathname === PAIR_PATH) {
+			pair(req, res).catch(() => res.headersSent || res.writeHead(500).end());
+			return true;
+		}
 		if (pathname === LIST_PATH || pathname === USE_PATH) {
 			if (!authed(req) || (pathname === LIST_PATH && req.headers['x-handide'] !== '1')) {
 				res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden');
@@ -386,5 +465,5 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 		return true;
 	}
 
-	return { handle, upgrade, refresh, list: () => devices };
+	return { handle, upgrade, refresh, scan, list: () => devices };
 }

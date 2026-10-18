@@ -90,6 +90,46 @@ async function readStatus(cli) {
 	}
 }
 
+const TAILNET_V4 = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
+const COMPUTER_OS = new Set(['windows', 'macOS', 'linux']);
+export const isTailnetAddress = (ip) => TAILNET_V4.test(ip) || /^fd7a:115c:a1e0:/i.test(ip);
+
+async function statusJson(cli) {
+	try {
+		return JSON.parse((await run(cli, ['status', '--json'], { timeout: 5000 })).out);
+	} catch {
+		return null;
+	}
+}
+
+/** The other computers signed in with this PC's account, online now: where handide may run. */
+export async function tailnetPeers() {
+	const cli = await findCli();
+	const json = cli && (await statusJson(cli));
+	if (json?.BackendState !== 'Running') return [];
+	return Object.values(json.Peer || {})
+		.filter((p) => p.Online && p.UserID === json.Self?.UserID && COMPUTER_OS.has(p.OS))
+		.map((p) => ({ name: (p.DNSName || '').split('.')[0] || p.HostName, ip: (p.TailscaleIPs || []).find((ip) => TAILNET_V4.test(ip)) }))
+		.filter((p) => p.ip);
+}
+
+/**
+ * Whether a connection from `ip` comes from a device signed in with this PC's account.
+ * Tailnet traffic is authenticated by WireGuard, so the source address can be trusted;
+ * Funnel traffic arrives from 127.0.0.1 and never passes.
+ */
+export async function sameTailnetOwner(ip) {
+	if (!isTailnetAddress(ip)) return false;
+	const cli = await findCli();
+	if (!cli) return false;
+	const [status, who] = await Promise.all([statusJson(cli), run(cli, ['whois', '--json', ip], { timeout: 5000 })]);
+	try {
+		return status?.Self?.UserID !== undefined && JSON.parse(who.out).UserProfile?.ID === status.Self.UserID;
+	} catch {
+		return false;
+	}
+}
+
 async function publish(cli, verb, target, log) {
 	// First use: serve waits until HTTPS is allowed for the tailnet, funnel until Funnel is.
 	const what = verb === 'funnel' ? 'allow public access (Funnel) for this PC (once)' : 'allow HTTPS for your tailnet (once)';

@@ -90,7 +90,9 @@ It installs [Tailscale](https://tailscale.com) on the PC and opens the browser t
 
 ## Several PCs from one phone
 
-Run handide on each PC, then tell the PC your phone opens about the others, once each:
+Run handide on each PC. PCs signed in to Tailscale with the same account (`handide remote`) find each other by themselves: nothing to copy. Each PC hands its access token only to devices of that same account.
+
+Other PCs (e.g. only on the same Wi-Fi) are told about once each, on the PC your phone opens:
 
 ```sh
 # on the other PC (e.g. a laptop): run handide as usual and copy the link it prints
