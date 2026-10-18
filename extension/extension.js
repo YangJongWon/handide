@@ -612,6 +612,9 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
 		vscode.commands.registerCommand('handide.searchPeers', searchPeers),
+		// Activation is "*" for this: a workspace that holds handide-peer:// folders when the
+		// page loads waits for their provider before onStartupFinished (or onFileSystem)
+		// activates anything, so no extension at all would start.
 		vscode.workspace.registerFileSystemProvider(PEER_SCHEME, new PeerFileSystem(), { isCaseSensitive: true, isReadonly: true }),
 	);
 	memento = context.globalState;

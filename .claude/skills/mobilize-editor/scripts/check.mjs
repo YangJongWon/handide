@@ -80,7 +80,10 @@ async function checkDevice(target, ctx) {
 		if (/__handide|mobile\.js/.test(stack) || !/https?:\/\//.test(stack)) errors.push(e.message);
 		else otherErrors.push(`${e.message} @ ${(/https?:\/\/[^\s)]+/.exec(stack)?.[0] ?? '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80)}`);
 	});
-	page.on('console', (m) => m.type() === 'error' && /handide/.test(m.text()) && errors.push(m.text()));
+	// Not the layer's: with other PCs in the workspace, VS Code reads their folder settings
+	// once before the companion has registered the handide-peer:// provider.
+	const peerStartup = (text) => /ENOPRO/.test(text) && /handide-peer:\/\/[^'"\s]*\/\.vscode\//.test(text);
+	page.on('console', (m) => m.type() === 'error' && /handide/.test(m.text()) && !peerStartup(m.text()) && errors.push(m.text()));
 	const sel = JSON.parse(readFileSync(join(ROOT, 'layer/selectors.json'), 'utf8'));
 	let vw = 0; // measured after load
 	let apple = false;

@@ -13,8 +13,7 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
-    "onStartupFinished",
-    "onFileSystem:handide-peer"
+    "*"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
