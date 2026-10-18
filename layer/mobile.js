@@ -1029,6 +1029,21 @@ async function loadDevices() {
 	state.devices = r?.ok ? r : null;
 	renderDevices();
 	renderMenuHead();
+	if (r?.ok) keepFallbackLinks(r.devices);
+}
+
+/**
+ * When the PC this link belongs to is off, sw.js opens another one: it needs their links
+ * kept here beforehand. Needs a trusted certificate (the ts.net address), as service
+ * workers do; with the self-signed LAN one the registration just fails.
+ */
+function keepFallbackLinks(list) {
+	const pcs = list.filter((d) => d.link).map(({ name, link }) => ({ name, link }));
+	navigator.serviceWorker?.register(`${BASE}sw.js`, { scope: '/' }).catch(() => {});
+	globalThis.caches
+		?.open('handide-fallback')
+		.then((c) => c.put(`${BASE}fallback.json`, new Response(JSON.stringify({ pcs }), { headers: { 'content-type': 'application/json' } })))
+		.catch(() => {});
 }
 
 function renderDevices() {
