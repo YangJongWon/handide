@@ -3,7 +3,8 @@
 // handide sets up what that needs between this account's PCs, over the tailnet:
 //
 //   - a key of its own per PC (<data dir>/ssh/id_ed25519), handed to the other PCs when
-//     they pair (proxy/devices.mjs) and added to their ~/.ssh/authorized_keys;
+//     they pair (proxy/devices.mjs) and added to their ~/.ssh/authorized_keys, usable
+//     from tailnet addresses only;
 //   - the other PCs' host keys, pinned from pairing, so the first connection asks nothing;
 //   - Host entries "handide-<pc>" in <data dir>/ssh/config, included from ~/.ssh/config.
 //
@@ -18,6 +19,10 @@ import os from 'node:os';
 export const HOST_PREFIX = 'handide-';
 const KEY_LINE = /^(ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/=]+$/;
 const MARK = 'handide:'; // comment on the keys handide adds, to find them again
+// Keys handide adds log in only from tailnet addresses (Tailscale's IPv4 and IPv6 ranges):
+// they come from pairing, which only a device of this account on the tailnet can do, and
+// the other PCs reach this one over the tailnet. A copy of the key elsewhere is no use.
+const FROM_TAILNET = 'from="100.64.0.0/10,fd7a:115c:a1e0::/48"';
 
 const sshDir = (dataDir) => join(dataDir, 'ssh');
 const keyFile = (dataDir) => join(sshDir(dataDir), 'id_ed25519');
@@ -72,10 +77,13 @@ export async function authorizeKey(key, name) {
 	await mkdir(dir, { recursive: true, mode: 0o700 });
 	const lines = (await readFile(file, 'utf8').catch(() => '')).split(/\r?\n/).filter(Boolean);
 	const comment = `${MARK}${name}`;
-	if (lines.some((l) => l.includes(key))) return false; // already allowed (by handide or by hand)
-	// One key per PC: a new key from the same PC replaces its old one.
-	const kept = lines.filter((l) => !l.trim().endsWith(` ${comment}`));
-	await writeFile(file, [...kept, `${key} ${comment}`].join('\n') + '\n', { mode: 0o600 });
+	const wanted = `${FROM_TAILNET} ${key} ${comment}`;
+	const ours = (l) => l.trim().endsWith(` ${comment}`);
+	if (lines.some((l) => l.includes(key) && (!ours(l) || l === wanted))) return false; // already allowed (by handide or by hand)
+	// One key per PC: a new key from the same PC replaces its old one (and one handide
+	// added before keys were limited to the tailnet gets the limit).
+	const kept = lines.filter((l) => !ours(l));
+	await writeFile(file, [...kept, wanted].join('\n') + '\n', { mode: 0o600 });
 	if (process.platform !== 'win32') await chmod(file, 0o600).catch(() => {});
 	return true;
 }
