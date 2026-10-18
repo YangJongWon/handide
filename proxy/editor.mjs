@@ -198,7 +198,7 @@ export function startReaper({ dataDir, log, intervalMs = 5 * 60_000 }) {
  * Starts `serve-web` on localhost only; the proxy is the sole public entry point.
  * Resolves once the CLI prints its "Web UI available" line.
  */
-export function startServeWeb({ cli, port, token, dataDir, folder, env, log }) {
+export function startServeWeb({ cli, port, token, dataDir, folder, workspace, env, log }) {
 	const args = [
 		'serve-web',
 		'--host', '127.0.0.1',
@@ -209,7 +209,8 @@ export function startServeWeb({ cli, port, token, dataDir, folder, env, log }) {
 		'--disable-telemetry',
 		'--server-data-dir', dataDir,
 	];
-	if (folder) args.push('--default-folder', folder);
+	if (workspace) args.push('--default-workspace', workspace);
+	else if (folder) args.push('--default-folder', folder);
 	const child = spawn(cli, args, {
 		shell: process.platform === 'win32' && !cli.endsWith('.exe'),
 		windowsHide: true,

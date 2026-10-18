@@ -108,6 +108,10 @@ The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Cod
 - Every PC keeps its own access token and checks it. A self-signed certificate is pinned when the PC is added; if it changes (a new IP address), add the PC again with its new link.
 - Use the same handide version on every PC.
 
+**Every PC's code, from any PC.** Each handide mirrors the other PCs' projects, read-only, into `~/.handide/peers/<PC>/<project>` (git's view of the project: ignored files and files over 1 MB are left out) and adds them to the editor as extra workspace folders. Search, quick open and the agents on whichever PC you opened see the code of all of them, also while another PC is off (as it was when last seen). Agents in a terminal find the mirrors at `$HANDIDE_PEERS`. Changes are made on the PC that owns the project.
+
+**One link, whichever PC is on.** Open each PC once through its `ts.net` link. After that, when the PC a link belongs to is off, the page opens another PC that is on instead. This needs the trusted `ts.net` certificate; it does not work with the self-signed LAN link.
+
 ## The phone layout
 
 ```

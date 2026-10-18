@@ -118,8 +118,8 @@ function deviceAgent(device, { keepAlive = false, ...opts } = {}) {
 	return agent;
 }
 
-/** One small request to a device, for setup and status checks. */
-function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, insecure } = {}) {
+/** One request to a device (setup, status checks, project mirroring); the body is a Buffer. */
+export function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, insecure } = {}) {
 	return new Promise((ok, fail) => {
 		const req = http.request(
 			{
@@ -131,10 +131,9 @@ function deviceRequest(device, path, { headers = {}, timeoutMs = 4000, insecure 
 				timeout: timeoutMs,
 			},
 			(res) => {
-				let body = '';
-				res.setEncoding('utf8');
-				res.on('data', (d) => (body += d));
-				res.on('end', () => ok({ status: res.statusCode, body }));
+				const chunks = [];
+				res.on('data', (d) => chunks.push(d));
+				res.on('end', () => ok({ status: res.statusCode, body: Buffer.concat(chunks) }));
 			},
 		);
 		req.on('timeout', () => req.destroy(new Error(`${device.url} did not answer`)));
@@ -175,8 +174,9 @@ async function pairWith(peer) {
 	const device = { name: peer.name, url: `https://${peer.ip}:${DEFAULT_PORT}` };
 	device.fingerprint = await peekCertificate(device, 2500);
 	const r = await deviceRequest(device, PAIR_PATH, { headers: { 'x-handide': '1' }, timeoutMs: 2500 });
-	const token = r.status === 200 ? JSON.parse(r.body).token : null;
-	return token ? { ...device, token } : null;
+	const { token, remote } = r.status === 200 ? JSON.parse(r.body) : {};
+	// remote: its away-from-home address, where the phone goes when the PC it opened is off.
+	return token ? { ...device, token, ...(remote ? { remote } : {}) } : null;
 }
 
 /**
@@ -193,8 +193,8 @@ export async function discoverDevices(dataDir) {
 	for (const d of found) {
 		const known = list.find((x) => x.url === d.url);
 		if (known) {
-			if (known.token !== d.token || known.fingerprint !== d.fingerprint) {
-				Object.assign(known, { token: d.token, fingerprint: d.fingerprint });
+			if (known.token !== d.token || known.fingerprint !== d.fingerprint || known.remote !== d.remote) {
+				Object.assign(known, { token: d.token, fingerprint: d.fingerprint, remote: d.remote });
 				changed = true;
 			}
 		} else if (NAME.test(d.name) && !list.some((x) => x.name === d.name)) {
@@ -249,7 +249,7 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
  * Routes the phone's requests to the PC it picked. handle()/upgrade() return false for
  * requests that stay on this PC.
  */
-export function createDeviceRouter({ token, dataDir, selfName, log }) {
+export function createDeviceRouter({ token, dataDir, selfName, log, remote = () => null }) {
 	let devices = [];
 	let mtime = -1;
 	const agents = new Map(); // name → keep-alive agent, replaced when the device is re-added
@@ -286,7 +286,7 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 			return;
 		}
 		res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-		res.end(JSON.stringify({ token }));
+		res.end(JSON.stringify({ token, remote: remote() }));
 	}
 
 	const query = (req) => new URL(req.url, 'http://x').searchParams;
@@ -347,7 +347,11 @@ export function createDeviceRouter({ token, dataDir, selfName, log }) {
 		const body = {
 			ok: true,
 			current,
-			devices: [{ id: '', name: selfName, online: true }, ...devices.map((d, i) => ({ id: d.name, name: d.name, online: status[i] }))],
+			devices: [
+				{ id: '', name: selfName, online: true },
+				// link: opened directly when this PC is off (layer/sw.js).
+				...devices.map((d, i) => ({ id: d.name, name: d.name, online: status[i], link: d.remote ? `${d.remote}/?tkn=${encodeURIComponent(d.token)}` : null })),
+			],
 		};
 		res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
 		res.end(JSON.stringify(body));

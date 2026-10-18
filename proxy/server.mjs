@@ -25,6 +25,7 @@ import { createBridge } from './bridge.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
+import { createProjectMirror, createProjectShare, mirrorFolders, writeWorkspace } from './projects.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -358,6 +359,8 @@ async function serveLayer(req, res) {
 		res.writeHead(200, {
 			'content-type': MIME[extname(file)] || 'application/octet-stream',
 			'cache-control': 'no-cache',
+			// The fallback worker covers the editor page at "/" (layer/sw.js).
+			...(rel === 'sw.js' ? { 'service-worker-allowed': '/' } : {}),
 		});
 		res.end(body);
 	} catch {
@@ -384,7 +387,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, bridge, ports, devices }) {
+function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -400,6 +403,8 @@ function createProxy({ upstreamPort, log, tls, bridge, ports, devices }) {
 
 	const handler = async (req, res) => {
 		if (isConnectRequest(req)) return serveConnect(req, res);
+		// This PC's project, asked for by handide on another PC (proxy/projects.mjs).
+		if (share?.handle(req, res)) return;
 		// Another PC picked on the phone: everything else is that PC's (proxy/devices.mjs).
 		if (devices?.handle(req, res, clientBase(req).proto)) return;
 		const pathname = req.url.split('?')[0];
@@ -570,6 +575,30 @@ async function main() {
 	const bridge = createBridge({ token: opts.token });
 	const bridgeEnv = await bridge.listen();
 
+	// Other PCs, and their projects mirrored here: known before the editor starts, so its
+	// workspace holds them from the first page load.
+	let remoteUrl = null;
+	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log, remote: () => remoteUrl });
+	await devices.refresh();
+	await devices.scan();
+	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
+	const share = createProjectShare({ token: opts.token, folder: opts.folder });
+	// A workspace only when there are other PCs: a single folder otherwise, as before.
+	let workspace = null;
+	const mirror = createProjectMirror({
+		dataDir: opts.dataDir,
+		devices,
+		log,
+		onChange: async (mirrors) => {
+			if (workspace) {
+				await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, mirrors });
+				await bridge.call('handide.setFolders', [{ folders: mirrorFolders(mirrors) }]); // an open editor too
+			} else log(`other PCs' projects: ${mirrors.map((m) => `${m.name} · ${m.project}`).join(', ')}. Restart handide to add them to the editor.`);
+		},
+	});
+	const mirrors = await mirror.loadKnown();
+	if (devices.list().length) workspace = await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, mirrors });
+
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
 		log(`editor: ${cli} (${editorVersion(cli)})`);
@@ -582,7 +611,9 @@ async function main() {
 			token: opts.token,
 			dataDir: opts.dataDir,
 			folder: opts.folder,
-			env: bridgeEnv,
+			workspace,
+			// Where agents in the editor's terminals find the other PCs' projects.
+			env: { ...bridgeEnv, HANDIDE_PEERS: mirror.peersDir },
 			log: (t) => { if (process.env.HANDIDE_VERBOSE) log(t); },
 		});
 		child = started.child;
@@ -601,11 +632,7 @@ async function main() {
 		selfSigned = cert.fingerprint;
 	}
 	const ports = createPortForwarder({ token: opts.token, log });
-	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log });
-	await devices.refresh();
-	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
-	devices.scan(); // this account's other PCs on the tailnet, in the background
-	const server = createProxy({ upstreamPort, log, tls, bridge, ports, devices });
+	const server = createProxy({ upstreamPort, log, tls, bridge, ports, devices, share });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);
@@ -621,6 +648,7 @@ async function main() {
 	server.listen(opts.port, host, async () => {
 		log(`mobile VS Code ready. Open on your phone:`);
 		announce();
+		mirror.start();
 		if (opts.remote === 'off') return openConnect();
 		// Tunnels can wait for a one-time approval in the browser, so the LAN QR code comes first.
 		const r = opts.remote === 'cloudflare'
@@ -628,6 +656,7 @@ async function main() {
 			: await startTailscale({ port: opts.port, tls, log, private: opts.remote === 'private' });
 		if (r.url) {
 			stopRemote = r.stop;
+			remoteUrl = r.url;
 			log(r.public
 				? `Reachable from anywhere, no app needed on the phone${r.changes ? ' (this address changes on every run)' : ''}. Open on your phone:`
 				: 'Reachable from anywhere by devices on your tailnet (Tailscale app on). Open on your phone:');

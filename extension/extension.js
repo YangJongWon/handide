@@ -255,6 +255,21 @@ async function upload({ name, data }) {
 	return { path: uri.fsPath, relative };
 }
 
+/**
+ * The other PCs' mirrored projects after this PC's folder (proxy/projects.mjs), in the
+ * open editor. The first folder stays, so no extension restarts. In a single-folder
+ * window there is nothing to do: the next page load opens the workspace.
+ */
+async function setFolders({ folders }) {
+	const current = vscode.workspace.workspaceFolders ?? [];
+	if (!vscode.workspace.workspaceFile || !current.length) return false;
+	const { scheme, authority } = current[0].uri;
+	const want = folders.map((f) => ({ uri: vscode.Uri.file(f.path).with({ scheme, authority }), name: f.name }));
+	const rest = current.slice(1);
+	if (rest.length === want.length && want.every((w, i) => rest[i].uri.fsPath === w.uri.fsPath && rest[i].name === w.name)) return true;
+	return vscode.workspace.updateWorkspaceFolders(1, rest.length, ...want);
+}
+
 function state() {
 	const editor = vscode.window.activeTextEditor;
 	return {
@@ -322,6 +337,7 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.view', showView),
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
+		vscode.commands.registerCommand('handide.setFolders', setFolders),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 		vscode.commands.registerCommand('handide.create', create),
 		vscode.commands.registerCommand('handide.upload', upload),
