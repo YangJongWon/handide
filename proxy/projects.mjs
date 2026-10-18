@@ -26,6 +26,9 @@ const ENDPOINTS = new Set(['info', 'list', 'stat', 'file', 'events', 'search']);
 const HIDDEN = new Set(['.git']);
 const MAX_FILE = 64 << 20;
 const MAX_MATCHES = 500;
+// A search answers within this, with what it found so far: a large folder (a home
+// directory) can take minutes, and the asking PC would give up first.
+const SEARCH_MS = 20_000;
 const EVENT_BATCH_MS = 300;
 const EVENT_MAX_PATHS = 1000; // more at once (a checkout, an install): "everything changed"
 const HEARTBEAT_MS = 20_000;
@@ -70,11 +73,12 @@ function findRipgrep() {
 	return found[0]?.p ?? 'rg';
 }
 
-/** Up to `max` matches of the literal `q` (case-insensitive), as [path, line, text]. */
+/** Up to `max` matches of the literal `q` (case-insensitive), as [path, line, text]; partial when cut short. */
 function search(folder, q, max) {
 	return new Promise((ok) => {
 		const matches = [];
 		let buffered = '';
+		let partial = false;
 		let child;
 		try {
 			child = spawn(findRipgrep(), ['--json', '-F', '-i', '--max-filesize', '1M', '--max-count', '50', '--', q, '.'], { cwd: folder, windowsHide: true });
@@ -101,8 +105,15 @@ function search(folder, q, max) {
 				}
 			}
 		});
+		const deadline = setTimeout(() => {
+			partial = true;
+			child.kill();
+		}, SEARCH_MS);
 		child.on('error', () => ok(null));
-		child.on('close', () => ok(matches));
+		child.on('close', () => {
+			clearTimeout(deadline);
+			ok({ matches, partial: partial || matches.length >= max });
+		});
 	});
 }
 
@@ -171,8 +182,8 @@ export function createProjectShare({ token, folder }) {
 			const q = url.searchParams.get('q') ?? '';
 			if (!q) return json(400, { error: 'q required' });
 			const max = Math.min(Number(url.searchParams.get('max')) || MAX_MATCHES, MAX_MATCHES);
-			const matches = await search(folder, q, max);
-			return matches ? json(200, { matches }) : json(501, { error: 'ripgrep not found on this PC' });
+			const found = await search(folder, q, max);
+			return found ? json(200, found) : json(501, { error: 'ripgrep not found on this PC' });
 		}
 		if (endpoint === 'events') {
 			res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
@@ -270,7 +281,8 @@ export function createPeerRelay({ devices }) {
 		if (req.headers['if-none-match']) headers['if-none-match'] = req.headers['if-none-match'];
 		let up;
 		try {
-			up = await openDeviceRequest(device, `${PREFIX}${endpoint}${url.search}`, { headers });
+			// A search answers only when done (up to SEARCH_MS); the rest answer right away.
+			up = await openDeviceRequest(device, `${PREFIX}${endpoint}${url.search}`, { headers, timeoutMs: endpoint === 'search' ? SEARCH_MS + 10_000 : 8000 });
 		} catch (err) {
 			res.writeHead(502, { 'content-type': 'text/plain' });
 			return res.end(`${pc} is not reachable: ${err.message}`);

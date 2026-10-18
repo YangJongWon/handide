@@ -26,7 +26,7 @@ import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
 import { createPeerRelay, createProjectShare, peerFolders, writeWorkspace } from './projects.mjs';
-import { peerCommand } from './peer.mjs';
+import { peerCommand, peerLauncherEnv } from './peer.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -621,7 +621,7 @@ async function main() {
 			folder: opts.folder,
 			workspace,
 			// How agents in the editor's terminals read the other PCs' projects.
-			env: { ...bridgeEnv, HANDIDE_PEER: `"${process.execPath}" "${fileURLToPath(import.meta.url)}" peer` },
+			env: { ...bridgeEnv, ...(await peerLauncherEnv(opts.dataDir, fileURLToPath(import.meta.url))) },
 			log: (t) => { if (process.env.HANDIDE_VERBOSE) log(t); },
 		});
 		child = started.child;

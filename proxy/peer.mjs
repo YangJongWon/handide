@@ -2,6 +2,27 @@
 // (proxy/projects.mjs). It talks to this PC's handide through the bridge's private
 // listener, whose address and secret the editor's terminals inherit; agents find the
 // command itself in $HANDIDE_PEER.
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
+
+/**
+ * A one-word "handide-peer" command for the editor's terminals, on their PATH. A command
+ * line in a variable ("node" "…/server.mjs" peer) does not run as $HANDIDE_PEER: shells
+ * keep the quotes from a variable as part of the name.
+ */
+export async function peerLauncherEnv(dataDir, serverPath) {
+	const bin = join(dataDir, 'bin');
+	await mkdir(bin, { recursive: true });
+	if (process.platform === 'win32') {
+		await writeFile(join(bin, 'handide-peer.cmd'), `@"${process.execPath}" "${serverPath}" peer %*\r\n`);
+	} else {
+		const file = join(bin, 'handide-peer');
+		await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${serverPath}" peer "$@"\n`);
+		await chmod(file, 0o755);
+	}
+	const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+	return { [pathKey]: `${bin}${delimiter}${process.env[pathKey] ?? ''}`, HANDIDE_PEER: 'handide-peer' };
+}
 
 const HELP = `handide peer                       the other PCs and the project each serves
 handide peer <pc> ls [path]        a folder ("/" by default): type, size, name
@@ -47,8 +68,9 @@ export async function peerCommand(args) {
 		} else if (action === 'grep') {
 			const q = rest.join(' ');
 			if (!q) throw new Error('text to search for is needed');
-			const { matches } = await (await request(pc, 'search', { q })).json();
+			const { matches, partial } = await (await request(pc, 'search', { q })).json();
 			for (const [path, line, text] of matches) console.log(`${path}:${line}: ${text}`);
+			if (partial) console.error('handide peer: stopped early (time or result limit); narrow it with "ls" and a smaller folder');
 		} else {
 			console.log(HELP);
 			process.exitCode = 2;
