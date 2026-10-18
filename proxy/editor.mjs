@@ -130,7 +130,8 @@ export function startServeWeb({ cli, port, token, dataDir, folder, env, log }) {
 		'serve-web',
 		'--host', '127.0.0.1',
 		'--port', String(port),
-		'--connection-token', token,
+		// `=` form: a token starting with "-" would otherwise be parsed as a flag.
+		`--connection-token=${token}`,
 		'--accept-server-license-terms',
 		'--disable-telemetry',
 		'--server-data-dir', dataDir,

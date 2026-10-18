@@ -602,6 +602,7 @@ async function main() {
 	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log });
 	await devices.refresh();
 	if (devices.list().length) log(`other PCs (switch in the phone menu): ${devices.list().map((d) => d.name).join(', ')}`);
+	devices.scan(); // this account's other PCs on the tailnet, in the background
 	const server = createProxy({ upstreamPort, log, tls, bridge, ports, devices });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
