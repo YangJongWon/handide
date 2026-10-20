@@ -44,6 +44,12 @@ const STRINGS = {
 		'action.newTerminal': 'New Terminal',
 		'action.killTerminal': 'Kill Terminal',
 		'action.attach': 'Attach Image',
+		'action.gallery': 'Uploaded Images',
+		'gallery.empty': 'No images uploaded yet. Tap + to add one.',
+		'gallery.failed': 'The image list could not be loaded.',
+		'gallery.delete': 'Delete this image?',
+		'gallery.deleted': 'Deleted.',
+		'aria.deleteImage': 'Delete image',
 		'action.voice': 'Voice Input',
 		'action.cancel': 'Cancel',
 		'action.insert': 'Insert',
@@ -151,6 +157,12 @@ const STRINGS = {
 		'action.newTerminal': '새 터미널',
 		'action.killTerminal': '터미널 종료',
 		'action.attach': '이미지 첨부',
+		'action.gallery': '업로드한 이미지',
+		'gallery.empty': '아직 올린 이미지가 없습니다. +를 눌러 추가하세요.',
+		'gallery.failed': '이미지 목록을 불러오지 못했습니다.',
+		'gallery.delete': '이 이미지를 삭제할까요?',
+		'gallery.deleted': '삭제했습니다.',
+		'aria.deleteImage': '이미지 삭제',
 		'action.voice': '음성 입력',
 		'action.cancel': '취소',
 		'action.insert': '삽입',
@@ -258,6 +270,12 @@ const STRINGS = {
 		'action.newTerminal': '新しいターミナル',
 		'action.killTerminal': 'ターミナルを終了',
 		'action.attach': '画像を添付',
+		'action.gallery': 'アップロードした画像',
+		'gallery.empty': 'まだ画像がありません。+ で追加できます。',
+		'gallery.failed': '画像の一覧を読み込めませんでした。',
+		'gallery.delete': 'この画像を削除しますか？',
+		'gallery.deleted': '削除しました。',
+		'aria.deleteImage': '画像を削除',
 		'action.voice': '音声入力',
 		'action.cancel': 'キャンセル',
 		'action.insert': '挿入',
@@ -365,6 +383,12 @@ const STRINGS = {
 		'action.newTerminal': '新建终端',
 		'action.killTerminal': '终止终端',
 		'action.attach': '附加图片',
+		'action.gallery': '已上传的图片',
+		'gallery.empty': '还没有上传图片。点 + 添加。',
+		'gallery.failed': '无法加载图片列表。',
+		'gallery.delete': '删除这张图片？',
+		'gallery.deleted': '已删除。',
+		'aria.deleteImage': '删除图片',
 		'action.voice': '语音输入',
 		'action.cancel': '取消',
 		'action.insert': '插入',
@@ -534,10 +558,10 @@ const VIEW_PARTS = {
 // title picks which extension's views the drawer shows; their own title buttons stay visible.
 const VIEW_BARS = {
 	terminalDock: { part: 'panel', title: 'view.terminal', side: 'bottom', actions: [['clippy', 'action.paste', 'pasteTerminal'], ['add', 'action.newTerminal', 'newTerminal'], ['trash', 'action.killTerminal', 'killTerminal']] },
-	ai: { part: 'auxiliarybar', title: 'view.ai', side: 'right', agents: true, actions: [['copy', 'action.copy', 'copy'], ['clippy', 'action.paste', 'paste'], ['attach', 'action.attach', 'uploadImage'], ['mic', 'action.voice', 'voice']] },
+	ai: { part: 'auxiliarybar', title: 'view.ai', side: 'right', agents: true, actions: [['copy', 'action.copy', 'copy'], ['clippy', 'action.paste', 'paste'], ['file-media', 'action.gallery', 'gallery'], ['attach', 'action.attach', 'uploadImage'], ['mic', 'action.voice', 'voice']] },
 };
 // Bar actions the layer handles itself instead of a VS Code command.
-const LAYER_ACTIONS = { voice: () => toggleVoice(), uploadImage: () => chooseImage(), copy: () => copySelection(), paste: () => pasteClipboard(), pasteTerminal: () => pasteToTerminal() };
+const LAYER_ACTIONS = { voice: () => toggleVoice(), uploadImage: () => chooseImage(), gallery: () => openGallery(), copy: () => copySelection(), paste: () => pasteClipboard(), pasteTerminal: () => pasteToTerminal() };
 
 const state = {
 	config: null,
@@ -593,17 +617,116 @@ async function uploadImage(file) {
 		});
 		const saved = await bridgeCall('handide.upload', { name: file.name || 'screenshot.png', data });
 		if (!saved?.relative) return toast(t('img.saveFailed'));
-		const reference = t('img.reference', saved.relative);
-		const target = document.querySelector(state.selectors.chatInput);
-		if (target?.getBoundingClientRect().width) {
-			pasteInto(target, reference);
-			toast(t('img.inserted', saved.relative));
-		} else {
-			showUploaded(saved.relative, reference);
-		}
+		gallery.items = null; // listed again on the next open
+		useUpload(saved.relative);
 	} catch (err) {
 		toast(t('img.failed', err.message));
 	}
+}
+
+/** Hands a saved image's path to the agent: typed into its input, or kept on screen to copy. */
+function useUpload(relative) {
+	const reference = t('img.reference', relative);
+	const target = document.querySelector(state.selectors.chatInput);
+	if (target?.getBoundingClientRect().width) {
+		pasteInto(target, reference);
+		toast(t('img.inserted', relative));
+	} else {
+		showUploaded(relative, reference);
+	}
+}
+
+// ---------------------------------------------------------------- upload gallery
+
+// The images already in .handide/uploads, so one is picked again instead of re-uploaded.
+// Each is fetched through the bridge only as its tile scrolls into view, one at a time.
+const gallery = { items: null, urls: new Map(), queue: [], loading: false, observer: null };
+
+async function openGallery() {
+	if (!state.bridge) return toast(t('img.needExt'));
+	const box = document.getElementById('hd-gallery');
+	box.hidden = false;
+	document.activeElement?.blur?.();
+	if (!gallery.items) {
+		box.querySelector('.hd-gallery-grid').replaceChildren(el('p', { class: 'hd-empty' }, '…'));
+		const items = await bridgeCall('handide.uploads');
+		if (!items) {
+			box.querySelector('.hd-gallery-grid').replaceChildren(el('p', { class: 'hd-empty' }, t('gallery.failed')));
+			return;
+		}
+		gallery.items = items;
+	}
+	renderGallery();
+}
+
+function closeGallery() {
+	document.getElementById('hd-gallery').hidden = true;
+	gallery.queue.length = 0;
+}
+
+function renderGallery() {
+	const grid = document.querySelector('#hd-gallery .hd-gallery-grid');
+	gallery.observer?.disconnect();
+	gallery.queue.length = 0;
+	if (!gallery.items.length) return grid.replaceChildren(el('p', { class: 'hd-empty' }, t('gallery.empty')));
+	gallery.observer = new IntersectionObserver(
+		(seen) => {
+			for (const s of seen) {
+				if (!s.isIntersecting) continue;
+				gallery.observer.unobserve(s.target);
+				gallery.queue.push(s.target);
+			}
+			loadThumbs();
+		},
+		{ root: grid, rootMargin: '200px' },
+	);
+	const when = new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+	grid.replaceChildren(
+		...gallery.items.map((item) => {
+			const img = el('img', { alt: item.name, draggable: 'false' });
+			const url = gallery.urls.get(item.name);
+			if (url) img.src = url;
+			const tile = el(
+				'div',
+				{ class: 'hd-gallery-tile', 'data-name': item.name },
+				el('button', { class: 'hd-gallery-pick', type: 'button', 'aria-label': item.relative, onclick: () => (closeGallery(), useUpload(item.relative)) }, img, el('small', {}, when.format(item.mtime))),
+				el('button', { class: 'hd-gallery-del', type: 'button', 'aria-label': t('aria.deleteImage'), onclick: () => deleteGalleryItem(item) }, icon('trash')),
+			);
+			if (!url) gallery.observer.observe(tile);
+			return tile;
+		}),
+	);
+}
+
+async function loadThumbs() {
+	if (gallery.loading) return;
+	gallery.loading = true;
+	try {
+		while (gallery.queue.length) {
+			const tile = gallery.queue.shift();
+			const name = tile.dataset.name;
+			const file = await bridgeCall('handide.readUpload', { name });
+			if (!file?.data) continue;
+			const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
+			const url = URL.createObjectURL(new Blob([bytes], { type: file.type }));
+			gallery.urls.set(name, url);
+			const img = tile.querySelector('img');
+			if (img) img.src = url;
+		}
+	} finally {
+		gallery.loading = false;
+	}
+}
+
+async function deleteGalleryItem(item) {
+	if (!confirm(t('gallery.delete'))) return;
+	if (!(await bridgeCall('handide.deleteUpload', { name: item.name }))) return toast(t('img.saveFailed'));
+	const url = gallery.urls.get(item.name);
+	if (url) URL.revokeObjectURL(url);
+	gallery.urls.delete(item.name);
+	gallery.items = gallery.items.filter((i) => i.name !== item.name);
+	renderGallery();
+	toast(t('gallery.deleted'));
 }
 
 // Extension agents draw their input inside a webview the layer cannot type into. iOS only
@@ -1275,7 +1398,7 @@ function row({ depth, iconName, label, onclick, dim, active }) {
 // finger is still down, and it then swallows every following tap.
 function installGestures() {
 	let start = null;
-	const ours = (e) => !!e.target.closest?.('#hd-drawer, #hd-scrim, #hd-menu, #hd-menu-scrim, #hd-fab, #hd-viewbar');
+	const ours = (e) => !!e.target.closest?.('#hd-drawer, #hd-scrim, #hd-menu, #hd-menu-scrim, #hd-fab, #hd-viewbar, #hd-gallery');
 	const edge = (z) => z === 'leftEdge' || z === 'rightEdge';
 	const zoneOf = (e, t) => {
 		if (e.touches.length !== 1) return null;
@@ -1817,13 +1940,25 @@ function build() {
 		imageInput.value = '';
 		uploadImage(file);
 	});
+	const galleryBox = el(
+		'div',
+		{ id: 'hd-gallery', hidden: true, role: 'dialog', 'aria-label': t('action.gallery') },
+		el(
+			'div',
+			{ class: 'hd-gallery-head' },
+			el('button', { class: 'hd-icon-btn', type: 'button', 'aria-label': t('aria.close'), onclick: closeGallery }, icon('close')),
+			el('strong', { 'data-i18n': 'action.gallery' }, t('action.gallery')),
+			el('button', { class: 'hd-icon-btn', type: 'button', 'aria-label': t('aria.uploadImage'), onclick: () => (closeGallery(), chooseImage()) }, icon('add')),
+		),
+		el('div', { class: 'hd-gallery-grid' }),
+	);
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
 	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
 	const uploadPill = el('button', { id: 'hd-upload', type: 'button', hidden: true, 'aria-live': 'polite' });
 	const agents = el('div', { id: 'hd-agents', hidden: true, role: 'menu', 'aria-label': t('aria.agents'), 'data-i18n-aria': 'aria.agents' });
 	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, toastEl, voicePill, uploadPill);
+	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, galleryBox, toastEl, voicePill, uploadPill);
 	renderDrawer();
 }
 
@@ -2233,7 +2368,8 @@ async function main() {
 		'keydown',
 		(e) => {
 			if (e.key !== 'Escape') return;
-			if (state.menuOpen) closeMenu();
+			if (!document.getElementById('hd-gallery').hidden) closeGallery();
+			else if (state.menuOpen) closeMenu();
 			else if (state.drawerOpen) closeDrawer();
 		},
 		true,

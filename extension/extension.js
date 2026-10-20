@@ -255,6 +255,44 @@ async function upload({ name, data }) {
 	return { path: uri.fsPath, relative };
 }
 
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', bmp: 'image/bmp', avif: 'image/avif' };
+const imageType = (name) => IMAGE_TYPES[path.extname(name).slice(1).toLowerCase()];
+
+/** One saved image by its file name; never a path, so nothing outside the folder is reached. */
+function uploadUri(name) {
+	const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+	if (!root) throw new Error('open a workspace folder first');
+	if (typeof name !== 'string' || !name || path.basename(name) !== name || !imageType(name)) throw new Error('not an uploaded image');
+	return vscode.Uri.joinPath(root, '.handide', 'uploads', name);
+}
+
+/** The saved images, newest first, for the layer's gallery. */
+async function uploads() {
+	const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+	if (!root) return [];
+	const dir = vscode.Uri.joinPath(root, '.handide', 'uploads');
+	const entries = await vscode.workspace.fs.readDirectory(dir).then((e) => e, () => []);
+	const items = await Promise.all(
+		entries
+			.filter(([name, type]) => type === vscode.FileType.File && imageType(name))
+			.map(async ([name]) => {
+				const s = await vscode.workspace.fs.stat(vscode.Uri.joinPath(dir, name));
+				return { name, relative: `.handide/uploads/${name}`, mtime: s.mtime, size: s.size };
+			}),
+	);
+	return items.sort((a, b) => b.mtime - a.mtime).slice(0, 200);
+}
+
+async function readUpload({ name }) {
+	const bytes = await vscode.workspace.fs.readFile(uploadUri(name));
+	return { type: imageType(name), data: Buffer.from(bytes).toString('base64') };
+}
+
+async function deleteUpload({ name }) {
+	await vscode.workspace.fs.delete(uploadUri(name), { useTrash: false });
+	return true;
+}
+
 /**
  * The other PCs' projects after this PC's folder (proxy/projects.mjs), in the open
  * editor. The first folder stays, so no extension restarts. In a single-folder window
@@ -609,6 +647,9 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 		vscode.commands.registerCommand('handide.create', create),
 		vscode.commands.registerCommand('handide.upload', upload),
+		vscode.commands.registerCommand('handide.uploads', uploads),
+		vscode.commands.registerCommand('handide.readUpload', readUpload),
+		vscode.commands.registerCommand('handide.deleteUpload', deleteUpload),
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
 		vscode.commands.registerCommand('handide.searchPeers', searchPeers),

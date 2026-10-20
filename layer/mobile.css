@@ -345,7 +345,8 @@ html.hd-mobile #hd-viewbar[hidden] {
 	display: none;
 }
 html.hd-mobile #hd-viewbar .hd-icon-btn {
-	width: 40px;
+	flex: none;
+	width: 36px;
 	height: 100%;
 }
 html.hd-mobile .hd-viewbar-title {
@@ -944,4 +945,84 @@ html.hd-mobile .monaco-dialog-box .dialog-buttons .monaco-button {
 html.hd-mobile .monaco-inputbox input,
 html.hd-mobile .monaco-inputbox textarea {
 	font-size: 16px !important;
+}
+html.hd-mobile #hd-gallery {
+	position: fixed;
+	inset: 0;
+	z-index: 2850;
+	display: flex;
+	flex-direction: column;
+	padding-top: env(safe-area-inset-top);
+	padding-bottom: env(safe-area-inset-bottom);
+	background: var(--hd-bg);
+	font-family: var(--vscode-font-family, system-ui, sans-serif);
+	color: var(--hd-fg);
+	-webkit-tap-highlight-color: transparent;
+}
+html.hd-mobile #hd-gallery[hidden] {
+	display: none;
+}
+html.hd-mobile .hd-gallery-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--hd-border);
+}
+html.hd-mobile .hd-gallery-head strong {
+	flex: 1;
+	font-size: 15px;
+}
+html.hd-mobile .hd-gallery-grid {
+	flex: 1;
+	overflow-y: auto;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+	align-content: start;
+	gap: 6px;
+	padding: 8px;
+}
+html.hd-mobile .hd-gallery-grid .hd-empty {
+	grid-column: 1 / -1;
+}
+html.hd-mobile .hd-gallery-tile {
+	position: relative;
+}
+html.hd-mobile .hd-gallery-pick {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	padding: 0;
+	border: 1px solid var(--hd-border);
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--hd-key-bg);
+	color: var(--hd-muted);
+}
+html.hd-mobile .hd-gallery-pick img {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1;
+	object-fit: cover;
+	background: var(--hd-hover);
+}
+html.hd-mobile .hd-gallery-pick small {
+	padding: 3px 6px;
+	font-size: 11px;
+	text-align: left;
+}
+html.hd-mobile .hd-gallery-del {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 30px;
+	height: 30px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.55);
+	color: #fff;
 }

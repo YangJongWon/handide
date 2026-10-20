@@ -119,7 +119,7 @@ export function createBridge({ token, log }) {
 		}
 		if (req.url === '/result' && req.method === 'POST') {
 			try {
-				const { id, ok, result, error } = JSON.parse(await readBody(req, 8 << 20));
+				const { id, ok, result, error } = JSON.parse(await readBody(req, 24 << 20)); // a gallery image: up to 15MB, base64
 				const entry = inflight.get(id);
 				if (entry) {
 					clearTimeout(entry.timer);
