@@ -1026,3 +1026,60 @@ html.hd-mobile .hd-gallery-del {
 	background: rgba(0, 0, 0, 0.55);
 	color: #fff;
 }
+/* One image full size, with its copy actions. Long-press on it keeps the browser's own menu. */
+html.hd-mobile .hd-gallery-view {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	padding-top: env(safe-area-inset-top);
+	padding-bottom: env(safe-area-inset-bottom);
+	background: var(--hd-bg);
+}
+html.hd-mobile .hd-gallery-view[hidden] {
+	display: none;
+}
+html.hd-mobile .hd-gallery-view-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--hd-border);
+}
+html.hd-mobile .hd-gallery-view-head small {
+	flex: 1;
+	min-width: 0;
+	font-size: 12px;
+	color: var(--hd-muted);
+	overflow-wrap: anywhere;
+}
+html.hd-mobile .hd-gallery-view img {
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	object-fit: contain;
+	background: var(--hd-hover);
+	-webkit-touch-callout: default;
+	user-select: auto;
+	-webkit-user-select: auto;
+}
+html.hd-mobile .hd-gallery-actions {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 6px;
+	padding: 8px;
+	border-top: 1px solid var(--hd-border);
+}
+html.hd-mobile .hd-gallery-actions button {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	min-height: 56px;
+	padding: 6px 2px;
+	border: 1px solid var(--hd-border);
+	border-radius: 10px;
+	background: var(--hd-key-bg);
+	color: var(--hd-fg);
+	font-size: 12px;
+}

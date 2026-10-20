@@ -49,6 +49,11 @@ const STRINGS = {
 		'gallery.failed': 'The image list could not be loaded.',
 		'gallery.delete': 'Delete this image?',
 		'gallery.deleted': 'Deleted.',
+		'gallery.use': 'Send to agent',
+		'gallery.copyPath': 'Copy path',
+		'gallery.copyImage': 'Copy image',
+		'gallery.imageCopied': 'Image copied. Paste it where you need it.',
+		'gallery.copyFailed': 'This browser would not copy the image. Long-press the image instead.',
 		'aria.deleteImage': 'Delete image',
 		'action.voice': 'Voice Input',
 		'action.cancel': 'Cancel',
@@ -162,6 +167,11 @@ const STRINGS = {
 		'gallery.failed': '이미지 목록을 불러오지 못했습니다.',
 		'gallery.delete': '이 이미지를 삭제할까요?',
 		'gallery.deleted': '삭제했습니다.',
+		'gallery.use': '에이전트에 보내기',
+		'gallery.copyPath': '경로 복사',
+		'gallery.copyImage': '이미지 복사',
+		'gallery.imageCopied': '이미지를 복사했습니다. 필요한 곳에 붙여넣으세요.',
+		'gallery.copyFailed': '이 브라우저에서는 이미지를 복사할 수 없습니다. 이미지를 길게 눌러 주세요.',
 		'aria.deleteImage': '이미지 삭제',
 		'action.voice': '음성 입력',
 		'action.cancel': '취소',
@@ -275,6 +285,11 @@ const STRINGS = {
 		'gallery.failed': '画像の一覧を読み込めませんでした。',
 		'gallery.delete': 'この画像を削除しますか？',
 		'gallery.deleted': '削除しました。',
+		'gallery.use': 'エージェントに送る',
+		'gallery.copyPath': 'パスをコピー',
+		'gallery.copyImage': '画像をコピー',
+		'gallery.imageCopied': '画像をコピーしました。必要な所に貼り付けてください。',
+		'gallery.copyFailed': 'このブラウザでは画像をコピーできません。画像を長押ししてください。',
 		'aria.deleteImage': '画像を削除',
 		'action.voice': '音声入力',
 		'action.cancel': 'キャンセル',
@@ -388,6 +403,11 @@ const STRINGS = {
 		'gallery.failed': '无法加载图片列表。',
 		'gallery.delete': '删除这张图片？',
 		'gallery.deleted': '已删除。',
+		'gallery.use': '发送给智能体',
+		'gallery.copyPath': '复制路径',
+		'gallery.copyImage': '复制图片',
+		'gallery.imageCopied': '图片已复制，可粘贴到需要的地方。',
+		'gallery.copyFailed': '此浏览器无法复制图片，请长按图片。',
 		'aria.deleteImage': '删除图片',
 		'action.voice': '语音输入',
 		'action.cancel': '取消',
@@ -640,7 +660,7 @@ function useUpload(relative) {
 
 // The images already in .handide/uploads, so one is picked again instead of re-uploaded.
 // Each is fetched through the bridge only as its tile scrolls into view, one at a time.
-const gallery = { items: null, urls: new Map(), queue: [], loading: false, observer: null };
+const gallery = { items: null, urls: new Map(), queue: [], loading: false, observer: null, viewing: null };
 
 async function openGallery() {
 	if (!state.bridge) return toast(t('img.needExt'));
@@ -660,6 +680,7 @@ async function openGallery() {
 }
 
 function closeGallery() {
+	closeGalleryView();
 	document.getElementById('hd-gallery').hidden = true;
 	gallery.queue.length = 0;
 }
@@ -689,7 +710,7 @@ function renderGallery() {
 			const tile = el(
 				'div',
 				{ class: 'hd-gallery-tile', 'data-name': item.name },
-				el('button', { class: 'hd-gallery-pick', type: 'button', 'aria-label': item.relative, onclick: () => (closeGallery(), useUpload(item.relative)) }, img, el('small', {}, when.format(item.mtime))),
+				el('button', { class: 'hd-gallery-pick', type: 'button', 'aria-label': item.relative, onclick: () => viewGalleryItem(item) }, img, el('small', {}, when.format(item.mtime))),
 				el('button', { class: 'hd-gallery-del', type: 'button', 'aria-label': t('aria.deleteImage'), onclick: () => deleteGalleryItem(item) }, icon('trash')),
 			);
 			if (!url) gallery.observer.observe(tile);
@@ -704,18 +725,91 @@ async function loadThumbs() {
 	try {
 		while (gallery.queue.length) {
 			const tile = gallery.queue.shift();
-			const name = tile.dataset.name;
-			const file = await bridgeCall('handide.readUpload', { name });
-			if (!file?.data) continue;
-			const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
-			const url = URL.createObjectURL(new Blob([bytes], { type: file.type }));
-			gallery.urls.set(name, url);
+			const url = await galleryUrl(tile.dataset.name);
 			const img = tile.querySelector('img');
-			if (img) img.src = url;
+			if (url && img) img.src = url;
 		}
 	} finally {
 		gallery.loading = false;
 	}
+}
+
+/** A saved image as a blob: URL, read through the bridge once and kept. */
+async function galleryUrl(name) {
+	if (gallery.urls.has(name)) return gallery.urls.get(name);
+	const file = await bridgeCall('handide.readUpload', { name });
+	if (!file?.data) return undefined;
+	if (gallery.urls.has(name)) return gallery.urls.get(name); // read twice at once
+	const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
+	const url = URL.createObjectURL(new Blob([bytes], { type: file.type }));
+	gallery.urls.set(name, url);
+	return url;
+}
+
+// One image full size: looked at again, and its path or the image itself copied again as
+// often as needed (the upload pill copies only once). Long-press works on the image too.
+async function viewGalleryItem(item) {
+	const view = document.querySelector('#hd-gallery .hd-gallery-view');
+	const img = view.querySelector('img');
+	gallery.viewing = item;
+	view.querySelector('.hd-gallery-view-head small').textContent = item.relative;
+	img.removeAttribute('src');
+	img.alt = item.name;
+	view.hidden = false;
+	const url = await galleryUrl(item.name);
+	if (gallery.viewing === item && url) img.src = url;
+}
+
+function closeGalleryView() {
+	gallery.viewing = null;
+	const view = document.querySelector('#hd-gallery .hd-gallery-view');
+	if (view) view.hidden = true;
+}
+
+function galleryAction(action) {
+	const item = gallery.viewing;
+	if (!item) return;
+	if (action === 'use') return closeGallery(), useUpload(item.relative);
+	if (action === 'path') return copyText(t('img.reference', item.relative), t('img.copied'));
+	if (action === 'image') return copyGalleryImage(item);
+	if (action === 'delete') return deleteGalleryItem(item);
+}
+
+/** Copies text during the tap (iOS allows it only then); else offers it in the input sheet. */
+async function copyText(text, done) {
+	try {
+		await navigator.clipboard.writeText(text);
+		toast(done);
+	} catch {
+		openInputSheet();
+		const box = document.querySelector('#hd-sheet textarea, #hd-sheet input');
+		if (box) box.value = text;
+	}
+}
+
+// Browsers take only PNG images on the clipboard, so other types are redrawn as PNG. The
+// write starts during the tap with the PNG still to come, which is what iOS asks for.
+async function copyGalleryImage(item) {
+	try {
+		const png = galleryUrl(item.name).then(pngBlob);
+		await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+		toast(t('gallery.imageCopied'));
+	} catch {
+		toast(t('gallery.copyFailed'));
+	}
+}
+
+async function pngBlob(url) {
+	if (!url) throw new Error('not loaded');
+	const blob = await fetch(url).then((r) => r.blob());
+	if (blob.type === 'image/png') return blob;
+	const bitmap = await createImageBitmap(blob);
+	const canvas = document.createElement('canvas');
+	canvas.width = bitmap.width;
+	canvas.height = bitmap.height;
+	canvas.getContext('2d').drawImage(bitmap, 0, 0);
+	bitmap.close();
+	return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('png'))), 'image/png'));
 }
 
 async function deleteGalleryItem(item) {
@@ -725,6 +819,7 @@ async function deleteGalleryItem(item) {
 	if (url) URL.revokeObjectURL(url);
 	gallery.urls.delete(item.name);
 	gallery.items = gallery.items.filter((i) => i.name !== item.name);
+	if (gallery.viewing === item) closeGalleryView();
 	renderGallery();
 	toast(t('gallery.deleted'));
 }
@@ -736,16 +831,9 @@ function showUploaded(relative, reference) {
 	const pill = document.getElementById('hd-upload');
 	pill.replaceChildren(el('strong', {}, t('img.tapToCopy')), el('small', {}, relative));
 	pill.hidden = false;
-	pill.onclick = async () => {
+	pill.onclick = () => {
 		pill.hidden = true;
-		try {
-			await navigator.clipboard.writeText(reference);
-			toast(t('img.copied'));
-		} catch {
-			openInputSheet();
-			const box = document.querySelector('#hd-sheet textarea, #hd-sheet input');
-			if (box) box.value = reference;
-		}
+		copyText(reference, t('img.copied'));
 	};
 }
 
@@ -1951,6 +2039,27 @@ function build() {
 			el('button', { class: 'hd-icon-btn', type: 'button', 'aria-label': t('aria.uploadImage'), onclick: () => (closeGallery(), chooseImage()) }, icon('add')),
 		),
 		el('div', { class: 'hd-gallery-grid' }),
+		el(
+			'div',
+			{ class: 'hd-gallery-view', hidden: true },
+			el(
+				'div',
+				{ class: 'hd-gallery-view-head' },
+				el('button', { class: 'hd-icon-btn', type: 'button', 'aria-label': t('aria.close'), onclick: closeGalleryView }, icon('arrow-left')),
+				el('small', {}),
+			),
+			el('img', { draggable: 'false' }),
+			el(
+				'div',
+				{ class: 'hd-gallery-actions' },
+				...[
+					['send', 'gallery.use', 'use'],
+					['copy', 'gallery.copyPath', 'path'],
+					['file-media', 'gallery.copyImage', 'image'],
+					['trash', 'aria.deleteImage', 'delete'],
+				].map(([iconName, key, action]) => el('button', { type: 'button', onclick: () => galleryAction(action) }, icon(iconName), el('span', { 'data-i18n': key }, t(key)))),
+			),
+		),
 	);
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
 	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
@@ -2368,7 +2477,8 @@ async function main() {
 		'keydown',
 		(e) => {
 			if (e.key !== 'Escape') return;
-			if (!document.getElementById('hd-gallery').hidden) closeGallery();
+			if (gallery.viewing) closeGalleryView();
+			else if (!document.getElementById('hd-gallery').hidden) closeGallery();
 			else if (state.menuOpen) closeMenu();
 			else if (state.drawerOpen) closeDrawer();
 		},
