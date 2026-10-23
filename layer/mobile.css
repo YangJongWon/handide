@@ -22,6 +22,9 @@ html.hd-mobile {
 	--hd-shadow: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
 	--hd-key-h: 44px;
 	overscroll-behavior: none;
+	/* iOS enlarges text in landscape and keeps part of it after turning back to portrait. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 html.hd-mobile body {
@@ -666,6 +669,62 @@ html.hd-mobile .hd-row.active {
 }
 html.hd-mobile .hd-row:active {
 	background: var(--hd-hover);
+}
+/* Long-pressing a folder (or the title) holds ours, not iOS's text callout. */
+html.hd-mobile :is(.hd-row, .hd-drawer-title) {
+	-webkit-touch-callout: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+/* A long-pressed folder's git remotes (mobile.js: infoBox). */
+html.hd-mobile .hd-info {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 2px 12px 8px;
+	padding: 10px 44px 10px 12px;
+	border: 1px solid var(--hd-border);
+	border-radius: 10px;
+	background: var(--hd-hover);
+	font-size: 13px;
+}
+html.hd-mobile .hd-info .hd-info-close {
+	position: absolute;
+	top: 0;
+	right: 0;
+}
+html.hd-mobile .hd-info small,
+html.hd-mobile .hd-info-note {
+	margin: 0;
+	color: var(--hd-muted);
+	font-size: 12px;
+}
+html.hd-mobile .hd-info-url {
+	overflow-wrap: anywhere;
+	user-select: text;
+	-webkit-user-select: text;
+}
+html.hd-mobile .hd-info-path {
+	color: var(--hd-muted);
+	font-size: 12px;
+}
+html.hd-mobile .hd-info-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+html.hd-mobile .hd-info-actions button {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--hd-border);
+	border-radius: 8px;
+	background: var(--hd-key-bg);
+	color: var(--hd-key-fg);
+	font-size: 13px;
 }
 html.hd-mobile .hd-empty {
 	margin: 16px;

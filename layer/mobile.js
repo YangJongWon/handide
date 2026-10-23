@@ -89,6 +89,14 @@ const STRINGS = {
 		'drawer.waiting': 'Waiting for the handide extension. Check that the folder is trusted.',
 		'drawer.openFolder': 'Open folder',
 		'drawer.more': '… {1} more',
+		'info.noRepo': 'Not in a git repository: this folder is only on this PC.',
+		'info.noRemote': 'A git repository with no remote: it is only on this PC.',
+		'info.failed': 'This folder cannot be read.',
+		'info.branch': 'Branch {1}',
+		'info.copyLink': 'Copy link',
+		'info.open': 'Open',
+		'info.copyPath': 'Copy path',
+		'info.copied': 'Copied.',
 		'word.drives': 'Drives',
 		'aria.uploadImage': 'Upload image',
 		'aria.newFile': 'New file',
@@ -207,6 +215,14 @@ const STRINGS = {
 		'drawer.waiting': 'handide 확장을 기다리는 중입니다. 폴더를 신뢰했는지 확인하세요.',
 		'drawer.openFolder': '폴더 열기',
 		'drawer.more': '… {1}개 더 있음',
+		'info.noRepo': 'git 저장소가 아닙니다. 이 PC에만 있는 폴더입니다.',
+		'info.noRemote': '원격(remote)이 없는 git 저장소입니다. 이 PC에만 있습니다.',
+		'info.failed': '폴더를 읽을 수 없습니다.',
+		'info.branch': '브랜치 {1}',
+		'info.copyLink': '링크 복사',
+		'info.open': '열기',
+		'info.copyPath': '경로 복사',
+		'info.copied': '복사했습니다.',
 		'word.drives': '드라이브',
 		'aria.uploadImage': '이미지 업로드',
 		'aria.newFile': '새 파일',
@@ -325,6 +341,14 @@ const STRINGS = {
 		'drawer.waiting': 'handide 拡張機能を待っています。フォルダが信頼されているか確認してください。',
 		'drawer.openFolder': 'フォルダを開く',
 		'drawer.more': '… 他に {1} 件',
+		'info.noRepo': 'git リポジトリではありません。この PC にだけあるフォルダです。',
+		'info.noRemote': 'リモートのない git リポジトリです。この PC にだけあります。',
+		'info.failed': 'このフォルダを読み込めません。',
+		'info.branch': 'ブランチ {1}',
+		'info.copyLink': 'リンクをコピー',
+		'info.open': '開く',
+		'info.copyPath': 'パスをコピー',
+		'info.copied': 'コピーしました。',
 		'word.drives': 'ドライブ',
 		'aria.uploadImage': '画像をアップロード',
 		'aria.newFile': '新しいファイル',
@@ -443,6 +467,14 @@ const STRINGS = {
 		'drawer.waiting': '正在等待 handide 扩展。请确认已信任该文件夹。',
 		'drawer.openFolder': '打开文件夹',
 		'drawer.more': '… 还有 {1} 个',
+		'info.noRepo': '不是 git 仓库：这个文件夹只在这台电脑上。',
+		'info.noRemote': '没有远程仓库的 git 仓库：只在这台电脑上。',
+		'info.failed': '无法读取这个文件夹。',
+		'info.branch': '分支 {1}',
+		'info.copyLink': '复制链接',
+		'info.open': '打开',
+		'info.copyPath': '复制路径',
+		'info.copied': '已复制。',
 		'word.drives': '驱动器',
 		'aria.uploadImage': '上传图片',
 		'aria.newFile': '新建文件',
@@ -596,6 +628,7 @@ const state = {
 	activePath: null,
 	tree: new Map(), // dir path → { entries, open }
 	picker: null, // { path, parent, entries } while choosing a folder
+	info: null, // { path, data } a folder long-pressed in the drawer: its git remotes
 	drawerOpen: false,
 	menuOpen: false,
 	viewbarFor: null,
@@ -1368,20 +1401,30 @@ async function openFolder(path) {
  * suppressing clicks page-wide, and a scroll in the drawer must not open a file.
  * Keyboard activation (click with detail 0) still works.
  */
-function onTap(node, fn) {
+function onTap(node, fn, long) {
 	let down = null;
+	let timer = 0;
+	const cancel = () => ((down = null), clearTimeout(timer));
 	node.addEventListener('pointerdown', (e) => {
 		down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() };
+		clearTimeout(timer);
+		// Held still (a long press): `long` instead of the tap.
+		if (long) timer = setTimeout(() => (cancel(), navigator.vibrate?.(10), long()), 500);
+	});
+	node.addEventListener('pointermove', (e) => {
+		if (down?.id === e.pointerId && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) cancel();
 	});
 	node.addEventListener('pointerup', (e) => {
 		const d = down;
-		down = null;
+		cancel();
 		if (!d || d.id !== e.pointerId || Date.now() - d.t > 700) return;
 		if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
 		e.preventDefault();
 		fn(e);
 	});
-	node.addEventListener('pointercancel', () => (down = null));
+	node.addEventListener('pointercancel', cancel);
+	// The browser's own long-press menu (and a right click) would cover ours.
+	if (long) node.addEventListener('contextmenu', (e) => e.preventDefault());
 	node.addEventListener('click', (e) => {
 		if (e.detail === 0) fn(e); // keyboard; pointer taps were handled on pointerup
 		e.preventDefault();
@@ -1392,7 +1435,8 @@ function el(tag, attrs = {}, ...children) {
 	const e = document.createElement(tag);
 	for (const [key, v] of Object.entries(attrs)) {
 		if (key === 'class') e.className = v;
-		else if (key === 'onclick') onTap(e, v);
+		else if (key === 'onclick') onTap(e, v, attrs.onlongpress);
+		else if (key === 'onlongpress') continue;
 		else if (key.startsWith('on')) e.addEventListener(key.slice(2), v);
 		else if (v !== false && v != null) e.setAttribute(key, v === true ? '' : v);
 	}
@@ -1423,7 +1467,12 @@ function renderDrawer() {
 
 	const folder = state.folder;
 	head.append(
-		el('div', { class: 'hd-drawer-title' }, el('strong', {}, folder?.name ?? t('drawer.noFolder')), el('small', {}, folder?.path ?? '')),
+		el(
+			'div',
+			{ class: 'hd-drawer-title', ...(folder && { onclick: () => {}, onlongpress: () => showInfo(folder.path) }) },
+			el('strong', {}, folder?.name ?? t('drawer.noFolder')),
+			el('small', {}, folder?.path ?? ''),
+		),
 		folder ? el('button', { class: 'hd-icon-btn', 'aria-label': t('aria.uploadImage'), title: t('aria.uploadImage'), onclick: chooseImage }, icon('file-media')) : null,
 		folder ? el('button', { class: 'hd-icon-btn', 'aria-label': t('aria.newFile'), 'data-act': 'newFile', onclick: () => createEntry(false) }, icon('new-file')) : null,
 		folder ? el('button', { class: 'hd-icon-btn', 'aria-label': t('aria.newFolder'), 'data-act': 'newFolder', onclick: () => createEntry(true) }, icon('new-folder')) : null,
@@ -1438,6 +1487,7 @@ function renderDrawer() {
 		);
 		return;
 	}
+	if (samePath(state.info?.path, folder.path)) body.append(infoBox(state.info));
 	const walk = (dir, depth) => {
 		const node = state.tree.get(dir);
 		if (!node?.open) return;
@@ -1451,13 +1501,63 @@ function renderDrawer() {
 					dim: e.name.startsWith('.'),
 					active: !e.dir && samePath(e.path, state.activePath),
 					onclick: () => (e.dir ? toggleDir(e.path) : openFile(e.path)),
+					onlongpress: e.dir ? () => showInfo(e.path) : null,
 				}),
 			);
+			if (e.dir && samePath(state.info?.path, e.path)) body.append(infoBox(state.info, depth));
 			if (open) walk(e.path, depth + 1);
 		}
 		if (node.entries.length > 500) body.append(el('p', { class: 'hd-empty' }, t('drawer.more', node.entries.length - 500)));
 	};
 	walk(folder.path, 0);
+}
+
+/**
+ * A long-pressed folder: where its project is besides this PC (the git remotes, e.g. its
+ * GitHub page), to open or share when talking about it from another device. Long-press
+ * again, or the ×, to close.
+ */
+async function showInfo(path) {
+	if (samePath(state.info?.path, path)) return closeInfo();
+	state.info = { path, data: null };
+	renderDrawer();
+	const data = await api(`${BASE}git?path=${encodeURIComponent(path)}`).catch(() => null);
+	if (state.info?.path !== path) return;
+	state.info.data = data?.ok ? data : { failed: true };
+	renderDrawer();
+}
+
+function closeInfo() {
+	state.info = null;
+	renderDrawer();
+}
+
+function infoBox({ path, data }, depth = -1) {
+	const box = el('div', { class: 'hd-info', style: `margin-left:${16 + (depth + 1) * 14}px` });
+	box.append(el('button', { class: 'hd-icon-btn hd-info-close', 'aria-label': t('aria.close'), onclick: closeInfo }, icon('close')));
+	if (!data) return box.append(el('p', { class: 'hd-info-note' }, '…')), box;
+	if (data.failed) return box.append(el('p', { class: 'hd-info-note' }, t('info.failed'))), box;
+	if (!data.root) box.append(el('p', { class: 'hd-info-note' }, t('info.noRepo')));
+	else if (!data.remotes.length) box.append(el('p', { class: 'hd-info-note' }, t('info.noRemote')));
+	for (const r of data.remotes) {
+		const link = r.web ?? r.url;
+		box.append(
+			data.remotes.length > 1 || r.name !== 'origin' ? el('small', {}, r.name) : null,
+			el('div', { class: 'hd-info-url' }, link),
+			el(
+				'div',
+				{ class: 'hd-info-actions' },
+				el('button', { onclick: () => copyText(link, t('info.copied')) }, icon('copy'), t('info.copyLink')),
+				r.web ? el('button', { onclick: () => window.open(r.web, '_blank', 'noopener') }, icon('link-external'), t('info.open')) : null,
+			),
+		);
+	}
+	if (data.branch) box.append(el('small', {}, t('info.branch', data.branch)));
+	box.append(
+		el('div', { class: 'hd-info-url hd-info-path' }, path),
+		el('div', { class: 'hd-info-actions' }, el('button', { onclick: () => copyText(path, t('info.copied')) }, icon('copy'), t('info.copyPath'))),
+	);
+	return box;
 }
 
 function parentOf(path) {
@@ -1467,10 +1567,10 @@ function parentOf(path) {
 	return /^[a-z]:$/i.test(p) ? `${p}\\` : p;
 }
 
-function row({ depth, iconName, label, onclick, dim, active }) {
+function row({ depth, iconName, label, onclick, onlongpress, dim, active }) {
 	return el(
 		'button',
-		{ class: `hd-row${dim ? ' dim' : ''}${active ? ' active' : ''}`, style: `padding-left:${16 + depth * 14}px`, onclick },
+		{ class: `hd-row${dim ? ' dim' : ''}${active ? ' active' : ''}`, style: `padding-left:${16 + depth * 14}px`, onclick, onlongpress },
 		icon(iconName),
 		el('span', { class: 'hd-row-label' }, label),
 	);

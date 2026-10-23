@@ -9,7 +9,7 @@
 // with the phone-facing HTTPS certificate.
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve, parse as parsePath } from 'node:path';
 
@@ -87,6 +87,10 @@ export function createBridge({ token, log }) {
 			if (pathname === '/__handide/fs' && req.method === 'GET') {
 				const url = new URL(req.url, 'http://x');
 				return sendJson(res, 200, await listDir(url.searchParams.get('path') || ''));
+			}
+			if (pathname === '/__handide/git' && req.method === 'GET') {
+				const url = new URL(req.url, 'http://x');
+				return sendJson(res, 200, await gitInfo(url.searchParams.get('path') || ''));
 			}
 		} catch (err) {
 			return sendJson(res, 500, { ok: false, error: err.message });
@@ -170,4 +174,45 @@ async function listDir(path) {
 	entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) : a.dir ? -1 : 1));
 	const root = parsePath(abs).root;
 	return { ok: true, path: abs, parent: abs === root ? (process.platform === 'win32' ? '' : null) : dirname(abs), entries };
+}
+
+/**
+ * Where a folder's project lives besides this PC (the drawer's long-press): the git
+ * repository holding it, its branch and remotes, each with a web link when it is a host
+ * like GitHub. Read from .git itself, so no git is needed. Credentials in a remote URL
+ * are never sent back.
+ */
+async function gitInfo(path) {
+	let dir = resolve(path);
+	for (;;) {
+		const git = join(dir, '.git');
+		const s = await stat(git).catch(() => null);
+		if (s) {
+			// A worktree or submodule: .git is a file naming the real one, whose config may be shared (commondir).
+			let gitDir = git;
+			if (s.isFile()) gitDir = resolve(dir, (await readFile(git, 'utf8')).replace(/^gitdir:\s*/, '').trim());
+			const common = await readFile(join(gitDir, 'commondir'), 'utf8').then((c) => resolve(gitDir, c.trim()), () => gitDir);
+			const config = await readFile(join(common, 'config'), 'utf8').catch(() => '');
+			const head = await readFile(join(gitDir, 'HEAD'), 'utf8').catch(() => '');
+			const remotes = [];
+			for (const m of config.matchAll(/^\s*\[remote\s+"([^"]+)"\]([^[]*)/gm)) {
+				const url = /^\s*url\s*=\s*(.+?)\s*$/m.exec(m[2])?.[1];
+				if (url) remotes.push({ name: m[1], url: withoutCredentials(url), web: webUrl(url) });
+			}
+			remotes.sort((a, b) => (a.name === 'origin' ? -1 : b.name === 'origin' ? 1 : 0));
+			return { ok: true, path: resolve(path), root: dir, branch: /^ref: refs\/heads\/(.+)/.exec(head.trim())?.[1] ?? null, remotes };
+		}
+		const up = dirname(dir);
+		if (up === dir) return { ok: true, path: resolve(path), root: null, branch: null, remotes: [] };
+		dir = up;
+	}
+}
+
+const withoutCredentials = (url) => url.replace(/^(https?:\/\/)[^@/]+@/i, '$1');
+
+/** https://host/owner/repo for git@host:owner/repo.git, ssh://, https:// (null for a local path). */
+function webUrl(url) {
+	const m = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/](.+?)(?:\.git)?\/?$/i.exec(url);
+	if (!m || /^file:/i.test(url) || !m[1].includes('.')) return null;
+	return `https://${m[1]}/${m[2]}`;
 }

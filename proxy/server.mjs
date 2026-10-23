@@ -423,7 +423,7 @@ function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) 
 		}
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
-		if (bridge && (pathname.startsWith('/__handide/bridge/') || pathname === '/__handide/fs')) return bridge.handleLayer(req, res, pathname);
+		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
