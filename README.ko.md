@@ -111,7 +111,7 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 **어느 PC에서든 모든 PC의 코드를.** 각 handide는 자기가 서비스하는 폴더를 다른 PC에 공유하고(자기 접근 토큰으로만), 다른 PC의 폴더를 Files 패널의 **Other PCs**에 읽기 전용으로 보여 줍니다(작업 영역 폴더로 넣으면 Codex 같은 확장이 로컬 경로로 여겨 깨지므로 넣지 않습니다). 미리 복사해 두지 않습니다. 폴더는 펼칠 때, 파일은 열 때 가져오고, 바뀐 경로는 그 PC가 알려 주므로 큰 프로젝트도 보기 전에는 비용이 들지 않습니다. 검색은 **handide: Search Other PCs**로 각 PC에서 실행합니다(편집기 자체 검색은 이 PC의 폴더만). 터미널의 에이전트는 `handide-peer <PC> ls|cat|grep <...>`를 씁니다(`$HANDIDE_PEER`에도 있음). 검색은 20초가 지나면 그때까지 찾은 것으로 멈춥니다. 꺼져 있는 PC는 다시 켜질 때까지 보이지 않습니다. 수정은 그 프로젝트가 있는 PC에서 합니다.
 
-**데스크톱 VS Code·Cursor에서도.** 쓰는 PC에서 `handide desktop`을 한 번 실행하면 상태 표시줄에 **PCs** 버튼("handide: Open Project on Another PC")이 생깁니다. 다른 PC의 폴더를 Remote - SSH로 새 창에 열어, 그 PC에서 실행합니다(그 PC의 git·터미널·언어 서버·에이전트). 열릴 PC마다 `handide ssh`를 한 번 실행하세요(SSH 서버를 켜며 관리자 권한을 묻습니다). 열쇠와 호스트 키는 handide가 PC끼리 주고받으므로 복사할 것이 없습니다.
+**데스크톱 VS Code·Cursor에서도.** 쓰는 PC에서 `handide desktop`을 한 번 실행하면 상태 표시줄에 **PCs** 버튼("handide: Open Project on Another PC")이 생깁니다. 다른 PC의 폴더를 Remote - SSH로 새 창에 열어, 그 PC에서 실행합니다(그 PC의 git·터미널·언어 서버·에이전트). 열릴 PC마다 `handide ssh`를 한 번 실행하세요(SSH 서버를 켜며 관리자 권한을 묻습니다). 열쇠와 호스트 키는 handide가 PC끼리 주고받으므로 복사할 것이 없습니다. 지금 앞에 있는 PC에서 실행하려면(다른 OS, 다른 도구) 상태 표시줄의 PC 이름을 누르세요. **이 PC에서 실행**으로 이 PC의 작업 사본(~/handide-copies/<PC>/<프로젝트>)으로 옮기고 다시 돌아갈 수 있으며, 같은 창에서 같은 파일이 열린 채로 전환됩니다. git으로 맞추며 커밋하지 않은 변경과 새 파일도 함께 옮깁니다. 아무것도 버리지 않습니다: 떠나 있던 쪽에서 고친 내용은 stash로, 그사이 만든 커밋은 handide-backup/ 브랜치로 남깁니다.
 
 **링크 하나로, 켜져 있는 PC로.** 각 PC를 `ts.net` 링크로 한 번씩 열어 두세요. 그다음부터는 링크의 PC가 꺼져 있으면, 켜져 있는 다른 PC가 대신 열립니다. 정식 인증서인 `ts.net` 주소에서만 동작하고, 자체 서명 LAN 링크에서는 동작하지 않습니다.
 

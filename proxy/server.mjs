@@ -29,6 +29,7 @@ import { createDeviceRouter, devicesCommand } from './devices.mjs';
 import { createPeerRelay, createProjectShare, rememberFolder, writeWorkspace } from './projects.mjs';
 import { peerCommand, peerLauncherEnv } from './peer.mjs';
 import { desktopCommand, sshCommand } from './desktop.mjs';
+import { switchAgent, switchCommand } from './switch.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -600,7 +601,8 @@ async function main() {
 	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
 	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
 	if (process.argv[2] === 'service') return serviceCommand(process.argv.slice(3, 4), { ...serviceRun(process.argv.slice(4), log), log });
-	const sub = { devices: devicesCommand, ssh: sshCommand, desktop: desktopCommand }[process.argv[2]];
+	if (process.argv[2] === 'switch-agent') return switchAgent(process.argv.slice(3));
+	const sub = { devices: devicesCommand, ssh: sshCommand, desktop: desktopCommand, switch: switchCommand }[process.argv[2]];
 	if (sub) {
 		const args = process.argv.slice(3);
 		const at = args.indexOf('--data-dir');

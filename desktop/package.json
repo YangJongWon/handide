@@ -21,6 +21,11 @@
 				"command": "handide.openOnPC",
 				"title": "Open Project on Another PC",
 				"category": "handide"
+			},
+			{
+				"command": "handide.switch",
+				"title": "Switch Where This Project Runs",
+				"category": "handide"
 			}
 		]
 	}

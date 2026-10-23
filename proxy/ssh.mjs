@@ -15,6 +15,7 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import { join } from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 export const HOST_PREFIX = 'handide-';
 const KEY_LINE = /^(ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/=]+$/;
@@ -66,7 +67,9 @@ export async function sshInfo() {
 			// not generated (no server yet) or not readable
 		}
 	}
-	return { user: os.userInfo().username, platform: process.platform, home: os.homedir(), server: await sshServerOn(), hostKeys };
+	// cli: how to run handide there over SSH (a non-interactive shell may not have it on PATH).
+	const cli = { node: process.execPath, server: fileURLToPath(new URL('./server.mjs', import.meta.url)) };
+	return { user: os.userInfo().username, platform: process.platform, home: os.homedir(), server: await sshServerOn(), hostKeys, cli };
 }
 
 /** Lets the key of another PC of this account log in here (~/.ssh/authorized_keys). */

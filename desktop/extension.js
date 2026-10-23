@@ -1,7 +1,11 @@
 // handide in the desktop editor (VS Code or Cursor): open a project of another PC of this
 // account where it lives, through Remote - SSH, so it runs with that PC's git, terminals,
-// language servers and agents. The PCs and their folders come from the handide command
-// ("handide devices --json"); "handide desktop" installs this extension and records in
+// language servers and agents; and switch a project between running there and running
+// here, in a working copy kept in step with git (proxy/switch.mjs), in the same window,
+// with the open files reopened. The status bar always says where this window runs.
+//
+// The PCs, their folders and the switches come from the handide command ("handide devices
+// --json", "handide switch ..."); "handide desktop" installs this extension and records in
 // handide.json how to run that command, since an editor started from the Dock or the
 // Start menu may not have it on its PATH.
 const vscode = require('vscode');
@@ -21,20 +25,25 @@ function handideCommand() {
 	}
 }
 
-/** The other PCs: [{ name, online, host, platform, sshServer, folder, recent }]. */
-function listPCs() {
+/** Runs the handide command; resolves to the JSON of its last output line. */
+function handide(args, timeout = 30_000) {
 	const { cmd, pre } = handideCommand();
 	return new Promise((ok, fail) => {
-		execFile(cmd, [...pre, 'devices', '--json'], { timeout: 30_000, windowsHide: true, shell: cmd === 'handide' && process.platform === 'win32' }, (err, out, errOut) => {
-			if (err) return fail(new Error(String(errOut || err.message).trim()));
+		execFile(cmd, [...pre, ...args], { timeout, windowsHide: true, maxBuffer: 16 << 20, shell: cmd === 'handide' && process.platform === 'win32' }, (err, out, errOut) => {
+			let result;
 			try {
-				ok(JSON.parse(String(out).trim().split(/\r?\n/).pop()));
+				result = JSON.parse(String(out).trim().split(/\r?\n/).pop());
 			} catch {
-				fail(new Error('handide answered something unexpected; update it ("handide desktop" again)'));
+				return fail(new Error(String(errOut || err?.message || 'handide answered something unexpected; update it ("handide desktop" again)').trim()));
 			}
+			if (result && result.ok === false) return fail(new Error(result.error));
+			ok(result);
 		});
 	});
 }
+
+/** The other PCs: [{ name, online, host, platform, sshServer, folder, recent }]. */
+const listPCs = () => handide(['devices', '--json']);
 
 /** "c:\Users\x" → "/c:/Users/x": the path of a remote folder URI. */
 const remotePath = (p) => (/^[a-zA-Z]:[\\/]/.test(p) ? `/${p.replace(/\\/g, '/')}` : p);
@@ -105,25 +114,166 @@ async function openOnPC() {
 	}
 	if (!(await ensureRemoteSSH())) return;
 
-	// Remote - SSH asks for the PC's OS on the first connection unless told.
-	const config = vscode.workspace.getConfiguration('remote.SSH');
-	const platforms = { ...(config.get('remotePlatform') ?? {}) };
-	if (PLATFORM[p.platform] && platforms[p.host] !== PLATFORM[p.platform]) {
-		platforms[p.host] = PLATFORM[p.platform];
-		await config.update('remotePlatform', platforms, vscode.ConfigurationTarget.Global);
-	}
+	await setRemotePlatform(p.host, p.platform);
 	const uri = vscode.Uri.from({ scheme: 'vscode-remote', authority: `ssh-remote+${p.host}`, path: remotePath(folder) });
 	await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: true });
 }
 
+// ---------------------------------------------------------------- switching where it runs
+
+const PENDING = 'handide.pendingRestore'; // globalState: what to reopen in the window a switch opens
+const folderUri = () => vscode.workspace.workspaceFolders?.[0]?.uri;
+
+/** The working copy this window has open, if it is one handide made: { pc, remote, local }. */
+async function currentCopy() {
+	const uri = folderUri();
+	if (!uri || uri.scheme !== 'file') return null;
+	const { copies } = await handide(['switch', 'list']).catch(() => ({ copies: [] }));
+	const norm = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+	return copies.find((c) => norm(c.local) === norm(uri.fsPath)) ?? null;
+}
+
+/** Open editors as paths relative to the folder, to reopen on the other side of a switch. */
+function openFiles() {
+	const root = folderUri();
+	const rel = (uri) => (root && uri.toString().startsWith(`${root.toString()}/`) ? decodeURIComponent(uri.toString().slice(root.toString().length + 1)) : null);
+	const files = [];
+	for (const group of vscode.window.tabGroups.all) {
+		for (const tab of group.tabs) {
+			const r = tab.input instanceof vscode.TabInputText ? rel(tab.input.uri) : null;
+			if (r && !files.includes(r)) files.push(r);
+		}
+	}
+	const editor = vscode.window.activeTextEditor;
+	const active = editor ? rel(editor.document.uri) : null;
+	const sel = editor?.selection;
+	return { files, active, selection: sel ? [sel.start.line, sel.start.character, sel.end.line, sel.end.character] : null };
+}
+
+async function restorePending(context) {
+	const uri = folderUri();
+	const all = context.globalState.get(PENDING) ?? {};
+	const pending = uri && all[uri.toString()];
+	if (!pending) return;
+	delete all[uri.toString()];
+	await context.globalState.update(PENDING, all);
+	if (Date.now() - pending.at > 10 * 60_000) return;
+	for (const f of pending.files) {
+		if (f === pending.active) continue;
+		await vscode.window.showTextDocument(vscode.Uri.joinPath(uri, ...f.split('/')), { preview: false, preserveFocus: true }).then(undefined, () => {});
+	}
+	if (pending.active) {
+		const editor = await vscode.window.showTextDocument(vscode.Uri.joinPath(uri, ...pending.active.split('/')), { preview: false }).then(undefined, () => null);
+		if (editor && pending.selection) {
+			const [a, b, c, d] = pending.selection;
+			editor.selection = new vscode.Selection(a, b, c, d);
+			editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenter);
+		}
+	}
+	if (pending.notes?.length) vscode.window.showInformationMessage(`handide: ${pending.notes.join(' ')}`);
+}
+
+function notesOf(r, where) {
+	const notes = [];
+	if (r.stashed) notes.push(`Edits made on ${where} while the project ran elsewhere were kept in a git stash there ("git stash list").`);
+	if (r.backup) notes.push(`Commits made on ${where} meanwhile are on the branch ${r.backup}.`);
+	return notes;
+}
+
+/** Saves, moves the work over, then opens the other side in this window with the same files. */
+async function switchTo(context, run, target, label) {
+	await vscode.workspace.saveAll(false);
+	const open = openFiles();
+	let result;
+	try {
+		result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `handide: moving this project to ${label}…` }, () => run());
+	} catch (err) {
+		return vscode.window.showErrorMessage(`handide: could not switch: ${err.message}`);
+	}
+	const { uri, where, prepare } = target(result);
+	if (prepare) await prepare();
+	const all = context.globalState.get(PENDING) ?? {};
+	all[uri.toString()] = { ...open, at: Date.now(), notes: notesOf(result, where) };
+	await context.globalState.update(PENDING, all);
+	await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: false });
+}
+
+/** Remote - SSH asks for the PC's OS on the first connection unless told. */
+async function setRemotePlatform(host, platform) {
+	const config = vscode.workspace.getConfiguration('remote.SSH');
+	const platforms = { ...(config.get('remotePlatform') ?? {}) };
+	if (PLATFORM[platform] && platforms[host] !== PLATFORM[platform]) {
+		platforms[host] = PLATFORM[platform];
+		await config.update('remotePlatform', platforms, vscode.ConfigurationTarget.Global);
+	}
+}
+
+const HERE = { darwin: 'this Mac', win32: 'this PC', linux: 'this PC' }[process.platform] ?? 'this PC';
+
+async function switchMenu(context) {
+	const pc = currentPC();
+	const copy = pc ? null : await currentCopy();
+	const items = [];
+	if (pc) {
+		const remote = folderUri().path.replace(/^\/([a-zA-Z]:)/, '$1');
+		items.push({ label: `$(vm) Run on ${pc}`, description: 'running here now', run: null });
+		items.push({
+			label: `$(device-desktop) Run on ${HERE}`,
+			description: 'in a working copy, kept in step with git',
+			detail: 'Uncommitted and new files come along; the branch and commits stay as they are.',
+			run: () =>
+				switchTo(context, () => handide(['switch', 'here', pc, remote], 10 * 60_000), (r) => ({ uri: vscode.Uri.file(r.local), where: pc }), HERE),
+		});
+	} else if (copy) {
+		items.push({ label: `$(device-desktop) Run on ${HERE}`, description: `running here now · copy of ${copy.pc}`, run: null });
+		items.push({
+			label: `$(vm) Run on ${copy.pc}`,
+			description: copy.remote,
+			detail: 'Your work here (uncommitted and new files too) goes back to that PC first.',
+			run: () =>
+				switchTo(
+					context,
+					() => handide(['switch', 'back', folderUri().fsPath], 10 * 60_000),
+					(r) => ({
+						uri: vscode.Uri.from({ scheme: 'vscode-remote', authority: `ssh-remote+${r.host}`, path: remotePath(r.remote) }),
+						where: HERE,
+						prepare: async () => {
+							await ensureRemoteSSH();
+							await setRemotePlatform(r.host, r.platform);
+						},
+					}),
+					copy.pc,
+				),
+		});
+	}
+	items.push({ label: '$(folder-opened) Open a project on another PC…', run: openOnPC });
+	const picked = await vscode.window.showQuickPick(items, { title: 'Where should this project run?' });
+	if (picked?.run) await picked.run();
+}
+
 function activate(context) {
 	const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	item.command = 'handide.switch';
 	const pc = currentPC();
-	item.text = pc ? `$(vm) ${pc}` : '$(vm) PCs';
-	item.tooltip = pc ? `This window runs on ${pc} (handide). Open a project on another PC…` : 'handide: open a project on another PC…';
-	item.command = 'handide.openOnPC';
+	if (pc) {
+		item.text = `$(vm) ${pc} $(arrow-swap)`;
+		item.tooltip = `This project runs on ${pc}. Switch where it runs…`;
+	} else {
+		item.text = '$(vm) PCs';
+		item.tooltip = 'handide: open a project on another PC…';
+		currentCopy().then((copy) => {
+			if (!copy) return;
+			item.text = `$(device-desktop) ${HERE} · ${copy.pc} $(arrow-swap)`;
+			item.tooltip = `This project runs on ${HERE}, in a working copy of ${copy.pc}:${copy.remote}. Switch where it runs…`;
+		});
+	}
 	item.show();
-	context.subscriptions.push(item, vscode.commands.registerCommand('handide.openOnPC', openOnPC));
+	context.subscriptions.push(
+		item,
+		vscode.commands.registerCommand('handide.openOnPC', openOnPC),
+		vscode.commands.registerCommand('handide.switch', () => switchMenu(context)),
+	);
+	restorePending(context);
 }
 
 function deactivate() {}
