@@ -1,6 +1,6 @@
 // Each PC's project, readable from the others, fetched only when it is looked at.
 // handide shares the folder it serves (to its own access token only); the editor on
-// another PC shows it as a read-only handide-peer://<pc>/ folder (extension/extension.js)
+// another PC shows it read-only under Other PCs, as handide-peer://<pc>/ (extension/extension.js),
 // whose folders and files are asked for as they are opened. Nothing is copied ahead of
 // time, so there is no file limit and nothing to poll: the owning PC watches its folder
 // and pushes the paths that changed.
@@ -32,7 +32,6 @@ const SEARCH_MS = 20_000;
 const EVENT_BATCH_MS = 300;
 const EVENT_MAX_PATHS = 1000; // more at once (a checkout, an install): "everything changed"
 const HEARTBEAT_MS = 20_000;
-export const PEER_SCHEME = 'handide-peer';
 const FILE = 1;
 const DIRECTORY = 2;
 
@@ -319,20 +318,17 @@ export function createPeerRelay({ devices }) {
 
 // ---------------------------------------------------------------- workspace
 
-/** Workspace folders for the other PCs, as the editor shows them. */
-export const peerFolders = (peers) =>
-	peers.map((p) => ({ uri: `${PEER_SCHEME}://${p.name}/`, name: `${p.name}${p.project ? ` · ${p.project}` : ''} (read-only)` }));
-
 /**
- * The workspace the editor opens: this PC's folder first, the other PCs' projects after
- * it. The editor reads it on each page load; an editor that is open already gets the
- * same folders from the companion extension (handide.setFolders), without a restart as
- * the first folder stays the same.
+ * The workspace the editor opens: this PC's folder alone. The other PCs' projects are not
+ * workspace folders (extensions such as Codex take every folder for a local path and
+ * break on handide-peer://); the companion extension lists them in its Other PCs view.
+ * The file stays where it was so an editor URL that opens it keeps working, and writing
+ * it drops the peer folders an older handide put there.
  */
-export async function writeWorkspace({ dataDir, folder, peers }) {
+export async function writeWorkspace({ dataDir, folder }) {
 	const dir = join(dataDir, 'workspaces', createHash('sha1').update(folder).digest('hex').slice(0, 12));
 	const file = join(dir, `${basename(folder) || 'project'}.code-workspace`);
-	const body = JSON.stringify({ folders: [{ path: folder }, ...peerFolders(peers)] }, null, '\t') + '\n';
+	const body = JSON.stringify({ folders: [{ path: folder }] }, null, '\t') + '\n';
 	await mkdir(dir, { recursive: true });
 	if ((await readFile(file, 'utf8').catch(() => null)) !== body) await writeFile(file, body);
 	return file;

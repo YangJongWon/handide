@@ -293,20 +293,6 @@ async function deleteUpload({ name }) {
 	return true;
 }
 
-/**
- * The other PCs' projects after this PC's folder (proxy/projects.mjs), in the open
- * editor. The first folder stays, so no extension restarts. In a single-folder window
- * there is nothing to do: the next page load opens the workspace.
- */
-async function setFolders({ folders }) {
-	const current = vscode.workspace.workspaceFolders ?? [];
-	if (!vscode.workspace.workspaceFile || !current.length) return false;
-	const want = folders.map((f) => ({ uri: vscode.Uri.parse(f.uri), name: f.name }));
-	const rest = current.slice(1);
-	if (rest.length === want.length && want.every((w, i) => rest[i].uri.toString() === w.uri.toString() && rest[i].name === w.name)) return true;
-	return vscode.workspace.updateWorkspaceFolders(1, rest.length, ...want);
-}
-
 // ---------------------------------------------------------------- other PCs' projects
 
 const PEER_SCHEME = 'handide-peer';
@@ -324,6 +310,8 @@ async function peerFetch(pc, endpoint, query = {}, init = {}) {
 }
 
 const peerPath = (uri) => uri.path.replace(/^\/+/, '');
+const peerRoot = (pc) => vscode.Uri.from({ scheme: PEER_SCHEME, authority: pc, path: '/' });
+const peerLabel = (p) => `${p.name}${p.project ? ` · ${p.project}` : ''}`;
 
 // What is read is kept only while it is being used: files up to this many bytes in all
 // (least recently used dropped first), anything not read again within IDLE_MS dropped.
@@ -474,8 +462,8 @@ class PeerFileSystem {
 	}
 
 	/**
-	 * The editor watches each PC folder for as long as it is in the workspace; the change
-	 * stream itself opens on the first read (_touch) and closes when idle (_sweep).
+	 * The Other PCs view watches each PC for as long as it is listed; the change stream
+	 * itself opens on the first read (_touch) and closes when idle (_sweep).
 	 */
 	watch(uri) {
 		const s = this._stream(uri.authority);
@@ -520,7 +508,7 @@ class PeerFileSystem {
 	}
 
 	_changed(pc, paths, known = []) {
-		const root = vscode.Uri.from({ scheme: PEER_SCHEME, authority: pc, path: '/' });
+		const root = peerRoot(pc);
 		if (paths.includes('*')) {
 			this._drop(pc);
 			return this._emitter.fire([root, ...known.map((k) => vscode.Uri.parse(k))].map((uri) => ({ type: vscode.FileChangeType.Changed, uri })));
@@ -551,21 +539,77 @@ class PeerFileSystem {
 }
 
 /**
+ * The other PCs' projects as a tree in the Files panel (package.json: handide.peers),
+ * read through PeerFileSystem. They are not workspace folders: extensions that take every
+ * workspace folder for a local path (the Codex panel crashed on handide-peer://) never
+ * see them.
+ */
+class PeersTree {
+	constructor(files) {
+		this.files = files;
+		this.peers = [];
+		this.watches = new Map(); // pc → Disposable
+		this._emitter = new vscode.EventEmitter();
+		this.onDidChangeTreeData = this._emitter.event;
+		files.onDidChangeFile(() => this._emitter.fire());
+	}
+
+	/** The PCs from this PC's handide (/peer/ on the bridge), as `handide.setPeers` sends them. */
+	async load() {
+		const url = process.env.HANDIDE_BRIDGE_URL;
+		const secret = process.env.HANDIDE_BRIDGE_SECRET;
+		if (!url || !secret) return;
+		const res = await fetch(`${url}/peer/`, { headers: { 'x-handide-secret': secret } }).catch(() => null);
+		if (res?.ok) this.set(await res.json());
+	}
+
+	set(peers) {
+		this.peers = peers;
+		const names = new Set(peers.map((p) => p.name));
+		for (const [pc, w] of this.watches) if (!names.has(pc)) (w.dispose(), this.watches.delete(pc));
+		for (const pc of names) if (!this.watches.has(pc)) this.watches.set(pc, this.files.watch(peerRoot(pc)));
+		run('setContext', 'handide.hasPeers', peers.length > 0);
+		this._emitter.fire();
+		return true;
+	}
+
+	/** Elements: { uri, dir, peer? } -- a PC (peer) or one of its folders and files. */
+	async getChildren(el) {
+		if (!el) return this.peers.map((peer) => ({ uri: peerRoot(peer.name), dir: true, peer }));
+		const entries = await this.files.readDirectory(el.uri).catch(() => []);
+		const dir = vscode.FileType.Directory;
+		return entries
+			.sort(([a, at], [b, bt]) => (at === bt ? a.localeCompare(b) : at === dir ? -1 : 1))
+			.map(([name, type]) => ({ uri: vscode.Uri.joinPath(el.uri, name), dir: type === dir }));
+	}
+
+	getTreeItem({ uri, dir, peer }) {
+		const item = new vscode.TreeItem(peer ? peerLabel(peer) : uri, dir ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+		item.id = uri.toString();
+		if (peer) item.iconPath = new vscode.ThemeIcon('remote');
+		if (!dir) item.command = { command: 'vscode.open', title: 'Open', arguments: [uri] };
+		return item;
+	}
+}
+
+let peersTree;
+
+/**
  * Text search in the other PCs' projects, run on each PC (ripgrep over its folder) so
  * nothing is downloaded to search. The editor's own search does not reach these folders.
  */
 async function searchPeers() {
-	const pcs = (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === PEER_SCHEME);
-	if (!pcs.length) return vscode.window.showInformationMessage('No other PC is open in this workspace.');
+	const pcs = peersTree?.peers ?? [];
+	if (!pcs.length) return vscode.window.showInformationMessage('No other PC is reachable.');
 	const q = await vscode.window.showInputBox({ prompt: 'Search the other PCs (text, case-insensitive)' });
 	if (!q) return;
 	const items = [];
 	await Promise.all(
-		pcs.map(async (f) => {
-			const res = await peerFetch(f.uri.authority, 'search', { q }).catch(() => null);
-			if (!res?.ok) return items.push({ label: `$(warning) ${f.name}`, description: res ? `HTTP ${res.status}` : 'not reachable' });
+		pcs.map(async (p) => {
+			const res = await peerFetch(p.name, 'search', { q }).catch(() => null);
+			if (!res?.ok) return items.push({ label: `$(warning) ${peerLabel(p)}`, description: res ? `HTTP ${res.status}` : 'not reachable' });
 			for (const [path, line, text] of (await res.json()).matches) {
-				items.push({ label: `${path}:${line}`, description: f.name, detail: text, uri: vscode.Uri.joinPath(f.uri, path), line });
+				items.push({ label: `${path}:${line}`, description: peerLabel(p), detail: text, uri: vscode.Uri.joinPath(peerRoot(p.name), path), line });
 			}
 		}),
 	);
@@ -639,11 +683,13 @@ function startBridge(context) {
 }
 
 async function activate(context) {
+	const peerFiles = new PeerFileSystem();
+	peersTree = new PeersTree(peerFiles);
 	context.subscriptions.push(
 		vscode.commands.registerCommand('handide.view', showView),
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
-		vscode.commands.registerCommand('handide.setFolders', setFolders),
+		vscode.commands.registerCommand('handide.setPeers', ({ peers }) => peersTree.set(peers)),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 		vscode.commands.registerCommand('handide.create', create),
 		vscode.commands.registerCommand('handide.upload', upload),
@@ -653,11 +699,10 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
 		vscode.commands.registerCommand('handide.searchPeers', searchPeers),
-		// Activation is "*" for this: a workspace that holds handide-peer:// folders when the
-		// page loads waits for their provider before onStartupFinished (or onFileSystem)
-		// activates anything, so no extension at all would start.
-		vscode.workspace.registerFileSystemProvider(PEER_SCHEME, new PeerFileSystem(), { isCaseSensitive: true, isReadonly: true }),
+		vscode.workspace.registerFileSystemProvider(PEER_SCHEME, peerFiles, { isCaseSensitive: true, isReadonly: true }),
+		vscode.window.registerTreeDataProvider('handide.peers', peersTree),
 	);
+	peersTree.load();
 	memento = context.globalState;
 	selfId = context.extension.id;
 	selfPath = context.extensionPath;

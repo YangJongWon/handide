@@ -76,6 +76,11 @@
           "id": "handide.files.home",
           "name": "Files",
           "when": "false"
+        },
+        {
+          "id": "handide.peers",
+          "name": "Other PCs",
+          "when": "handide.hasPeers"
         }
       ],
       "handide-search": [

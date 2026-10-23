@@ -25,7 +25,7 @@ import { createBridge } from './bridge.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
-import { createPeerRelay, createProjectShare, peerFolders, rememberFolder, writeWorkspace } from './projects.mjs';
+import { createPeerRelay, createProjectShare, rememberFolder, writeWorkspace } from './projects.mjs';
 import { peerCommand, peerLauncherEnv } from './peer.mjs';
 import { desktopCommand, sshCommand } from './desktop.mjs';
 import QRCode from 'qrcode';
@@ -585,9 +585,9 @@ async function main() {
 	const bridge = createBridge({ token: opts.token });
 	const bridgeEnv = await bridge.listen();
 
-	// Other PCs, and the projects they serve: known before the editor starts, so its
-	// workspace holds them from the first page load. Their files are fetched as they are
-	// opened (proxy/projects.mjs), through the bridge's private listener.
+	// Other PCs, and the projects they serve: the companion extension lists them in its
+	// Other PCs view. Their files are fetched as they are opened (proxy/projects.mjs),
+	// through the bridge's private listener.
 	let remoteUrl = null;
 	const devices = createDeviceRouter({ token: opts.token, dataDir: opts.dataDir, selfName: os.hostname(), log, remote: () => remoteUrl });
 	await devices.refresh();
@@ -597,20 +597,18 @@ async function main() {
 	await rememberFolder(opts.dataDir, opts.folder).catch(() => {});
 	const relay = createPeerRelay({ devices });
 	bridge.route('/peer/', relay.handle);
-	// A workspace only when there are other PCs: a single folder otherwise, as before.
+	// The workspace file other PCs used to need, kept with this PC's folder alone for editor
+	// URLs that open it (projects.mjs: writeWorkspace).
 	let workspace = null;
 	let peersSeen = JSON.stringify(await relay.list());
-	if (devices.list().length) workspace = await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, peers: JSON.parse(peersSeen) });
+	if (devices.list().length) workspace = await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder });
 	// A PC found or removed, or serving another project: names only, no file listing.
 	const watchPeers = setInterval(async () => {
 		await devices.refresh();
 		const peers = await relay.list();
 		if (JSON.stringify(peers) === peersSeen) return;
 		peersSeen = JSON.stringify(peers);
-		if (workspace) {
-			await writeWorkspace({ dataDir: opts.dataDir, folder: opts.folder, peers });
-			await bridge.call('handide.setFolders', [{ folders: peerFolders(peers) }]); // an open editor too
-		} else log(`other PCs' projects: ${peers.map((p) => `${p.name} · ${p.project ?? '?'}`).join(', ')}. Restart handide to add them to the editor.`);
+		await bridge.call('handide.setPeers', [{ peers }]).catch(() => {}); // the open editor's Other PCs view
 	}, 30_000);
 	watchPeers.unref();
 
