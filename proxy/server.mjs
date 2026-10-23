@@ -16,7 +16,7 @@ import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers } from './editor.mjs';
+import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
@@ -634,6 +634,20 @@ async function main() {
 		child = started.child;
 		await started.ready;
 		reaper = startReaper({ dataDir: opts.dataDir, log });
+		// Without a working editor server every page is an error, so handide exits instead
+		// and whatever started it (a logon script, a service) starts both again.
+		child.on('exit', (code) => {
+			log(`editor server exited (code ${code}); stopping handide so it can be started again`);
+			process.exit(1);
+		});
+		watchServeWeb({
+			port: upstreamPort,
+			token: opts.token,
+			onDead: (why) => {
+				log(`editor server stopped answering (${why}); stopping handide so it can be started again`);
+				process.exit(1); // the 'exit' handler stops the editor server
+			},
+		});
 	}
 
 	const host = opts.host ?? (opts.local ? '127.0.0.1' : '0.0.0.0');

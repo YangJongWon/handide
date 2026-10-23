@@ -2,6 +2,7 @@
 // The editor itself is never modified; we only launch it with a private data dir.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import http from 'node:http';
 import { join } from 'node:path';
 import os from 'node:os';
 
@@ -229,4 +230,34 @@ export function startServeWeb({ cli, port, token, dataDir, folder, workspace, en
 		child.on('error', reject);
 	});
 	return { child, ready };
+}
+
+/**
+ * Asks serve-web for its start page every `intervalMs` and calls `onDead` after `strikes`
+ * answers in a row that no phone can get past: 403 with the right token, or a refused
+ * connection. On 2026-10-23 serve-web stayed up after fetching a new server version but
+ * refused every request with 403 until restarted, and the process itself looked fine.
+ * A slow answer (a server download) never counts.
+ */
+export function watchServeWeb({ port, token, onDead, intervalMs = 2 * 60_000, strikes = 2 }) {
+	let failed = 0;
+	const probe = () =>
+		new Promise((resolve) => {
+			const req = http.get({ host: '127.0.0.1', port, path: `/?tkn=${encodeURIComponent(token)}`, timeout: 30_000 }, (res) => {
+				res.resume();
+				resolve(res.statusCode === 403 ? '403' : null);
+			});
+			req.on('timeout', () => (req.destroy(), resolve(null)));
+			req.on('error', (err) => resolve(err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' ? err.code : null));
+		});
+	const timer = setInterval(async () => {
+		const bad = await probe();
+		failed = bad ? failed + 1 : 0;
+		if (failed >= strikes) {
+			clearInterval(timer);
+			onDead(bad);
+		}
+	}, intervalMs);
+	timer.unref();
+	return { stop: () => clearInterval(timer) };
 }
