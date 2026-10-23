@@ -13,12 +13,17 @@ const CANDIDATES = {
 	darwin: ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/usr/local/bin/tailscale', '/opt/homebrew/bin/tailscale'],
 };
 
+// The macOS app's own binary acts as the CLI only when it can tell it was not opened as an
+// app; started by launchd ("handide service") it tried to open its GUI and failed, so
+// handide never got the away-from-home link. This makes it the CLI always.
+const CLI_ENV = { ...process.env, TAILSCALE_BE_CLI: '1' };
+
 function run(cli, args, { timeout = 15000, onOutput } = {}) {
 	return new Promise((resolve) => {
 		let out = '';
 		let child;
 		try {
-			child = spawn(cli, args, { windowsHide: true });
+			child = spawn(cli, args, { windowsHide: true, env: CLI_ENV });
 		} catch (err) {
 			resolve({ code: -1, out: err.message });
 			return;
@@ -134,7 +139,7 @@ async function publish(cli, verb, target, log) {
 	// First use: serve waits until HTTPS is allowed for the tailnet, funnel until Funnel is.
 	const what = verb === 'funnel' ? 'allow public access (Funnel) for this PC (once)' : 'allow HTTPS for your tailnet (once)';
 	const res = await runWithBrowserStep(cli, [verb, '--bg', '--yes', '--https=443', target], { log, what });
-	if (res.code === 0) return { stop: () => spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000 }) };
+	if (res.code === 0) return { stop: () => spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000, env: CLI_ENV }) };
 	const hint = res.out.trim().split('\n').slice(-2).join(' ');
 	return { reason: res.timedOut ? `tailscale ${verb} timed out` : `tailscale ${verb} failed`, hint };
 }
@@ -261,7 +266,7 @@ export async function setupRemote({ log, private: tailnetOnly }) {
 	const verb = tailnetOnly ? 'serve' : 'funnel';
 	const what = tailnetOnly ? 'allow HTTPS for your tailnet (once)' : 'allow HTTPS and public access (Funnel) for this PC (once)';
 	const res = await runWithBrowserStep(cli, [verb, '--bg', '--yes', '--https=443', 'http://127.0.0.1:9'], { log, what });
-	spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000 });
+	spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000, env: CLI_ENV });
 	if (res.code !== 0) {
 		log(`     Not allowed${res.timedOut ? ' in time' : ''} (${res.out.trim().split('\n').pop()}). Run "handide remote" again.`);
 		return false;
