@@ -102,11 +102,12 @@ handide
 handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 ```
 
-The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Code, with its own folder, terminals and extensions. The choice is remembered, and the phone keeps a single link and QR code. The PC the phone opens relays everything, so the other PCs only need to be reachable from it (same Wi-Fi, or a Tailscale address).
+The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Code, with its own folder, terminals and extensions. A PC with its own Tailscale link opens at that address, so it keeps working while the others are off, and the phone keeps their links: when the PC a link belongs to does not answer, or answers only with an error, the page opens another PC that is on. A PC without one is relayed by the PC the phone opened (same Wi-Fi, or a Tailscale address).
 
 - `handide devices` lists them with their online state, `handide devices remove laptop` removes one.
 - Every PC keeps its own access token and checks it. A self-signed certificate is pinned when the PC is added; if it changes (a new IP address), add the PC again with its new link.
 - Use the same handide version on every PC.
+- Run `handide service install [folder] [options]` once on every PC: handide then starts at logon and again whenever it exits or its editor server stops answering, so one PC down never stops the rest (`handide service status`, `handide service uninstall`).
 
 **Every PC's code, from any PC.** Each handide shares the folder it serves with the other PCs (to its own access token) and lists theirs, read-only, under **Other PCs** in the Files panel (not as workspace folders, which extensions such as Codex take for local paths). Nothing is copied ahead of time: a folder is listed when you expand it and a file is fetched when you open it, and the owning PC pushes the paths that change, so a large project costs nothing until you look at it. **handide: Search Other PCs** searches them, on each PC (the editor's own search covers this PC's folder). Agents in a terminal run `handide-peer <PC> ls|cat|grep <...>` (also in `$HANDIDE_PEER`); a search stops after 20 s with what it found. A PC that is off shows nothing until it is back. Changes are made on the PC that owns the project.
 
@@ -175,6 +176,8 @@ handide [folder] [options]       folder defaults to the current directory
 handide remote [--private]       one-time setup for access away from home
 handide devices add <name> <link>  add another PC (the link it prints); switch in the phone menu
 handide devices [remove <name>]    list them, or remove one
+handide service install [folder] [options]  start at logon and again whenever it exits
+handide service [status|uninstall]
 
   --private          away-from-home link only for your tailnet devices
   --cloudflare       away-from-home link without any account (new address each run)

@@ -1262,9 +1262,11 @@ function renderMenuHead() {
 
 // ---------------------------------------------------------------- other PCs
 //
-// With other PCs set up ("handide devices add"), the PC this link belongs to relays the
-// page to the one picked here (proxy/devices.mjs). Switching is a plain navigation, so
-// it reloads the editor of that PC with its own folder, terminals and extensions.
+// With other PCs set up ("handide devices add"), picking one here opens that PC's own
+// address (its Tailscale link) when it has one, so it keeps working while the PC this link
+// belongs to is off, and no editor traffic makes a second hop. A PC without one is relayed
+// by this PC (proxy/devices.mjs). Switching is a plain navigation either way, so it reloads
+// the editor of that PC with its own folder, terminals and extensions.
 
 const currentDevice = () => (state.devices?.devices.length > 1 ? state.devices.devices.find((d) => d.id === state.devices.current) : null);
 
@@ -1282,11 +1284,12 @@ async function loadDevices() {
  * workers do; with the self-signed LAN one the registration just fails.
  */
 function keepFallbackLinks(list) {
-	const pcs = list.filter((d) => d.link).map(({ name, link }) => ({ name, link }));
+	const pcs = list.filter((d) => d.id && d.link).map(({ name, link }) => ({ name, link }));
+	const self = list.find((d) => !d.id)?.link ?? null;
 	navigator.serviceWorker?.register(`${BASE}sw.js`, { scope: '/' }).catch(() => {});
 	globalThis.caches
 		?.open('handide-fallback')
-		.then((c) => c.put(`${BASE}fallback.json`, new Response(JSON.stringify({ pcs }), { headers: { 'content-type': 'application/json' } })))
+		.then((c) => c.put(`${BASE}fallback.json`, new Response(JSON.stringify({ pcs, self }), { headers: { 'content-type': 'application/json' } })))
 		.catch(() => {});
 }
 
@@ -1311,11 +1314,15 @@ function renderDevices() {
 	);
 }
 
-function useDevice(d) {
+async function useDevice(d) {
 	if (d.id === state.devices.current) return closeMenu();
 	if (!d.online) return toast(t('devices.unreachable', d.name));
 	toast(t('devices.switching', d.name));
-	location.href = `${BASE}devices/use?id=${encodeURIComponent(d.id)}`;
+	if (!d.link) return void (location.href = `${BASE}devices/use?id=${encodeURIComponent(d.id)}`);
+	// Relaying another PC now: this PC is picked back first, or its own link would keep
+	// opening that relay instead of this PC.
+	if (state.devices.current) await fetch(`${BASE}devices/use?id=`, { redirect: 'manual', credentials: 'same-origin' }).catch(() => {});
+	location.href = d.link;
 }
 
 // ---------------------------------------------------------------- drawer

@@ -102,11 +102,12 @@ handide
 handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 ```
 
-スマホのメニューに **PC** の行が出ます。タップするとその PC の VS Code が、その PC のフォルダ・ターミナル・拡張機能のまま開きます。選んだ PC は記憶され、スマホのリンクと QR コードは 1 つのままです。スマホが開く PC がすべて中継するので、ほかの PC はその PC から届けば十分です（同じ Wi-Fi か Tailscale のアドレス）。
+スマホのメニューに **PC** の行が出ます。タップするとその PC の VS Code が、その PC のフォルダ・ターミナル・拡張機能のまま開きます。自分の Tailscale リンクを持つ PC はそのアドレスで直接開くので、ほかの PC が止まっていても使えます。スマホは各 PC のリンクを覚えておき、リンクの PC が応答しないかエラーしか返さないときは、動いているほかの PC を開きます。リンクを持たない PC はスマホが開いた PC が中継します（同じ Wi-Fi か Tailscale のアドレス）。
 
 - `handide devices` で一覧と接続状態、`handide devices remove laptop` で削除します。
 - アクセストークンは PC ごとに別で、各 PC が自分で確認します。自己署名証明書は登録時に固定されるので、変わったら（IP の変更など）新しいリンクで登録し直してください。
 - すべての PC で同じバージョンの handide を使ってください。
+- 各 PC で `handide service install [folder] [options]` を 1 回実行してください。ログイン時に起動し、終了したりエディタサーバーが応答しなくなったりすると起動し直すので、1 台が止まってもほかは止まりません（`handide service status`、`handide service uninstall`）。
 
 **どの PC からでも、すべての PC のコードを。** 各 handide は提供しているフォルダをほかの PC に共有し（自分のアクセストークンでのみ）、ほかの PC のフォルダを Files パネルの **Other PCs** に読み取り専用で表示します（ワークスペースフォルダにすると Codex などの拡張機能がローカルパスとして扱って壊れるため、追加しません）。事前にコピーはしません。フォルダは展開したとき、ファイルは開いたときに取得し、変わったパスはその PC が知らせるので、大きなプロジェクトも見るまでは負荷がかかりません。検索は **handide: Search Other PCs** で各 PC 上で実行します（エディター自体の検索はこの PC のフォルダのみ）。ターミナルのエージェントは `handide-peer <PC> ls|cat|grep <...>` を使います（`$HANDIDE_PEER` にもあります）。検索は 20 秒でそれまでに見つかった分を返して止まります。オフの PC は戻るまで表示されません。変更はそのプロジェクトがある PC で行います。
 
@@ -174,6 +175,8 @@ handide [folder] [options]       folder の既定値はカレントディレク�
 handide remote [--private]       外出先アクセスの初回設定
 handide devices add <name> <link>  ほかの PC を登録（その PC が表示したリンク）、メニューで切り替え
 handide devices [remove <name>]    一覧、または削除
+handide service install [folder] [options]  ログイン時に起動、終了したら起動し直す
+handide service [status|uninstall]
 
   --private          外出先リンクを自分の tailnet の端末に限定
   --cloudflare       アカウントなしの外出先リンク（実行ごとにアドレスが変わる）

@@ -98,11 +98,12 @@ handide
 handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 ```
 
-手机菜单里会出现 **电脑** 一行，点一下就打开那台电脑的 VS Code，以及它自己的文件夹、终端和扩展。选择会被记住，手机上的链接和二维码仍然只有一个。所有请求都由手机打开的那台电脑转发，所以其他电脑只需能从它访问到（同一 Wi-Fi 或 Tailscale 地址）。
+手机菜单里会出现 **电脑** 一行，点一下就打开那台电脑的 VS Code，以及它自己的文件夹、终端和扩展。有自己 Tailscale 链接的电脑会直接用那个地址打开，所以其他电脑关机时它照样可用。手机会记住各台电脑的链接：链接所属的电脑没有响应或只返回错误时，页面会打开另一台开着的电脑。没有自己链接的电脑由手机打开的那台电脑转发（同一 Wi-Fi 或 Tailscale 地址）。
 
 - `handide devices` 列出它们及在线状态，`handide devices remove laptop` 删除。
 - 每台电脑各有自己的访问令牌并自行校验。自签名证书在登记时固定，如果变了（例如 IP 变化），请用新链接重新登记。
 - 所有电脑请使用相同版本的 handide。
+- 在每台电脑上运行一次 `handide service install [folder] [options]`：handide 会在登录时启动，退出或编辑器服务器不再响应时重新启动，所以一台电脑出问题不会影响其他电脑（`handide service status`、`handide service uninstall`）。
 
 **在任意一台电脑上看到所有电脑的代码。** 每个 handide 会把自己提供的文件夹共享给其他电脑（仅限它自己的访问令牌），并在 Files 面板的 **Other PCs** 中只读显示其他电脑的文件夹（不作为工作区文件夹加入，否则 Codex 等扩展会把它当作本地路径而出错）。不会预先复制：展开文件夹时才列出，打开文件时才获取，变化的路径由那台电脑主动通知，所以大型项目在查看之前没有任何开销。用 **handide: Search Other PCs** 在各台电脑上搜索（编辑器自带的搜索只覆盖本机文件夹）。终端里的代理使用 `handide-peer <电脑> ls|cat|grep <...>`（也在 `$HANDIDE_PEER` 里）；搜索 20 秒后会带着已找到的结果停止。关机的电脑在重新开机前不会显示。修改请在项目所在的电脑上进行。
 
@@ -170,6 +171,8 @@ handide [folder] [options]       folder 默认为当前目录
 handide remote [--private]       一次性设置外网访问
 handide devices add <name> <link>  登记另一台电脑（它打印的链接），在手机菜单中切换
 handide devices [remove <name>]    列出，或删除
+handide service install [folder] [options]  登录时启动，退出后重新启动
+handide service [status|uninstall]
 
   --private          外网链接仅限你 tailnet 中的设备
   --cloudflare       无需账号的外网链接（每次运行地址都会变）

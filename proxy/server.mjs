@@ -22,6 +22,7 @@ import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
 import { createBridge } from './bridge.mjs';
+import { serviceCommand } from './service.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
@@ -86,6 +87,11 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
                                         desktop editors can open projects here
         handide desktop                 VS Code / Cursor here: "Open Project on Another PC"
                                         (opens it on that PC through Remote - SSH)
+        handide service install [folder] [options]
+                                        run handide at logon and start it again whenever it
+                                        exits (Windows Startup, macOS launchd, Linux systemd);
+                                        once on every PC, so one PC down never stops the rest
+        handide service [status|uninstall]
 
   (default)           open on the LAN with HTTPS and print a QR code + link for the phone
   --local             this PC only (http://localhost), no LAN, no certificate
@@ -164,6 +170,32 @@ ${USAGE}`);
 		}
 	}
 	return opts;
+}
+
+const VALUE_OPTIONS = new Set(['--port', '--host', '--folder', '--data-dir', '--token', '--editor', '--upstream', '--config', '--cert', '--key']);
+const PATH_OPTIONS = new Set(['--folder', '--data-dir', '--config', '--cert', '--key']);
+
+/**
+ * How "handide service install [folder] [options]" starts handide on each run: the folder
+ * and paths made absolute, and without the options that would act again on every restart.
+ */
+function serviceRun(args, log) {
+	const opts = parseArgs(args); // checks the options as a normal start would
+	const kept = [];
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === '--new-token' || a === '--open') {
+			log(`${a} is left out: it would act again on every restart`);
+			continue;
+		}
+		if (VALUE_OPTIONS.has(a)) {
+			const v = args[++i];
+			if (a !== '--folder') kept.push(a, PATH_OPTIONS.has(a) ? resolve(v) : v);
+		} else if (a.startsWith('-')) kept.push(a);
+		// a bare word is the folder, passed below
+	}
+	const dataDir = opts.dataDir ?? (!existsSync(HOME_DIR) && existsSync(LEGACY_DATA_DIR) ? LEGACY_DATA_DIR : HOME_DIR);
+	return { run: [process.execPath, fileURLToPath(import.meta.url), opts.folder, ...kept], folder: opts.folder, dataDir };
 }
 
 /** Fills in the per-user defaults: handide home, persistent token, personal layout config. */
@@ -567,6 +599,7 @@ async function main() {
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
 	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
 	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
+	if (process.argv[2] === 'service') return serviceCommand(process.argv.slice(3, 4), { ...serviceRun(process.argv.slice(4), log), log });
 	const sub = { devices: devicesCommand, ssh: sshCommand, desktop: desktopCommand }[process.argv[2]];
 	if (sub) {
 		const args = process.argv.slice(3);

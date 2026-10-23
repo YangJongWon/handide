@@ -102,11 +102,12 @@ handide
 handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 ```
 
-그러면 폰 메뉴에 **PC** 줄이 생깁니다. 탭하면 그 PC의 VS Code가 그 PC의 폴더·터미널·확장 그대로 열립니다. 고른 PC는 기억되고, 폰의 링크와 QR은 하나 그대로입니다. 폰이 여는 PC가 모든 요청을 중계하므로, 다른 PC는 그 PC에서만 닿으면 됩니다(같은 Wi-Fi 또는 Tailscale 주소).
+그러면 폰 메뉴에 **PC** 줄이 생깁니다. 탭하면 그 PC의 VS Code가 그 PC의 폴더·터미널·확장 그대로 열립니다. 자체 Tailscale 링크가 있는 PC는 그 주소로 바로 열리므로 다른 PC가 꺼져 있어도 계속 됩니다. 폰은 PC들의 링크를 기억해 두었다가, 링크의 PC가 응답하지 않거나 오류로만 응답하면 켜져 있는 다른 PC를 엽니다. 자체 링크가 없는 PC는 폰이 연 PC가 중계합니다(같은 Wi-Fi 또는 Tailscale 주소).
 
 - `handide devices`로 목록과 접속 상태를, `handide devices remove laptop`으로 삭제합니다.
 - 접속 토큰은 PC마다 따로이고 각 PC가 직접 확인합니다. 자체 서명 인증서는 등록할 때 고정되므로, 바뀌면(IP 변경 등) 새 링크로 다시 등록하세요.
 - 모든 PC에서 같은 버전의 handide를 쓰세요.
+- PC마다 `handide service install [폴더] [옵션]`을 한 번 실행하세요. 로그인할 때 시작되고, 종료되거나 에디터 서버가 응답하지 않으면 다시 시작되므로 PC 하나가 죽어도 나머지는 그대로입니다(`handide service status`, `handide service uninstall`).
 
 **어느 PC에서든 모든 PC의 코드를.** 각 handide는 자기가 서비스하는 폴더를 다른 PC에 공유하고(자기 접근 토큰으로만), 다른 PC의 폴더를 Files 패널의 **Other PCs**에 읽기 전용으로 보여 줍니다(작업 영역 폴더로 넣으면 Codex 같은 확장이 로컬 경로로 여겨 깨지므로 넣지 않습니다). 미리 복사해 두지 않습니다. 폴더는 펼칠 때, 파일은 열 때 가져오고, 바뀐 경로는 그 PC가 알려 주므로 큰 프로젝트도 보기 전에는 비용이 들지 않습니다. 검색은 **handide: Search Other PCs**로 각 PC에서 실행합니다(편집기 자체 검색은 이 PC의 폴더만). 터미널의 에이전트는 `handide-peer <PC> ls|cat|grep <...>`를 씁니다(`$HANDIDE_PEER`에도 있음). 검색은 20초가 지나면 그때까지 찾은 것으로 멈춥니다. 꺼져 있는 PC는 다시 켜질 때까지 보이지 않습니다. 수정은 그 프로젝트가 있는 PC에서 합니다.
 
@@ -175,6 +176,8 @@ handide [폴더] [옵션]            폴더 기본값은 현재 디렉터리
 handide remote [--private]       집 밖 접속 1회 설정
 handide devices add <이름> <링크>  다른 PC 등록 (그 PC가 출력한 링크), 폰 메뉴에서 전환
 handide devices [remove <이름>]    목록 보기, 또는 삭제
+handide service install [폴더] [옵션]  로그인 시 시작, 종료되면 다시 시작
+handide service [status|uninstall]
 
   --private          집 밖 링크를 내 tailnet 기기로만 제한
   --cloudflare       계정 없이 집 밖 링크 (실행마다 주소가 바뀜)

@@ -398,12 +398,15 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 		return headers;
 	}
 
+	// A PC's own address when it has one (see layer/mobile.js, other PCs), else this PC's relay.
+	const openLink = (d) => (d.remote ? `${d.remote}/?tkn=${encodeURIComponent(d.token)}` : null);
+
 	function sendPage(res, status, title, text, current) {
-		const others = [{ name: '', label: selfName }, ...devices.map((d) => ({ name: d.name, label: d.name }))].filter((d) => d.name !== current);
+		const others = [{ name: '', label: selfName }, ...devices.map((d) => ({ name: d.name, label: d.name, link: openLink(d) }))].filter((d) => d.name !== current);
 		res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
 		res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>handide</title>
 <body style="font:16px/1.5 system-ui,sans-serif;padding:24px;max-width:36em;margin:auto"><h1 style="font-size:20px">${escapeHtml(title)}</h1><p>${text}</p>
-<p><a href="/">Retry</a></p><ul>${others.map((d) => `<li><a href="${USE_PATH}?id=${encodeURIComponent(d.name)}">Open ${escapeHtml(d.label)}</a></li>`).join('')}</ul></body>`);
+<p><a href="/">Retry</a></p><ul>${others.map((d) => `<li><a href="${escapeHtml(d.link || `${USE_PATH}?id=${encodeURIComponent(d.name)}`)}">Open ${escapeHtml(d.label)}</a></li>`).join('')}</ul></body>`);
 	}
 
 	async function list(req, res) {
@@ -416,9 +419,10 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 			ok: true,
 			current,
 			devices: [
-				{ id: '', name: selfName, online: true },
+				// link: this PC's own, for the fallback page's retry (a lost token cookie set again).
+				{ id: '', name: selfName, online: true, link: remote() ? `${remote()}/?tkn=${encodeURIComponent(token)}` : null },
 				// link: opened directly when this PC is off (layer/sw.js).
-				...devices.map((d, i) => ({ id: d.name, name: d.name, online: status[i], link: d.remote ? `${d.remote}/?tkn=${encodeURIComponent(d.token)}` : null })),
+				...devices.map((d, i) => ({ id: d.name, name: d.name, online: status[i], link: openLink(d) })),
 			],
 		};
 		res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
