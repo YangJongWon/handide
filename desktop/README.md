@@ -13,23 +13,18 @@ Press the phone button in the status bar, scan the QR code, and keep working on 
   </tr>
 </table>
 
-## Requirements
-
-This extension is the button; [handide](https://github.com/YangJongWon/handide) does the serving. Install it once on the PC:
-
-- **Windows:** run `handide-setup-<version>.exe` from [Releases](https://github.com/YangJongWon/handide/releases/latest).
-- **Any OS (Node.js 20+):** `npm install -g github:YangJongWon/handide`
-
 ## Use
 
 1. Open a folder in VS Code.
 2. Press the **phone button** in the status bar (or run **handide: Open on Phone**).
 3. Scan the QR code with the phone camera.
 
-When handide is not running yet, the button starts it. It keeps running after VS Code closes, so the phone stays connected; `handide service install` starts it at logon.
+Nothing else to install: [handide](https://github.com/YangJongWon/handide) comes inside this extension. The first press sets it up, and downloads Node.js from nodejs.org once if this PC has no Node.js 20 or newer. If you installed handide yourself (the Windows installer or npm), that one is used.
+
+handide keeps running after VS Code closes, so the phone stays connected. **handide: Stop** in the Command Palette stops it.
 
 - **Same Wi-Fi:** works right away. The first visit shows a certificate warning once, because handide makes its own certificate for your PC.
-- **Away from home:** run `handide remote` once. The QR code then works on mobile data too, with nothing to install on the phone.
+- **Away from home:** install [Tailscale](https://tailscale.com/download) on this PC and sign in. The QR code then works on mobile data too, with nothing to install on the phone.
 
 The link contains your access token: use it only on your own devices.
 

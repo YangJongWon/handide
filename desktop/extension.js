@@ -10,7 +10,8 @@
 // Start menu may not have it on its PATH.
 //
 // Open on Phone (the phone button in the status bar): a QR code that opens this window's
-// project in handide on the phone, starting handide first when it is not running.
+// project in handide on the phone, starting handide first when it is not running: the
+// installed one, else the one inside this extension (runtime.js).
 const vscode = require('vscode');
 const { execFile, spawn } = require('child_process');
 const crypto = require('crypto');
@@ -18,6 +19,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
+const { bundledHandide, bundledReady } = require('./runtime');
 
 const REMOTE_SSH = { cursor: 'anysphere.remote-ssh', vscode: 'ms-vscode-remote.remote-ssh' };
 const PLATFORM = { win32: 'windows', darwin: 'macOS', linux: 'linux' };
@@ -63,16 +65,12 @@ function locateHandide() {
 	return node && fs.existsSync(server) ? { node, server } : null;
 }
 
-function handideCommand() {
-	const c = locateHandide();
-	return c ? { cmd: c.node, pre: [c.server] } : { cmd: 'handide', pre: [] };
-}
-
 /** Runs the handide command; resolves to the JSON of its last output line. */
 function handide(args, timeout = 30_000) {
-	const { cmd, pre } = handideCommand();
+	const c = locateHandide() ?? bundledReady();
+	if (!c) return Promise.reject(new Error('handide is not set up on this PC yet: press the phone button in the status bar once'));
 	return new Promise((ok, fail) => {
-		execFile(cmd, [...pre, ...args], { timeout, windowsHide: true, maxBuffer: 16 << 20, shell: cmd === 'handide' && process.platform === 'win32' }, (err, out, errOut) => {
+		execFile(c.node, [c.server, ...args], { timeout, windowsHide: true, maxBuffer: 16 << 20 }, (err, out, errOut) => {
 			let result;
 			try {
 				result = JSON.parse(String(out).trim().split(/\r?\n/).pop());
@@ -301,6 +299,8 @@ const START_LOG = path.join(os.tmpdir(), 'handide-from-editor.log');
 const START_WAIT_MS = 180_000; // the first run may download the editor server
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
+const STARTED = 'handide.started'; // globalState: { pid, port } of the handide this editor started
+let extContext;
 
 /** The running handide's links opening `folder`, each with its QR code (proxy/connect.mjs: connectJson). */
 function connectInfo(folder) {
@@ -335,10 +335,18 @@ function connectInfo(folder) {
  * working when the editor closes. Resolves once it answers; its output goes to START_LOG.
  */
 async function startHandide(folder, progress) {
-	const found = locateHandide();
+	let found = locateHandide();
+	if (!found) {
+		try {
+			found = await bundledHandide((message) => progress.report({ message }));
+		} catch (err) {
+			throw failure('SETUP', `could not set up handide: ${err.message}`);
+		}
+	}
 	if (!found) throw failure('NOT_FOUND', 'handide is not installed on this PC.');
 	const out = fs.openSync(START_LOG, 'w');
-	const child = spawn(found.node, [found.server, folder, '--port', String(handidePort())], {
+	const port = handidePort();
+	const child = spawn(found.node, [found.server, folder, '--port', String(port)], {
 		cwd: folder,
 		detached: true,
 		stdio: ['ignore', out, out],
@@ -349,6 +357,7 @@ async function startHandide(folder, progress) {
 	child.on('error', (err) => (exited = err.message));
 	child.on('exit', (code) => (exited = `exit code ${code}`));
 	child.unref();
+	if (child.pid) await extContext.globalState.update(STARTED, { pid: child.pid, port });
 	progress.report({ message: 'starting handide…' });
 	for (const until = Date.now() + START_WAIT_MS; Date.now() < until; ) {
 		await new Promise((r) => setTimeout(r, 1_000));
@@ -360,6 +369,30 @@ async function startHandide(folder, progress) {
 		}
 	}
 	throw failure('EXITED', 'handide did not start in time.');
+}
+
+const alive = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return err.code === 'EPERM';
+	}
+};
+
+/** Stops the handide this editor started (one started in a terminal stops with Ctrl+C there). */
+async function stopHandide() {
+	const started = extContext.globalState.get(STARTED);
+	if (!started || !alive(started.pid)) {
+		await extContext.globalState.update(STARTED, undefined);
+		return vscode.window.showInformationMessage('handide: no handide started from the editor is running. One started in a terminal stops with Ctrl+C there.');
+	}
+	// With its editor server and everything else it started.
+	if (process.platform === 'win32') spawn('taskkill', ['/pid', String(started.pid), '/T', '/F'], { windowsHide: true });
+	else process.kill(-started.pid, 'SIGTERM'); // detached: its own process group
+	await extContext.globalState.update(STARTED, undefined);
+	phonePanel?.dispose();
+	vscode.window.showInformationMessage('handide: stopped. The phone button starts it again.');
 }
 
 /** Nothing listens on the port, so starting handide there is the fix. */
@@ -376,7 +409,7 @@ function phoneHtml(info, folder, webview) {
 			? 'handide runs for this PC only (--local), so there is no link for the phone. Stop it and start it without --local.'
 			: 'handide found no network address on this PC. Check that it is on Wi-Fi or wired, then start handide again.'
 		: !remote
-			? 'The phone needs to be on the same Wi-Fi as this PC. To use it away from home too, run "handide remote" once in a terminal.'
+			? 'The phone needs to be on the same Wi-Fi as this PC. To use it away from home too, install Tailscale on this PC and sign in.'
 			: links[0].public
 				? 'Works at home and away; nothing to install on the phone.'
 				: 'Works anywhere while the Tailscale app is on on the phone (same account as this PC).';
@@ -397,7 +430,7 @@ function phoneHtml(info, folder, webview) {
 			? '<li>The first visit on a LAN address shows a certificate warning (handide made the certificate for this PC). Android Chrome: <i>Advanced</i> → <i>Proceed</i>. iPhone Safari: <i>Show Details</i> → <i>visit this website</i>.</li>'
 			: '',
 		'<li>When VS Code asks whether to trust the folder, trust it: the mobile tabs and agent extensions need it.</li>',
-		'<li>handide keeps running after this editor closes. To have it start at logon: <code>handide service install</code>.</li>',
+		'<li>handide keeps running after this editor closes, so the phone stays connected. <b>handide: Stop</b> in the Command Palette stops it.</li>',
 	].join('');
 	return `<!doctype html>
 <html>
@@ -489,7 +522,7 @@ async function openOnPhone() {
 		}
 		if (err.code !== 'EXITED') return vscode.window.showErrorMessage(`handide: ${err.message}`);
 		const log = 'Show log';
-		const pick = await vscode.window.showErrorMessage(`handide: ${err.message} Run "handide" in a terminal to see why, or check the log.`, log);
+		const pick = await vscode.window.showErrorMessage(`handide: ${err.message} The log says why.`, log);
 		if (pick === log) await vscode.window.showTextDocument(vscode.Uri.file(START_LOG));
 		return;
 	}
@@ -516,6 +549,7 @@ async function openOnPhone() {
 }
 
 function activate(context) {
+	extContext = context;
 	const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 	item.command = 'handide.switch';
 	const pc = currentPC();
@@ -536,13 +570,14 @@ function activate(context) {
 	phone.command = 'handide.openOnPhone';
 	phone.text = '$(device-mobile)';
 	phone.tooltip = 'handide: open this project on your phone (QR code)';
-	const showPhone = () => (folderUri()?.scheme === 'file' ? phone.show() : phone.hide());
-	showPhone();
+	const togglePhone = () => (folderUri()?.scheme === 'file' ? phone.show() : phone.hide());
+	togglePhone();
 	context.subscriptions.push(
 		item,
 		phone,
-		vscode.workspace.onDidChangeWorkspaceFolders(showPhone),
+		vscode.workspace.onDidChangeWorkspaceFolders(togglePhone),
 		vscode.commands.registerCommand('handide.openOnPhone', openOnPhone),
+		vscode.commands.registerCommand('handide.stop', stopHandide),
 		vscode.commands.registerCommand('handide.openOnPC', openOnPC),
 		vscode.commands.registerCommand('handide.switch', () => switchMenu(context)),
 	);

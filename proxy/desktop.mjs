@@ -108,7 +108,10 @@ const xml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 async function buildVsix(dataDir, serverPath) {
 	const manifest = JSON.parse(await readFile(new URL('package.json', DESKTOP_DIR), 'utf8'));
 	const files = [];
-	for (const name of await readdir(DESKTOP_DIR)) files.push([`extension/${name}`, await readFile(new URL(name, DESKTOP_DIR))]);
+	// Its own files only: handide.json below points it at this handide, so no app/ (desktop/build.mjs).
+	for (const name of ['package.json', 'README.md', ...manifest.files.filter((f) => !f.includes('*'))]) {
+		files.push([`extension/${name}`, await readFile(new URL(name, DESKTOP_DIR))]);
+	}
 	files.push(['extension/handide.json', Buffer.from(JSON.stringify({ node: process.execPath, server: serverPath }, null, '\t'))]);
 	const vsixManifest = `<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">

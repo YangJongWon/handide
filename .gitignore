@@ -2,3 +2,4 @@ node_modules/
 .handide-data/
 check-output/
 installer/out/
+desktop/out/

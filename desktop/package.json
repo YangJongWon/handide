@@ -2,8 +2,8 @@
 	"name": "handide",
 	"publisher": "yangjongwon",
 	"displayName": "handide: VS Code on your phone",
-	"description": "Open this project on your phone: press the phone button, scan the QR code, and code from the phone with your own VS Code, extensions and AI agents. Needs handide on this PC.",
-	"version": "0.1.0",
+	"description": "Open this project on your phone: press the phone button, scan the QR code, and code from the phone with your own VS Code, extensions and AI agents.",
+	"version": "0.2.0",
 	"license": "MIT",
 	"icon": "icon.png",
 	"repository": {
@@ -35,7 +35,9 @@
 	"files": [
 		"LICENSE",
 		"extension.js",
-		"icon.png"
+		"runtime.js",
+		"icon.png",
+		"app/**"
 	],
 	"activationEvents": [
 		"onStartupFinished"
@@ -57,6 +59,11 @@
 				"title": "Open on Phone",
 				"category": "handide",
 				"icon": "$(device-mobile)"
+			},
+			{
+				"command": "handide.stop",
+				"title": "Stop",
+				"category": "handide"
 			}
 		],
 		"configuration": {
