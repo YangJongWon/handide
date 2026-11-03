@@ -36,8 +36,12 @@ function desktopEditors() {
 	return list.map((e) => ({ ...e, cli: e.clis.find((c) => existsSync(c)) })).filter((e) => e.cli);
 }
 
+// A .cmd runs only through cmd.exe, which takes one command line: quoted here, since
+// "C:\...\Microsoft VS Code\bin\code.cmd" unquoted runs "C:\...\Microsoft".
 const runCli = (cli, args) =>
-	spawnSync(cli, args, { encoding: 'utf8', timeout: 180_000, windowsHide: true, shell: process.platform === 'win32' && cli.endsWith('.cmd') });
+	process.platform === 'win32' && cli.endsWith('.cmd')
+		? spawnSync([cli, ...args].map((a) => `"${a}"`).join(' '), { encoding: 'utf8', timeout: 180_000, windowsHide: true, shell: true })
+		: spawnSync(cli, args, { encoding: 'utf8', timeout: 180_000, windowsHide: true });
 
 // ---------------------------------------------------------------- vsix (a zip, stored)
 
