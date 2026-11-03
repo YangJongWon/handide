@@ -240,18 +240,18 @@ handide 默认关闭工作区信任，只有在配置中设置 `"workspaceTrust"
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 模拟，每台 23 项检查
+npm run check                  # 使用 Chromium 模拟 Pixel 7 + iPhone 14
 npm run check -- --android     # 在模拟器或 USB 连接的手机上用真实 Chrome
 ```
 
-每次检查都使用 `check-output/` 下的独立数据目录和示例工作区，并为每一步保存截图。上面的截图可用 `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` 重新生成。
+每次检查都使用 `check-output/run-*/` 下的全新数据目录和示例工作区，并为每一步保存截图。最新摘要保存在 `check-output/report.json`，各次运行的报告保存在对应的运行目录。上面的截图可用 `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` 重新生成。
 
 仓库内含一个 Claude Code 技能（`.claude/skills/mobilize-editor`）：在 Claude Code 中打开仓库，即可让它安装 handide、在 VS Code 更新后重新验证、修复更新造成的问题，或修改你的布局。
 
 <details>
 <summary>验证状态与已知限制</summary>
 
-最近验证：Windows 上的 VS Code 1.138.0（Web 服务器 1.139+）。模拟 Pixel 7 / iPhone 14：46/46（配套扩展模式）；builtin 模式在 iPhone 14 上偶尔出现布局检查失败；已在实体 iPhone 上通过局域网、Tailscale Funnel 和移动网络使用。
+布局层记录的测试目标是 Windows 上的 VS Code CLI 1.138.0。最新本地结果及浏览器见 `check-output/report.json`。两种设备配置均使用 Chromium，因此 iPhone 模拟并不代表 Safari/WebKit 或实体设备验证。实体设备和外部网络需要单独检查。此前 builtin 模式检查记录过 iPhone 布局的间歇性失败。
 
 - 每个浏览器和文件夹需要信任一次。
 - 配套扩展使用的少数布局命令属于 VS Code 内部命令。`npm run compat` 会标出未测试的版本，`npm run check` 用于确认。

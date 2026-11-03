@@ -245,20 +245,20 @@ Without the token in the link, VS Code answers 403 and the connect page is only 
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 emulation, 23 checks each
+npm run check                  # Chromium: Pixel 7 + iPhone 14 device emulation
 npm run check -- --android     # real Chrome on an emulator or USB phone
 ```
 
 The Windows installer: `npm run installer` (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)) writes `installer/out/handide-setup-<version>.exe`. Pushing a `v*` tag builds it on GitHub Actions and attaches it to the release.
 
-Each check run uses a private data dir and sample workspace under `check-output/` and writes a screenshot per step. `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` retakes the screenshots above.
+Each check run uses a fresh private data dir and sample workspace under `check-output/run-*/` and writes a screenshot per step. The latest summary is `check-output/report.json`; each run also keeps its own report. `node .claude/skills/mobilize-editor/scripts/screenshots.mjs` retakes the screenshots above.
 
 The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open the repo in Claude Code and ask it to set up handide, re-verify it after a VS Code update, fix what an update broke, or change your layout.
 
 <details>
 <summary>Verification status and known limitations</summary>
 
-Last verified: VS Code 1.138.0 (web server 1.139+) on Windows. Emulated Pixel 7 / iPhone 14: 46/46 (companion); builtin mode has an intermittent layout failure on iPhone 14; used on a physical iPhone over LAN, Tailscale Funnel and mobile data.
+The layer's recorded test target is VS Code CLI 1.138.0 on Windows. Check `check-output/report.json` for the latest local result and browser. Both device presets use Chromium: iPhone emulation does not verify Safari/WebKit or a physical phone. Real-device and remote-network behavior need separate checks. Earlier builtin-mode checks recorded an intermittent iPhone-layout failure.
 
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.
 - `serve-web` can download a newer VS Code web server than your desktop version, so the phone may run a newer VS Code than the one you tested with.

@@ -12,11 +12,10 @@
 // handide profile, layer.config.json and projects are never touched.
 // Writes check-output/report.json and one screenshot per step; exits 1 on failure.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OUT, ROOT, SAMPLE, killTree, loadPlaywright, startProxy } from './lib/proxy.mjs';
 import { grantTrust, trustDisabled } from './lib/trust.mjs';
-import { removeImportedExtensions } from '../../../../proxy/extensions.mjs';
 
 const TYPED = '// 모바일 입력 확인';
 const { chromium, devices: DEVICES, _android: android } = await loadPlaywright();
@@ -42,7 +41,7 @@ function parseArgs(argv) {
 async function checkDevice(target, ctx) {
 	const deviceName = target.name;
 	const results = [];
-	const shotDir = join(OUT, deviceName.replace(/\W+/g, '-'));
+	const shotDir = join(ctx.runDir ?? OUT, deviceName.replace(/\W+/g, '-'));
 	mkdirSync(shotDir, { recursive: true });
 	const record = (name, ok, detail = '') => {
 		results.push({ device: deviceName, name, ok, detail });
@@ -130,7 +129,9 @@ async function checkDevice(target, ctx) {
 
 	await step('layer-injected', async () => {
 		await page.goto(ctx.url, { timeout: 120_000 });
-		await page.waitForSelector('#hd-root', { timeout: 120_000 });
+		// Notices and keys are hidden at startup, so this container can have zero height.
+		await page.waitForSelector('#hd-root', { state: 'attached', timeout: 120_000 });
+		await page.waitForSelector('#hd-fab', { timeout: 120_000 });
 		await page.waitForSelector(sel.workbench, { timeout: 120_000 });
 		({ vw, apple } = await page.evaluate(() => ({ vw: innerWidth, apple: /iPhone|iPad|Macintosh/.test(navigator.userAgent) })));
 		return { ok: true, detail: `viewport width ${vw}` };
@@ -345,7 +346,10 @@ async function checkDevice(target, ctx) {
 			ok = Object.keys(parts).join() === 'editor' && parts.editor.w >= vw * 0.95 && page_ > 0;
 			detail += `; ${id}: ${describe(parts)}${page_ ? ', details page shown' : ', no details page'}`;
 		}
-		await menu('ai'); // the next check closes the AI drawer
+		// Opening details leaves the AI view; an empty list leaves it open. Close the
+		// picker first, then reopen AI only when needed for the following close check.
+		if (await page.locator('#hd-agents:not([hidden])').count()) await tap('#hd-viewbar [data-act="agents"]');
+		if (!(await shownParts()).auxiliarybar) await menu('ai');
 		await page.waitForTimeout(2500);
 		return { ok, detail };
 	}
@@ -693,28 +697,16 @@ async function checkAndroid(serial, ctx) {
 // ------------------------------------------------------------------ main
 
 const opts = parseArgs(process.argv.slice(2));
-// Fresh editor state every run: leftover unsaved buffers from an earlier run would
-// be restored and can block autosave. The linked desktop extensions are unlinked first:
-// they point into the desktop editor's own folders.
-await removeImportedExtensions(join(OUT, 'data', 'extensions'));
-// A stale run may leave a directory open in another process (e.g. an editor with the
-// workspace as its cwd), which makes rmSync throw EPERM. Clearing best-effort keeps
-// the run going: startProxy rewrites workspace/hello.js anyway.
-const clear = (p) => {
-	try {
-		rmSync(p, { recursive: true, force: true });
-	} catch (e) {
-		console.warn(`note: could not clear ${p} (${e.code}); reusing what is there`);
-	}
-};
-for (const dir of ['workspace', 'data']) clear(join(OUT, dir));
-for (const d of opts.devices) clear(join(OUT, d.replace(/\W+/g, '-')));
+// Never reuse a profile or marker files after failed cleanup (Windows may keep
+// them locked). Every run gets fresh state without deleting another run's files.
 mkdirSync(OUT, { recursive: true });
+const runDir = mkdtempSync(join(OUT, 'run-'));
 
 let proxy;
 let exitCode = 1;
 try {
-	proxy = opts.url ? { url: opts.url, workspace: null, editor: 'external' } : await startProxy(opts);
+	proxy = opts.url ? { url: opts.url, workspace: null, editor: 'external', runDir } : await startProxy({ ...opts, runDir });
+	console.log(`artifacts: ${runDir}`);
 	if (!proxy.workspace) console.log('note: --url given, edit-korean checks a workspace this script does not control');
 	const layerConfig = JSON.parse(readFileSync(join(ROOT, 'layer.config.json'), 'utf8'));
 	const selectors = JSON.parse(readFileSync(join(ROOT, 'layer/selectors.json'), 'utf8'));
@@ -749,7 +741,8 @@ try {
 	}
 
 	const failed = all.filter((r) => !r.ok);
-	const report = { date: new Date().toISOString(), editor: proxy.editor, mode: opts.mode, testedWith: selectors.testedWith, passed: all.length - failed.length, failed: failed.length, results: all };
+	const report = { date: new Date().toISOString(), editor: proxy.editor, mode: opts.mode, browser: opts.android ? 'Android Chrome' : 'Chromium device emulation (not Safari)', runDir, testedWith: selectors.testedWith, passed: all.length - failed.length, failed: failed.length, results: all };
+	writeFileSync(join(runDir, 'report.json'), JSON.stringify(report, null, 2));
 	writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
 	console.log(`\n${report.passed} passed, ${report.failed} failed → check-output/report.json`);
 	exitCode = failed.length ? 1 : 0;

@@ -30,22 +30,22 @@ export function killTree(child) {
 }
 
 /**
- * @param {{ mode?: string, editor?: string, host?: string }} opts
- * @returns {Promise<{ child, url, port, token, workspace, editor }>}
+ * @param {{ mode?: string, editor?: string, host?: string, runDir?: string }} opts
+ * @returns {Promise<{ child, url, port, token, workspace, editor, runDir }>}
  */
-export async function startProxy({ mode = 'extension', editor, host } = {}) {
-	const workspace = join(OUT, 'workspace');
+export async function startProxy({ mode = 'extension', editor, host, runDir = OUT } = {}) {
+	const workspace = join(runDir, 'workspace');
 	mkdirSync(workspace, { recursive: true });
 	writeFileSync(join(workspace, 'hello.js'), SAMPLE);
 
 	const config = JSON.parse(readFileSync(join(ROOT, 'layer.config.json'), 'utf8'));
 	config.companion = { ...config.companion, mode };
-	const configPath = join(OUT, 'layer.config.json');
+	const configPath = join(runDir, 'layer.config.json');
 	writeFileSync(configPath, JSON.stringify(config, null, 2));
 
 	const port = await freePort();
 	const token = randomBytes(12).toString('hex');
-	const args = [join(ROOT, 'proxy/server.mjs'), '--port', String(port), '--token', token, '--folder', workspace, '--data-dir', join(OUT, 'data'), '--config', configPath, '--no-remote'];
+	const args = [join(ROOT, 'proxy/server.mjs'), '--port', String(port), '--token', token, '--folder', workspace, '--data-dir', join(runDir, 'data'), '--config', configPath, '--no-remote'];
 	if (editor) args.push('--editor', editor);
 	if (host) args.push('--host', host);
 	else args.push('--local'); // checks use http://localhost (+ adb reverse on Android)
@@ -71,6 +71,7 @@ export async function startProxy({ mode = 'extension', editor, host } = {}) {
 		token,
 		url: `http://localhost:${port}/?tkn=${token}`,
 		workspace,
+		runDir,
 		editor: /editor: (.*)/.exec(log)?.[1] ?? 'unknown',
 	};
 }

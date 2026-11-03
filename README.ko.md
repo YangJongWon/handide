@@ -245,18 +245,18 @@ handide는 작업 영역 신뢰를 꺼 두므로, 설정에 `"workspaceTrust": t
 ```sh
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
-npm run check                  # Pixel 7 + iPhone 14 에뮬레이션, 기기당 23개 검사
+npm run check                  # Chromium에서 Pixel 7 + iPhone 14 기기 에뮬레이션
 npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실제 크롬
 ```
 
-검사는 `check-output/` 아래의 별도 데이터 폴더와 샘플 워크스페이스를 쓰고, 단계마다 스크린샷을 남깁니다. 위 스크린샷은 `node .claude/skills/mobilize-editor/scripts/screenshots.mjs`로 다시 찍습니다.
+검사는 실행마다 `check-output/run-*/` 아래의 새 데이터 폴더와 샘플 워크스페이스를 쓰고, 단계마다 스크린샷을 남깁니다. 최신 요약은 `check-output/report.json`에, 실행별 보고서는 각 실행 폴더에 남깁니다. 위 스크린샷은 `node .claude/skills/mobilize-editor/scripts/screenshots.mjs`로 다시 찍습니다.
 
 저장소에는 Claude Code 스킬(`.claude/skills/mobilize-editor`)이 들어 있습니다. Claude Code에서 저장소를 열고 handide 설치, VS Code 업데이트 후 재검증·수리, 레이아웃 변경을 요청하면 됩니다.
 
 <details>
 <summary>검증 상태와 알려진 제한</summary>
 
-마지막 검증: Windows의 VS Code 1.138.0(웹 서버 1.139+). 에뮬레이션 Pixel 7 / iPhone 14에서 46/46(동반 확장). builtin 모드는 iPhone 14에서 레이아웃 검사가 간헐적으로 실패합니다. 실제 iPhone으로 LAN, Tailscale Funnel, LTE 접속 확인.
+레이어에 기록된 테스트 대상은 Windows의 VS Code CLI 1.138.0입니다. 최신 로컬 검사 결과와 브라우저는 `check-output/report.json`에서 확인하세요. 두 기기 설정 모두 Chromium으로 실행하므로 iPhone 에뮬레이션 통과가 Safari/WebKit이나 실제 기기 검증을 뜻하지는 않습니다. 실제 기기와 외부 네트워크 접속은 별도 검사가 필요합니다. 이전 builtin 모드 검사에서는 iPhone 레이아웃의 간헐적 실패가 기록되어 있습니다.
 
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.
 - `serve-web`이 데스크톱보다 새 VS Code 웹 서버를 받을 수 있어서, 폰 쪽 VS Code 버전이 더 높을 수 있습니다.
