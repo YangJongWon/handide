@@ -149,7 +149,9 @@ const defaultDataDir = () => (process.env.HANDIDE_HOME || existsSync(HOME_DIR) |
 const USAGE = `handide — your VS Code on your phone
 
 Usage:  handide [folder] [options]      (folder defaults to the current directory)
-        handide remote [--private]      one-time setup to use it away from home (Tailscale)
+        handide remote [--public]       one-time setup to use it away from home (Tailscale):
+                                        own devices only, or --public for a link that
+                                        works from the whole internet
         handide devices add <name> <link>
                                         add another PC running handide (its printed link);
                                         the phone then switches PCs in the menu
@@ -174,7 +176,10 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
   --token <secret>    use this access token (default: kept in the handide home, or $HANDIDE_TOKEN)
   --editor <path>     editor CLI with serve-web (default: auto-detect VS Code)
   --private           away-from-home link only for devices signed in to your tailnet
-                      (default: public Tailscale Funnel link, guarded by the access token)
+                      (Tailscale app on the phone, same account). The default.
+  --public            away-from-home link that works from the whole internet (Tailscale
+                      Funnel), nothing to install on the phone; the access token in the
+                      link is its only lock. "handide remote --public" makes it the default.
   --cloudflare        away-from-home link without any account (Cloudflare Quick Tunnel;
                       a new random address on every run)
   --no-remote         no away-from-home link, LAN only
@@ -188,9 +193,9 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
 Phones need a secure context (https, or localhost): VS Code refuses to connect
 over plain http://<LAN-IP>. The default LAN mode takes care of that. Other ways:
   Android over USB:  handide --local, then adb reverse tcp:9000 tcp:9000 and open http://localhost:9000
-  Anywhere:          run "handide remote" once (Tailscale on this PC); handide then publishes
-                     a fixed https://<machine>.<tailnet>.ts.net by itself, nothing to install
-                     on the phone. No account at all: handide --cloudflare.
+  Anywhere:          run "handide remote" once (Tailscale on this PC and the phone); handide
+                     then publishes a fixed https://<machine>.<tailnet>.ts.net by itself.
+                     Nothing on the phone: "handide remote --public". No account: --cloudflare.
 `;
 
 function parseArgs(argv) {
@@ -208,7 +213,7 @@ function parseArgs(argv) {
 		config: undefined,
 		cert: undefined,
 		key: undefined,
-		remote: 'tailscale', // 'tailscale' | 'private' | 'cloudflare' | 'off'
+		remote: undefined, // 'private' | 'public' | 'cloudflare' | 'off'; unset: the saved choice (resolveHome)
 		open: false,
 	};
 	for (let i = 0; i < argv.length; i++) {
@@ -229,6 +234,7 @@ function parseArgs(argv) {
 		else if (a === '--cert') opts.cert = resolve(next());
 		else if (a === '--key') opts.key = resolve(next());
 		else if (a === '--private') opts.remote = 'private';
+		else if (a === '--public') opts.remote = 'public';
 		else if (a === '--cloudflare') opts.remote = 'cloudflare';
 		else if (a === '--no-remote' || a === '--no-tailscale') opts.remote = 'off';
 		else if (a === '-h' || a === '--help') {
@@ -271,18 +277,50 @@ function serviceRun(args, log) {
 	return { run: [process.execPath, fileURLToPath(import.meta.url), opts.folder, ...kept], folder: opts.folder, dataDir };
 }
 
-/** Fills in the per-user defaults: handide home, persistent token, personal layout config. */
-async function resolveHome(opts) {
+// Who the link from anywhere is for, chosen by "handide remote [--public]": 'private'
+// (own tailnet devices) or 'public' (Tailscale Funnel). Start options override it.
+const REMOTE_CHOICES = new Set(['private', 'public']);
+const remoteChoiceFile = (dataDir) => join(dataDir, 'remote');
+
+async function readRemoteChoice(dataDir) {
+	const v = (await readFile(remoteChoiceFile(dataDir), 'utf8').catch(() => '')).trim();
+	return REMOTE_CHOICES.has(v) ? v : null;
+}
+
+async function saveRemoteChoice(dataDir, choice) {
+	await mkdir(dataDir, { recursive: true });
+	await writeFile(remoteChoiceFile(dataDir), `${choice}\n`);
+}
+
+/** Fills in the per-user defaults: handide home, persistent token, personal layout config, remote choice. */
+export async function resolveHome(opts, log = () => {}) {
 	if (!opts.dataDir) opts.dataDir = defaultDataDir();
 	await mkdir(opts.dataDir, { recursive: true });
 
 	// The token is kept so links saved on the phone keep working across restarts.
 	const tokenFile = join(opts.dataDir, 'token');
+	const installedBefore = existsSync(tokenFile);
 	if (!opts.token) opts.token = process.env.HANDIDE_TOKEN;
 	if (!opts.token && !opts.newToken) opts.token = (await readFile(tokenFile, 'utf8').catch(() => '')).trim() || undefined;
 	if (!opts.token) {
 		opts.token = randomBytes(18).toString('base64url');
 		await writeFile(tokenFile, `${opts.token}\n`, { mode: 0o600 });
+	}
+
+	if (!opts.remote) {
+		const saved = await readRemoteChoice(opts.dataDir);
+		if (saved) opts.remote = saved;
+		else if (installedBefore) {
+			// Before 0.5 the link from anywhere was public by default; phones of existing
+			// installs have no Tailscale app, so they keep that until "handide remote" changes it.
+			opts.remote = 'public';
+			await saveRemoteChoice(opts.dataDir, 'public');
+			log('The link from anywhere stays public for this existing install (anyone with the link can use this PC).');
+			log('Own devices only from now on: "handide remote" (then the Tailscale app on the phone).');
+		} else {
+			opts.remote = 'private';
+			await saveRemoteChoice(opts.dataDir, 'private'); // so the next run is not taken for an existing install
+		}
 	}
 
 	// Personal layout: created from handide's defaults on first run, then it is the user's.
@@ -663,24 +701,30 @@ ${qr}
 		: '  The link contains the access token: share it only with your own devices.');
 }
 
-async function remoteCommand(log, tailnetOnly) {
-	log('Setting up access from anywhere (Tailscale). Safe to rerun; finished steps are skipped.');
-	if (!(await setupRemote({ log, private: tailnetOnly }))) process.exit(1);
-	if (!tailnetOnly) {
-		log('Done. Run "handide" as usual: its QR code works at home and outside, nothing to install on the phone.');
-		log('(Only your own devices instead: "handide remote --private", then start with "handide --private".)');
+async function remoteCommand(log, args) {
+	const pub = args.includes('--public');
+	const at = args.indexOf('--data-dir');
+	const dataDir = at >= 0 ? resolve(args[at + 1]) : defaultDataDir();
+	log(`Setting up access from anywhere (Tailscale${pub ? ', public link' : ', own devices only'}). Safe to rerun; finished steps are skipped.`);
+	if (!(await setupRemote({ log, private: !pub }))) process.exit(1);
+	await saveRemoteChoice(dataDir, pub ? 'public' : 'private');
+	if (pub) {
+		log('Done. Restart handide: its QR code works at home and outside, nothing to install on the phone.');
+		log('The link works from the whole internet and the access token in it is its only lock: keep it to yourself.');
+		log('(Own devices only instead: "handide remote".)');
 		return;
 	}
 	const qr = await QRCode.toString(PHONE_APP_URL, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
 	process.stdout.write(`\n${qr}\n`);
 	log('Last step, on the phone: scan this QR code, install the Tailscale app,');
 	log('sign in with the same account and turn it on.');
-	log('Then run "handide --private": its QR code works at home and outside.');
+	log('Then restart handide: its QR code works at home and outside, for your own devices only.');
+	log('(Nothing to install on the phone instead, but open to the whole internet: "handide remote --public".)');
 }
 
 async function main() {
 	const log = (msg) => process.stdout.write(`[handide] ${String(msg).trimEnd()}\n`);
-	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.includes('--private'));
+	if (process.argv[2] === 'remote') return remoteCommand(log, process.argv.slice(3));
 	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
 	if (process.argv[2] === 'service') return serviceCommand(process.argv.slice(3, 4), { ...serviceRun(process.argv.slice(4), log), log });
 	if (process.argv[2] === 'switch-agent') return switchAgent(process.argv.slice(3));
@@ -692,7 +736,7 @@ async function main() {
 		return sub(args, { dataDir, log, serverPath: fileURLToPath(import.meta.url) });
 	}
 	const opts = parseArgs(process.argv.slice(2));
-	await resolveHome(opts);
+	await resolveHome(opts, log);
 	CONFIG_PATH = opts.config;
 	log(`folder: ${opts.folder}`);
 	log(`handide home: ${opts.dataDir}${opts.dataDir === LEGACY_DATA_DIR ? ' (existing data from before the global command; move it to ~/.handide to switch)' : ''}`);
@@ -802,7 +846,7 @@ async function main() {
 		// Tunnels can wait for a one-time approval in the browser, so the LAN QR code comes first.
 		const r = opts.remote === 'cloudflare'
 			? { ...(await startCloudflare({ port: opts.port, tls, dataDir: opts.dataDir, log })), public: true, changes: true }
-			: await startTailscale({ port: opts.port, tls, log, private: opts.remote === 'private' });
+			: await startTailscale({ port: opts.port, tls, log, private: opts.remote !== 'public' });
 		remoteStatus = r.url ? { code: 'ok' } : { code: r.code ?? 'failed', reason: r.reason, hint: r.hint };
 		CONNECT.remote = remoteStatus;
 		if (r.url) {

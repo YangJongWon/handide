@@ -33,7 +33,7 @@
 - **あなたの VS Code そのもの。** PC にインストール済みの VS Code（`code serve-web`）をそのまま配信し、その上にタッチ用レイヤーを重ねるだけです。デスクトップの VS Code や Cursor に入れた拡張機能（Claude Code、Codex など）はコピーせずリンクして使います。
 - **スマホに詰め込むのではなく、スマホ向けに設計。** 画面にはコードだけ。ファイル・ターミナル・AI はドロワーで開きます。補助キー（Esc・Tab・Ctrl・矢印）はキーボード表示中だけ現れ、日本語などの IME はネイティブ入力シートで問題なく入力できます。
 - **ファイルは PC から出ません。** どこにもアップロードしません。スマホは画面にすぎません。
-- **外出先でも。** コマンド 1 回で、モバイル回線でも使える固定の HTTPS アドレスができます。スマホには何もインストールしません。
+- **外出先でも。** コマンド 1 回で、モバイル回線でも使える固定の HTTPS アドレスができます。既定では自分の端末だけが接続でき、選べばスマホに何も入れない公開リンクにもできます。
 
 ## クイックスタート
 
@@ -76,14 +76,18 @@ HTTPS が必要な理由: VS Code はブラウザの*セキュアコンテキス
 handide remote   # 最初の 1 回だけ
 ```
 
-PC に [Tailscale](https://tailscale.com) をインストールし、ブラウザを開いてサインイン（Google・Microsoft・GitHub・Apple アカウント）まで案内します。以後 `handide` は、自宅でもモバイル回線でも使える**固定**アドレス `https://<PC名>.<tailnet>.ts.net` を表示します。正規の証明書なので警告は出ず、**スマホには何もインストール不要**です。一度ブックマークすれば完了です。
+PC に [Tailscale](https://tailscale.com) をインストールし、ブラウザを開いてサインイン（Google・Microsoft・GitHub・Apple アカウント）まで案内します。以後 `handide` は、自宅でもモバイル回線でも使える**固定**アドレス `https://<PC名>.<tailnet>.ts.net` を表示します。正規の証明書なので警告は出ず、接続できるのは**自分の端末だけ**です。スマホの Tailscale アプリに同じアカウントでサインインしてください。一度ブックマークすれば完了です。
+
+スマホに何もインストールしたくない場合は `handide remote --public`。その代わりリンクはインターネット全体から開け、リンク内のトークンが唯一の鍵になります。
 
 | モード | コマンド | スマホに必要なもの | アドレス | アクセスできる人 |
 |---|---|---|---|---|
-| **公開リンク**（既定） | `handide` | なし | 固定 | リンク（トークン）を持つ人 |
-| 自分の端末のみ | `handide --private` | Tailscale アプリ（同じアカウント） | 固定 | 自分の tailnet の端末のみ |
+| **自分の端末のみ**（既定） | `handide` | Tailscale アプリ（同じアカウント） | 固定 | 自分の tailnet の端末のみ |
+| 公開リンク | `handide --public` | なし | 固定 | リンク（トークン）を持つ人 |
 | アカウント不要 | `handide --cloudflare` | なし | 実行ごとに変わる | リンク（トークン）を持つ人 |
 | LAN のみ | `handide --no-remote` | 同じ Wi-Fi | LAN IP | 自分のネットワーク |
+
+`handide remote` または `handide remote --public` がその選択を `~/.handide/remote` に保存し、上のオプションはその実行だけ上書きします。0.5 より前のインストールは、`handide remote` を実行するまで従来の公開リンクのままです。
 
 > [!IMPORTANT]
 > リンクに含まれるアクセストークン（`~/.handide/token`）は、ターミナルを含めあなたの VS Code を開く鍵です。パスワードと同じように扱ってください。`handide --new-token` で再発行すると、古いリンクは使えなくなります。
@@ -172,13 +176,14 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 ```
 handide [folder] [options]       folder の既定値はカレントディレクトリ
-handide remote [--private]       外出先アクセスの初回設定
+handide remote [--public]        外出先アクセスの初回設定（--public: スマホにアプリ不要）
 handide devices add <name> <link>  ほかの PC を登録（その PC が表示したリンク）、メニューで切り替え
 handide devices [remove <name>]    一覧、または削除
 handide service install [folder] [options]  ログイン時に起動、終了したら起動し直す
 handide service [status|uninstall]
 
-  --private          外出先リンクを自分の tailnet の端末に限定
+  --private          外出先リンクを自分の tailnet の端末に限定（既定）
+  --public           外出先リンクをインターネット全体に公開（トークンが鍵）
   --cloudflare       アカウントなしの外出先リンク（実行ごとにアドレスが変わる）
   --no-remote        LAN のみ
   --local            この PC のみ（http://localhost、LAN・証明書なし）
@@ -235,7 +240,7 @@ handide はワークスペースの信頼を無効にしているため、設定
 <details>
 <summary><b>公開リンクは安全ですか？</b></summary>
 
-リンクのトークンがなければ VS Code は 403 を返し、接続ページは PC 自身にしか表示されません。トークンは長くランダムなので推測できませんが、リンクを*持っている*人は PC のターミナルまで使えます。リンクは共有しないか、`--private` で自分の Tailscale 端末だけに限定してください。
+リンクのトークンがなければ VS Code は 403 を返し、接続ページは PC 自身にしか表示されません。トークンは長くランダムなので推測できませんが、リンクを*持っている*人は PC のターミナルまで使えます。リンクは共有しないでください。既定（`--public` なし）では自分の Tailscale 端末しか接続できないため、リンクが漏れただけでは入れません。
 
 </details>
 

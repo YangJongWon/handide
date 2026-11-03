@@ -33,7 +33,7 @@
 - **내 VS Code 그대로.** PC에 설치된 VS Code(`code serve-web`)를 그대로 띄우고 그 위에 터치용 레이어만 얹습니다. 데스크톱 VS Code와 Cursor에 설치한 확장(Claude Code, Codex 등)을 복사하지 않고 연결해 그대로 씁니다.
 - **폰에 맞춰 다시 설계한 화면.** 화면은 코드 하나. 파일·터미널·AI는 드로어로 열립니다. 보조키(Esc·Tab·Ctrl·방향키)는 키보드가 올라왔을 때만 뜨고, 한글은 네이티브 입력 시트로 문제없이 입력됩니다.
 - **파일은 PC에만.** 어디에도 업로드하지 않습니다. 폰은 화면일 뿐입니다.
-- **집 밖에서도.** 명령 한 번이면 LTE에서도 되는 고정 HTTPS 주소가 생깁니다. 폰에는 아무것도 설치하지 않습니다.
+- **집 밖에서도.** 명령 한 번이면 LTE에서도 되는 고정 HTTPS 주소가 생깁니다. 기본은 내 기기만 접속되고, 원하면 폰에 아무것도 안 까는 공개 링크도 됩니다.
 
 ## 빠른 시작
 
@@ -76,14 +76,18 @@ HTTPS가 필요한 이유: VS Code는 브라우저의 *보안 컨텍스트*(HTTP
 handide remote   # 처음 한 번
 ```
 
-PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어 로그인(Google·Microsoft·GitHub·Apple 계정)까지 안내합니다. 그다음부터 `handide`는 집에서도 LTE에서도 그대로 되는 **고정 주소** `https://<PC이름>.<tailnet>.ts.net`을 보여 줍니다. 정식 인증서라 경고가 없고, **폰에는 설치할 것이 없습니다.** 한 번 북마크해 두면 끝입니다.
+PC에 [Tailscale](https://tailscale.com)을 설치하고, 브라우저를 열어 로그인(Google·Microsoft·GitHub·Apple 계정)까지 안내합니다. 그다음부터 `handide`는 집에서도 LTE에서도 그대로 되는 **고정 주소** `https://<PC이름>.<tailnet>.ts.net`을 보여 줍니다. 정식 인증서라 경고가 없고, **내 기기만** 접속됩니다. 폰의 Tailscale 앱에 같은 계정으로 로그인해 두세요. 한 번 북마크해 두면 끝입니다.
+
+폰에 아무것도 설치하지 않으려면 `handide remote --public`. 대신 링크가 인터넷 전체에서 열리고, 링크 속 토큰이 유일한 자물쇠입니다.
 
 | 방식 | 명령 | 폰에 필요한 것 | 주소 | 접속 가능한 사람 |
 |---|---|---|---|---|
-| **공개 링크** (기본) | `handide` | 없음 | 고정 | 링크(토큰)를 가진 사람 |
-| 내 기기만 | `handide --private` | Tailscale 앱 (같은 계정) | 고정 | 내 tailnet 기기만 |
+| **내 기기만** (기본) | `handide` | Tailscale 앱 (같은 계정) | 고정 | 내 tailnet 기기만 |
+| 공개 링크 | `handide --public` | 없음 | 고정 | 링크(토큰)를 가진 사람 |
 | 계정 없이 | `handide --cloudflare` | 없음 | 실행마다 바뀜 | 링크(토큰)를 가진 사람 |
 | 같은 Wi-Fi만 | `handide --no-remote` | 같은 Wi-Fi | LAN IP | 내 네트워크 |
+
+`handide remote`나 `handide remote --public`이 그 선택을 `~/.handide/remote`에 저장하고, 위 옵션은 그 실행에만 덮어씁니다. 0.5 이전 설치본은 `handide remote`를 실행하기 전까지 쓰던 공개 링크를 그대로 씁니다.
 
 > [!IMPORTANT]
 > 링크 안의 접속 토큰(`~/.handide/token`)은 터미널을 포함해 내 VS Code를 여는 열쇠입니다. 비밀번호처럼 다루세요. `handide --new-token`으로 바꾸면 예전 링크는 더 이상 동작하지 않습니다.
@@ -173,13 +177,14 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 ```
 handide [폴더] [옵션]            폴더 기본값은 현재 디렉터리
-handide remote [--private]       집 밖 접속 1회 설정
+handide remote [--public]        집 밖 접속 1회 설정 (--public: 폰에 앱 없이)
 handide devices add <이름> <링크>  다른 PC 등록 (그 PC가 출력한 링크), 폰 메뉴에서 전환
 handide devices [remove <이름>]    목록 보기, 또는 삭제
 handide service install [폴더] [옵션]  로그인 시 시작, 종료되면 다시 시작
 handide service [status|uninstall]
 
-  --private          집 밖 링크를 내 tailnet 기기로만 제한
+  --private          집 밖 링크를 내 tailnet 기기로만 제한 (기본)
+  --public           집 밖 링크를 인터넷 전체에 공개 (토큰이 자물쇠)
   --cloudflare       계정 없이 집 밖 링크 (실행마다 주소가 바뀜)
   --no-remote        같은 Wi-Fi에서만
   --local            이 PC에서만 (http://localhost, 인증서 없음)
@@ -236,7 +241,7 @@ handide는 작업 영역 신뢰를 꺼 두므로, 설정에 `"workspaceTrust": t
 <details>
 <summary><b>공개 링크, 안전한가요?</b></summary>
 
-링크 속 토큰이 없으면 VS Code는 403으로 거부하고, 연결 페이지는 PC 자신에게만 열립니다. 토큰은 길고 무작위라 추측할 수 없지만, 링크를 *가진* 사람은 PC 터미널까지 쓸 수 있습니다. 링크를 공유하지 말거나, `--private`로 내 Tailscale 기기만 접속하게 하세요.
+링크 속 토큰이 없으면 VS Code는 403으로 거부하고, 연결 페이지는 PC 자신에게만 열립니다. 토큰은 길고 무작위라 추측할 수 없지만, 링크를 *가진* 사람은 PC 터미널까지 쓸 수 있습니다. 링크를 공유하지 마세요. 기본값(`--public` 없음)은 내 Tailscale 기기만 접속되므로 링크가 새는 것만으로는 들어올 수 없습니다.
 
 </details>
 

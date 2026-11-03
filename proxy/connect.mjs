@@ -89,7 +89,7 @@ export async function renderConnectPage(info, { selfSigned } = {}) {
 				${selfSigned && targets.some((t) => !t.remote) ? `<li><b>${remote ? 'LAN 주소로 처음 접속할 때' : '처음 한 번'} 인증서 경고</b>가 뜹니다. 이 PC가 직접 만든 인증서라서입니다.<br>Android 크롬: <i>고급</i> → <i>계속</i> · iPhone Safari: <i>세부사항 보기</i> → <i>이 웹사이트 방문</i></li>` : ''}
 				<li>VS Code가 폴더를 <b>신뢰</b>할지 물으면 신뢰를 누르세요. 그래야 모바일 탭과 에이전트 확장이 동작합니다.</li>
 				${!remote
-					? '<li><b>집 밖에서도 쓰려면</b> PC 터미널에서 <code>handide remote</code>를 한 번 실행하세요. 설치·로그인을 안내하고, 다음 실행부터 어디서나 되는 QR이 나옵니다. 계정 없이 바로 쓰려면 <code>handide --cloudflare</code>(실행마다 주소가 바뀜).</li>'
+					? '<li><b>집 밖에서도 쓰려면</b> PC 터미널에서 <code>handide remote</code>를 한 번 실행하세요. 설치·로그인을 안내하고, 다음 실행부터 어디서나 되는 QR이 나옵니다(폰에도 Tailscale 앱, 내 기기만 접속). 폰에 아무것도 안 깔려면 <code>handide remote --public</code>(인터넷 공개, 링크 속 토큰이 유일한 자물쇠). 계정 없이 바로 쓰려면 <code>handide --cloudflare</code>(실행마다 주소가 바뀜).</li>'
 					: targets[0].public
 						? '<li>이 주소는 인터넷에 공개되어 있고 링크 안의 토큰이 열쇠입니다. 링크가 새면 <code>handide --new-token</code>으로 바꾸세요.</li>'
 						: '<li>폰에 Tailscale 앱이 없다면 <a href="https://tailscale.com/download">tailscale.com/download</a>에서 설치하고 이 PC와 같은 계정으로 로그인해 켜 두세요.</li>'}

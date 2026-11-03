@@ -33,7 +33,7 @@
 - **就是你的 VS Code。** handide 直接提供你电脑上安装的 VS Code（`code serve-web`），只在上面加一层触控界面。你在桌面版 VS Code 和 Cursor 里装的扩展（Claude Code、Codex 等）以链接方式接入，不做复制。
 - **为手机设计，而不是硬塞进手机。** 屏幕上只有代码。文件、终端和 AI 以抽屉形式滑出；辅助键（Esc、Tab、Ctrl、方向键）只在键盘弹出时出现；中文等输入法通过原生输入框正常输入。
 - **文件只留在你的电脑上。** 不上传到任何地方，手机只是一块屏幕。
-- **出门在外也能用。** 一条命令即可获得在移动网络下也能访问的固定 HTTPS 地址，手机上什么都不用装。
+- **出门在外也能用。** 一条命令即可获得在移动网络下也能访问的固定 HTTPS 地址。默认只有你自己的设备能访问；也可以选择手机上什么都不用装的公开链接。
 
 ## 快速开始
 
@@ -72,14 +72,18 @@ handide
 handide remote   # 只需一次
 ```
 
-它会在电脑上安装 [Tailscale](https://tailscale.com)，并打开浏览器引导你登录（Google、Microsoft、GitHub 或 Apple 账号）。之后 `handide` 会显示一个**固定**的 `https://<电脑名>.<tailnet>.ts.net` 链接，在家和移动网络下都能用，证书有效，**手机上无需安装任何东西**。收藏一次即可。
+它会在电脑上安装 [Tailscale](https://tailscale.com)，并打开浏览器引导你登录（Google、Microsoft、GitHub 或 Apple 账号）。之后 `handide` 会显示一个**固定**的 `https://<电脑名>.<tailnet>.ts.net` 链接，在家和移动网络下都能用，证书有效，**只有你自己的设备**能访问：在手机的 Tailscale 应用中用同一账号登录即可。收藏一次即可。
+
+不想在手机上安装任何东西：`handide remote --public`。这样链接对整个互联网开放，链接中的令牌是唯一的锁。
 
 | 模式 | 命令 | 手机需要 | 地址 | 谁能访问 |
 |---|---|---|---|---|
-| **公开链接**（默认） | `handide` | 无 | 固定 | 持有链接和令牌的人 |
-| 仅自己的设备 | `handide --private` | Tailscale 应用，同一账号 | 固定 | 仅你 tailnet 中的设备 |
+| **仅自己的设备**（默认） | `handide` | Tailscale 应用，同一账号 | 固定 | 仅你 tailnet 中的设备 |
+| 公开链接 | `handide --public` | 无 | 固定 | 持有链接和令牌的人 |
 | 无需账号 | `handide --cloudflare` | 无 | 每次运行都会变 | 持有链接和令牌的人 |
 | 仅局域网 | `handide --no-remote` | 同一 Wi-Fi | 局域网 IP | 你的网络 |
+
+`handide remote` 或 `handide remote --public` 会把选择保存在 `~/.handide/remote`，上面的选项只覆盖当次运行。0.5 之前的安装在运行 `handide remote` 之前保持原来的公开链接。
 
 > [!IMPORTANT]
 > 链接中包含访问令牌（保存在 `~/.handide/token`），它能打开你的 VS Code，包括终端。请像密码一样保管。`handide --new-token` 会更换令牌，旧链接随即失效。
@@ -168,13 +172,14 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 ```
 handide [folder] [options]       folder 默认为当前目录
-handide remote [--private]       一次性设置外网访问
+handide remote [--public]        一次性设置外网访问（--public：手机无需应用）
 handide devices add <name> <link>  登记另一台电脑（它打印的链接），在手机菜单中切换
 handide devices [remove <name>]    列出，或删除
 handide service install [folder] [options]  登录时启动，退出后重新启动
 handide service [status|uninstall]
 
-  --private          外网链接仅限你 tailnet 中的设备
+  --private          外网链接仅限你 tailnet 中的设备（默认）
+  --public           外网链接对整个互联网开放（令牌是锁）
   --cloudflare       无需账号的外网链接（每次运行地址都会变）
   --no-remote        仅局域网
   --local            仅本机（http://localhost），无局域网、无证书
@@ -231,7 +236,7 @@ handide 默认关闭工作区信任，只有在配置中设置 `"workspaceTrust"
 <details>
 <summary><b>公开链接安全吗？</b></summary>
 
-链接中没有令牌时，VS Code 会返回 403，连接页面也只对电脑本机开放。令牌很长且随机，无法猜到；但*拥有*链接的人可以使用你电脑的终端。请不要外传链接，或使用 `--private` 只让你自己的 Tailscale 设备访问。
+链接中没有令牌时，VS Code 会返回 403，连接页面也只对电脑本机开放。令牌很长且随机，无法猜到；但*拥有*链接的人可以使用你电脑的终端。请不要外传链接。默认（不加 `--public`）只有你自己的 Tailscale 设备能访问，仅泄露链接无法进入。
 
 </details>
 

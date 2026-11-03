@@ -427,10 +427,27 @@ async function setupRemote() {
 		}
 	}
 	if (!found) return vscode.window.showErrorMessage('handide: handide is not installed on this PC.');
+	const mode = await vscode.window.showQuickPick(
+		[
+			{
+				label: 'Only my own devices',
+				description: 'recommended',
+				detail: 'The phone needs the Tailscale app, signed in with the same account as this PC. Nobody else can reach the link.',
+				args: [],
+			},
+			{
+				label: 'Public link',
+				detail: 'Nothing to install on the phone, but the link works from the whole internet: the key in it is its only lock.',
+				args: ['--public'],
+			},
+		],
+		{ title: 'handide: who may use the link from anywhere?', ignoreFocusOut: true },
+	);
+	if (!mode) return;
 	const terminal = vscode.window.createTerminal({
 		name: 'handide: access from anywhere',
 		shellPath: found.node,
-		shellArgs: [found.server, 'remote'],
+		shellArgs: [found.server, 'remote', ...mode.args],
 		iconPath: new vscode.ThemeIcon('globe'),
 	});
 	terminal.show();

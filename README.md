@@ -33,7 +33,7 @@ with your own VS Code, your extensions and your AI agents. Not a fork, not a clo
 - **It's your VS Code.** handide serves the VS Code installed on your PC (`code serve-web`) and adds a touch layer on top. The extensions you installed in desktop VS Code and Cursor (Claude Code, Codex, …) are linked in, not copied.
 - **Made for a phone, not squeezed onto one.** One screen: the code. Files, terminal and AI slide in as drawers; accessory keys (Esc, Tab, Ctrl, arrows) appear only while the keyboard is up; Korean and other IMEs work through a native input sheet.
 - **Your files stay on your PC.** Nothing is uploaded anywhere. The phone is just a screen.
-- **Works away from home.** One command sets up a fixed HTTPS address that works on mobile data — nothing to install on the phone.
+- **Works away from home.** One command sets up a fixed HTTPS address that works on mobile data, for your own devices only (or, if you choose, a public link with nothing to install on the phone).
 
 ## Quick start
 
@@ -76,14 +76,18 @@ Why HTTPS at all: VS Code only connects from a browser *secure context* (HTTPS o
 handide remote   # once
 ```
 
-It installs [Tailscale](https://tailscale.com) on the PC and opens the browser to sign in (Google, Microsoft, GitHub or Apple account). From then on, `handide` prints a **fixed** `https://<your-pc>.<tailnet>.ts.net` link that works at home and on mobile data, with a valid certificate and **nothing to install on the phone**. Bookmark it once.
+It installs [Tailscale](https://tailscale.com) on the PC and opens the browser to sign in (Google, Microsoft, GitHub or Apple account). From then on, `handide` prints a **fixed** `https://<your-pc>.<tailnet>.ts.net` link that works at home and on mobile data, with a valid certificate, that **only your own devices** can reach: sign in to the Tailscale app on the phone with the same account. Bookmark it once.
+
+Nothing to install on the phone instead: `handide remote --public`. The link then works from the whole internet, and the token in it is its only lock.
 
 | Mode | Command | Phone needs | Address | Who can reach it |
 |---|---|---|---|---|
-| **Public link** (default) | `handide` | nothing | fixed | anyone with the link + token |
-| Own devices only | `handide --private` | Tailscale app, same account | fixed | only your tailnet devices |
+| **Own devices only** (default) | `handide` | Tailscale app, same account | fixed | only your tailnet devices |
+| Public link | `handide --public` | nothing | fixed | anyone with the link + token |
 | No account at all | `handide --cloudflare` | nothing | new on every run | anyone with the link + token |
 | LAN only | `handide --no-remote` | same Wi-Fi | LAN IP | your network |
+
+`handide remote` or `handide remote --public` saves the choice in `~/.handide/remote`; the options above override it for one run. Installs from before 0.5 keep the public link they had until `handide remote` is run.
 
 > [!IMPORTANT]
 > The link contains an access token (kept in `~/.handide/token`) that unlocks your VS Code, including its terminal. Treat it like a password. `handide --new-token` replaces it; old links stop working.
@@ -173,13 +177,14 @@ The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Cod
 
 ```
 handide [folder] [options]       folder defaults to the current directory
-handide remote [--private]       one-time setup for access away from home
+handide remote [--public]        one-time setup for access away from home (--public: no app on the phone)
 handide devices add <name> <link>  add another PC (the link it prints); switch in the phone menu
 handide devices [remove <name>]    list them, or remove one
 handide service install [folder] [options]  start at logon and again whenever it exits
 handide service [status|uninstall]
 
-  --private          away-from-home link only for your tailnet devices
+  --private          away-from-home link only for your tailnet devices (default)
+  --public           away-from-home link open to the whole internet, guarded by the token
   --cloudflare       away-from-home link without any account (new address each run)
   --no-remote        LAN only
   --local            this PC only (http://localhost), no LAN, no certificate
@@ -236,7 +241,7 @@ Check that the phone and PC are on the same network and that the firewall allows
 <details>
 <summary><b>Is the public link safe?</b></summary>
 
-Without the token in the link, VS Code answers 403 and the connect page is only served to the PC itself. The token is long and random, so it can't be guessed, but anyone who *has* the link can use your PC's terminal. Keep it private, or use `--private` so only your own Tailscale devices can reach it.
+Without the token in the link, VS Code answers 403 and the connect page is only served to the PC itself. The token is long and random, so it can't be guessed, but anyone who *has* the link can use your PC's terminal. Keep it private. The default (no `--public`) is reachable only by your own Tailscale devices, so a leaked link alone is not enough.
 
 </details>
 
