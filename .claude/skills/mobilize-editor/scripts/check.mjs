@@ -273,7 +273,10 @@ async function checkDevice(target, ctx) {
 			}
 			return { ok: ok && hasContent, detail: describe(parts) + (hasContent ? '' : ', expected view missing') };
 		});
-		if (name === 'view:terminal-drawer' && !builtinMode && ctx.workspace) await step('terminal-paste', terminalPasteStep);
+		if (name === 'view:terminal-drawer' && !builtinMode && ctx.workspace) {
+			await step('terminal-paste', terminalPasteStep);
+			await step('terminal-input', terminalInputStep);
+		}
 		if (name === 'view:ai-drawer' && !builtinMode) {
 			await step('agents', agentsStep);
 			await step('voice', voiceStep);
@@ -294,6 +297,33 @@ async function checkDevice(target, ctx) {
 		for (let i = 0; i < 20 && !existsSync(file); i++) await page.waitForTimeout(500);
 		await page.evaluate(() => delete navigator.clipboard); // back to the real one: VS Code writes to it later
 		return { ok: existsSync(file), detail: existsSync(file) ? `${marker} written by the pasted command` : `${marker} not written` };
+	}
+
+	// The terminal's input box: a tap on the terminal puts the cursor in it, Enter adds a
+	// line, and the send button runs it, Korean included, in the shell. Checked by the file
+	// the command writes (Windows PowerShell writes UTF-16, other shells UTF-8).
+	async function terminalInputStep() {
+		const marker = `input-${slug}.txt`;
+		const file = join(ctx.workspace, marker);
+		await tap(`${sel.parts.panel} .xterm`);
+		await page.waitForTimeout(500);
+		const focused = await page.evaluate(() => document.activeElement?.id === 'hd-term-text');
+		const box = page.locator('#hd-term-text');
+		await box.fill(`echo 한글입력 > ${marker}`);
+		await box.press('Enter'); // a new line in the box, not a run
+		const multiline = (await box.inputValue()).endsWith('\n');
+		await box.fill(`echo 한글입력 > ${marker}`);
+		await tap('#hd-term-input .hd-term-send');
+		for (let i = 0; i < 20 && !existsSync(file); i++) await page.waitForTimeout(500);
+		await page.waitForTimeout(500);
+		const raw = existsSync(file) ? readFileSync(file) : null;
+		const text = raw ? (raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')) : '';
+		const korean = text.includes('한글입력');
+		const cleared = (await box.inputValue()) === '';
+		return {
+			ok: focused && multiline && korean && cleared,
+			detail: `${focused ? 'tap → input box' : 'tap did not reach the input box'}, ${raw ? (korean ? 'Korean reached the shell' : `file has "${text.trim()}"`) : `${marker} not written`}${cleared ? '' : ', box not emptied'}${multiline ? '' : ', Enter did not add a line'}`,
+		};
 	}
 
 	// VS Code's Extensions view cannot leave the primary side bar, so the AI bar's list
@@ -325,7 +355,8 @@ async function checkDevice(target, ctx) {
 	async function agentsStep() {
 		await tap('#hd-viewbar [data-act="agents"]');
 		await page.waitForSelector('#hd-agents:not([hidden]) .hd-agent', { timeout: 10_000 }).catch(() => {});
-		const names = await page.$$eval('#hd-agents .hd-agent > span', (els) => els.map((e) => e.textContent.trim()));
+		// The name, alone or on a line with its extension's settings icon.
+		const names = await page.$$eval('#hd-agents .hd-agent > span, #hd-agents .hd-agent > .hd-agent-line > span', (els) => els.map((e) => e.textContent.trim()));
 		if (!names.includes('Chat')) return { ok: false, detail: `agent list: ${names.join(', ') || 'empty'}` };
 		// An extension from the primary side bar or the panel, when the machine has one: its
 		// views are moved into the secondary side bar and shown there.

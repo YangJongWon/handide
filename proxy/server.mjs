@@ -21,6 +21,7 @@ import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
+import { canServeWebviews, isWebviewAsset, isWebviewHost, patchWebviewHost, useLocalWebviews, withToken } from './webview.mjs';
 import { createBridge } from './bridge.mjs';
 import { serviceCommand } from './service.mjs';
 import { createPortForwarder } from './ports.mjs';
@@ -428,7 +429,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) {
+function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -451,7 +452,8 @@ function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) 
 		const pathname = req.url.split('?')[0];
 		// A tiny, disk-free reachability probe for mobile network transitions.
 		if (pathname === `${LAYER_PREFIX}health`) {
-			res.writeHead(204, { 'cache-control': 'no-store' });
+			// The fallback page probes other PCs from this origin and must be able to read the status.
+			res.writeHead(204, { 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
 			return res.end();
 		}
 		// localhost:<port> links opened on the phone (dev servers on the PC).
@@ -460,8 +462,11 @@ function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) 
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
-		const headers = toUpstreamHeaders(req);
-		const wantsHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html');
+		let headers = toUpstreamHeaders(req);
+		if (isWebviewAsset(pathname)) headers = withToken(headers, token);
+		const localWebviews = canServeWebviews(req, selfSigned);
+		const webviewHost = req.method === 'GET' && isWebviewHost(pathname);
+		const wantsHtml = webviewHost || (req.method === 'GET' && (req.headers.accept || '').includes('text/html'));
 		if (wantsHtml) headers['accept-encoding'] = 'identity';
 
 		const upReq = http.request({ host: '127.0.0.1', port: upstreamPort, method: req.method, path: req.url, headers }, async (upRes) => {
@@ -483,8 +488,9 @@ function createProxy({ upstreamPort, log, tls, bridge, ports, devices, share }) 
 			html = html.replaceAll(upHost, host);
 			if (upRes.statusCode === 200 && html.includes('vscode-workbench-web-configuration')) {
 				if (!(await workspaceTrustWanted())) html = disableWorkspaceTrust(html);
-				html = injectLayer(html, await layerVersion());
+				html = injectLayer(localWebviews ? useLocalWebviews(html, `${proto}://${host}`) : html, await layerVersion());
 			}
+			if (upRes.statusCode === 200 && webviewHost) html = patchWebviewHost(html);
 			delete out['content-length'];
 			delete out['transfer-encoding'];
 			out['content-length'] = Buffer.byteLength(html);
@@ -694,7 +700,7 @@ async function main() {
 		selfSigned = cert.fingerprint;
 	}
 	const ports = createPortForwarder({ token: opts.token, log });
-	const server = createProxy({ upstreamPort, log, tls, bridge, ports, devices, share });
+	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);

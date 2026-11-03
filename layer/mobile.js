@@ -71,6 +71,10 @@ const STRINGS = {
 		'img.tapToCopy': 'Tap to copy the path',
 		'img.copied': 'Copied. Paste it into the agent input box.',
 		'sheet.terminal': 'Long-press here to paste → send to the terminal',
+		'term.placeholder': 'Type here, Enter for a new line, ➤ runs it',
+		'term.send': 'Send to the terminal',
+		'term.on': 'Terminal input box on',
+		'term.off': 'Terminal input box off (the {1} key turns it back on)',
 		'sheet.placeholder': 'Type here (any language) → insert',
 		'need.create': 'Creating a file needs the handide extension (check that the folder is trusted).',
 		'need.open': 'Opening a file needs the handide extension (check that the folder is trusted).',
@@ -122,7 +126,7 @@ const STRINGS = {
 		'clip.pasted': 'Pasted.',
 		'ext.listFailed': 'The extension list could not be loaded.',
 		'ext.manageList': 'Manage extensions ›',
-		'ext.manageHint': 'Disable · uninstall · settings · install',
+		'ext.manageHint': 'Disable · uninstall · settings · install · reload',
 		'ext.install': '＋ Install extension',
 		'ext.installHint': 'Find by name in the marketplace',
 		'ext.disabled': 'Disabled · {1}',
@@ -131,6 +135,24 @@ const STRINGS = {
 		'ext.openManageFailed': 'The extension management page could not be opened.',
 		'ext.manage': 'Manage',
 		'ext.settings': 'Settings',
+		'ext.searchPlaceholder': 'Search the marketplace',
+		'ext.searching': 'Searching…',
+		'ext.searchFailed': 'The marketplace could not be reached.',
+		'ext.noResults': 'No extensions found.',
+		'ext.installs': '{1} installs',
+		'ext.installAction': 'Install',
+		'ext.installingBadge': 'Installing…',
+		'ext.installedBadge': 'Installed',
+		'ext.installDone': '{1} installed.',
+		'ext.installFailed': '{1} could not be installed. {2}',
+		'ext.reloadAll': '↻ Reload all extensions',
+		'ext.reloadAllHint': 'When extensions failed to load (restarts the extension host)',
+		'ext.reloadingAll': 'Restarting the extension host…',
+		'ext.reloadedAll': 'Extensions reloaded.',
+		'ext.reload': 'Reload',
+		'ext.reloading': 'Reloading {1}…',
+		'ext.reloaded': '{1} reloaded.',
+		'ext.reloadFailed': '{1} could not be reloaded; try reloading all extensions. {2}',
 		'voice.unsupported': 'This browser has no speech recognition. Use the microphone button on the keyboard.',
 		'voice.micDenied': 'The microphone needs permission. Allow the microphone for this site in your browser settings.',
 		'voice.error': 'Speech recognition error: {1}',
@@ -197,6 +219,10 @@ const STRINGS = {
 		'img.tapToCopy': '탭해서 경로 복사',
 		'img.copied': '복사했습니다. 에이전트 입력창에 붙여넣으세요.',
 		'sheet.terminal': '여기에 길게 눌러 붙여넣기 → 터미널로 보내기',
+		'term.placeholder': '여기에 입력 (한글 OK), Enter는 줄바꿈, ➤로 실행',
+		'term.send': '터미널로 보내기',
+		'term.on': '터미널 입력란 켜짐',
+		'term.off': '터미널 입력란 꺼짐 ({1} 키로 다시 켜기)',
 		'sheet.placeholder': '여기에 입력 (한글 OK) → 삽입',
 		'need.create': '파일을 만들려면 handide 확장이 필요합니다 (폴더 신뢰 확인).',
 		'need.open': '파일을 열려면 handide 확장이 필요합니다 (폴더 신뢰 확인).',
@@ -248,7 +274,7 @@ const STRINGS = {
 		'clip.pasted': '붙여넣었습니다.',
 		'ext.listFailed': '확장 목록을 가져오지 못했습니다.',
 		'ext.manageList': '확장 관리 ›',
-		'ext.manageHint': '사용 안 함·제거·설정·설치',
+		'ext.manageHint': '사용 안 함·제거·설정·설치·다시 불러오기',
 		'ext.install': '＋ 확장 설치',
 		'ext.installHint': '마켓플레이스에서 이름으로 찾기',
 		'ext.disabled': '사용 안 함 · {1}',
@@ -257,6 +283,24 @@ const STRINGS = {
 		'ext.openManageFailed': '확장 관리 화면을 열지 못했습니다.',
 		'ext.manage': '관리',
 		'ext.settings': '설정',
+		'ext.searchPlaceholder': '마켓플레이스 검색',
+		'ext.searching': '검색 중…',
+		'ext.searchFailed': '마켓플레이스에 연결하지 못했습니다.',
+		'ext.noResults': '찾은 확장이 없습니다.',
+		'ext.installs': '{1}회 설치',
+		'ext.installAction': '설치',
+		'ext.installingBadge': '설치 중…',
+		'ext.installedBadge': '설치됨',
+		'ext.installDone': '{1} 설치 완료.',
+		'ext.installFailed': '{1}을(를) 설치하지 못했습니다. {2}',
+		'ext.reloadAll': '↻ 전체 확장 다시 불러오기',
+		'ext.reloadAllHint': '확장이 로드되지 않을 때 (확장 호스트 재시작)',
+		'ext.reloadingAll': '확장 호스트를 재시작하는 중…',
+		'ext.reloadedAll': '확장을 다시 불러왔습니다.',
+		'ext.reload': '다시 불러오기',
+		'ext.reloading': '{1} 다시 불러오는 중…',
+		'ext.reloaded': '{1} 다시 불러옴.',
+		'ext.reloadFailed': '{1}을(를) 다시 불러오지 못했습니다. 전체 다시 불러오기를 해 보세요. {2}',
 		'voice.unsupported': '이 브라우저는 음성 인식을 지원하지 않습니다. 키보드의 마이크 버튼을 쓰세요.',
 		'voice.micDenied': '마이크 권한이 필요합니다. 브라우저 설정에서 이 사이트의 마이크를 허용하세요.',
 		'voice.error': '음성 인식 오류: {1}',
@@ -323,6 +367,10 @@ const STRINGS = {
 		'img.tapToCopy': 'タップしてパスをコピー',
 		'img.copied': 'コピーしました。エージェントの入力欄に貼り付けてください。',
 		'sheet.terminal': 'ここを長押しで貼り付け → ターミナルへ送信',
+		'term.placeholder': 'ここに入力、Enter で改行、➤ で実行',
+		'term.send': 'ターミナルへ送信',
+		'term.on': 'ターミナル入力欄オン',
+		'term.off': 'ターミナル入力欄オフ（{1} キーで再びオン）',
 		'sheet.placeholder': 'ここに入力（日本語可）→ 挿入',
 		'need.create': 'ファイルを作成するには handide 拡張機能が必要です（フォルダが信頼されているか確認してください）。',
 		'need.open': 'ファイルを開くには handide 拡張機能が必要です（フォルダが信頼されているか確認してください）。',
@@ -383,6 +431,24 @@ const STRINGS = {
 		'ext.openManageFailed': '拡張機能の管理画面を開けませんでした。',
 		'ext.manage': '管理',
 		'ext.settings': '設定',
+		'ext.searchPlaceholder': 'マーケットプレイスを検索',
+		'ext.searching': '検索中…',
+		'ext.searchFailed': 'マーケットプレイスに接続できませんでした。',
+		'ext.noResults': '拡張機能が見つかりません。',
+		'ext.installs': '{1} インストール',
+		'ext.installAction': 'インストール',
+		'ext.installingBadge': 'インストール中…',
+		'ext.installedBadge': 'インストール済み',
+		'ext.installDone': '{1} をインストールしました。',
+		'ext.installFailed': '{1} をインストールできませんでした。{2}',
+		'ext.reloadAll': '↻ すべての拡張機能を再読み込み',
+		'ext.reloadAllHint': '拡張機能が読み込まれないとき（拡張ホストを再起動）',
+		'ext.reloadingAll': '拡張ホストを再起動しています…',
+		'ext.reloadedAll': '拡張機能を再読み込みしました。',
+		'ext.reload': '再読み込み',
+		'ext.reloading': '{1} を再読み込みしています…',
+		'ext.reloaded': '{1} を再読み込みしました。',
+		'ext.reloadFailed': '{1} を再読み込みできませんでした。すべての再読み込みを試してください。{2}',
 		'voice.unsupported': 'このブラウザは音声認識に対応していません。キーボードのマイクボタンを使ってください。',
 		'voice.micDenied': 'マイクの許可が必要です。ブラウザの設定でこのサイトのマイクを許可してください。',
 		'voice.error': '音声認識エラー: {1}',
@@ -449,6 +515,10 @@ const STRINGS = {
 		'img.tapToCopy': '点按复制路径',
 		'img.copied': '已复制。请粘贴到智能体输入框。',
 		'sheet.terminal': '长按此处粘贴 → 发送到终端',
+		'term.placeholder': '在此输入，Enter 换行，➤ 执行',
+		'term.send': '发送到终端',
+		'term.on': '终端输入框已开启',
+		'term.off': '终端输入框已关闭（按 {1} 键重新开启）',
 		'sheet.placeholder': '在此输入（支持中文）→ 插入',
 		'need.create': '创建文件需要 handide 扩展（请确认已信任该文件夹）。',
 		'need.open': '打开文件需要 handide 扩展（请确认已信任该文件夹）。',
@@ -509,6 +579,24 @@ const STRINGS = {
 		'ext.openManageFailed': '无法打开扩展管理页面。',
 		'ext.manage': '管理',
 		'ext.settings': '设置',
+		'ext.searchPlaceholder': '搜索应用市场',
+		'ext.searching': '正在搜索…',
+		'ext.searchFailed': '无法连接应用市场。',
+		'ext.noResults': '未找到扩展。',
+		'ext.installs': '{1} 次安装',
+		'ext.installAction': '安装',
+		'ext.installingBadge': '正在安装…',
+		'ext.installedBadge': '已安装',
+		'ext.installDone': '{1} 已安装。',
+		'ext.installFailed': '无法安装 {1}。{2}',
+		'ext.reloadAll': '↻ 重新加载所有扩展',
+		'ext.reloadAllHint': '扩展加载失败时（重启扩展主机）',
+		'ext.reloadingAll': '正在重启扩展主机…',
+		'ext.reloadedAll': '扩展已重新加载。',
+		'ext.reload': '重新加载',
+		'ext.reloading': '正在重新加载 {1}…',
+		'ext.reloaded': '{1} 已重新加载。',
+		'ext.reloadFailed': '无法重新加载 {1}，请尝试重新加载所有扩展。{2}',
 		'voice.unsupported': '此浏览器不支持语音识别。请使用键盘上的麦克风按钮。',
 		'voice.micDenied': '需要麦克风权限。请在浏览器设置中允许本站使用麦克风。',
 		'voice.error': '语音识别错误：{1}',
@@ -529,6 +617,14 @@ const STRINGS = {
 		'devices.unreachable': '{1} 离线。请在那台电脑上启动 handide。',
 	},
 };
+
+function storedTermInput() {
+	try {
+		return localStorage.getItem('handide.termInput') !== '0';
+	} catch {
+		return true;
+	}
+}
 
 function storedLang() {
 	try {
@@ -620,9 +716,11 @@ const state = {
 	commands: null,
 	selectors: null,
 	view: 'editor',
+	titleActions: {}, // widest each view's own title buttons were seen, per `part:view` (placeViewbar)
 	sticky: { ctrlKey: false, altKey: false, shiftKey: false },
 	keysOn: false, // accessory keys: a text input has focus and the keyboard is up
 	lastInput: null,
+	termInput: storedTermInput(), // the terminal's input box (Korean and other composed text)
 	bridge: false,
 	folder: null, // { name, path }
 	activePath: null,
@@ -872,8 +970,13 @@ function showUploaded(relative, reference) {
 
 /** Runs a VS Code command with arguments through the companion extension. */
 async function bridgeCall(command, ...args) {
+	return bridgeCallWith({}, command, ...args);
+}
+
+/** bridgeCall with options: {timeoutMs} for slow commands (the proxy's default is 20s). */
+async function bridgeCallWith({ timeoutMs }, command, ...args) {
 	try {
-		const r = await api(`${BASE}bridge/call`, { method: 'POST', body: { command, args } });
+		const r = await api(`${BASE}bridge/call`, { method: 'POST', body: { command, args, timeoutMs } });
 		if (!r.ok) throw new Error(r.error);
 		state.bridge = true;
 		return r.result;
@@ -1136,7 +1239,115 @@ function onBeforeInput(e) {
 	e.stopImmediatePropagation();
 	const mods = consumeSticky();
 	const ch = e.data;
+	if (e.target.id === 'hd-term-text') return flushTermInput(termChord(ch, mods));
 	sendKey({ key: ch.toLowerCase(), code: `Key${ch.toUpperCase()}`, keyCode: keyCodeOf(ch), ...mods, target: e.target });
+}
+
+// ---------------------------------------------------------------- terminal input box
+
+// Phones compose Korean (and Japanese, Chinese…) in a way the terminal's own hidden
+// textarea (xterm.js) loses. While the terminal drawer is open, typing goes to a plain
+// input box instead; Enter sends the finished line to the shell with VS Code's
+// "send sequence", the same path the input sheet uses. The accessory keys (Esc, Tab,
+// arrows, Ctrl chords) go to the shell directly, after whatever the box holds.
+const TERM_KEYS = { Escape: '\x1b', Tab: '\t', ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D', Home: '\x1b[H', End: '\x1b[F' };
+
+const termInputUsable = () => state.bridge && state.view === 'terminalDock';
+const termInputShown = () => termInputUsable() && state.termInput;
+const termInputFocused = () => document.activeElement?.id === 'hd-term-text';
+
+function buildTermInput() {
+	// A textarea, so the keyboard's return key starts a new line; the send button (or
+	// Ctrl/Cmd+Enter on a hardware keyboard) runs it.
+	const input = el('textarea', {
+		id: 'hd-term-text',
+		rows: '1',
+		autocomplete: 'off',
+		autocapitalize: 'off',
+		autocorrect: 'off',
+		spellcheck: 'false',
+		enterkeyhint: 'enter',
+		placeholder: t('term.placeholder'),
+		'data-i18n-ph': 'term.placeholder',
+	});
+	input.addEventListener('input', () => fitTermInput(input));
+	input.addEventListener('keydown', (e) => {
+		// keyCode 229: the Enter (or Backspace) that only finishes composing a syllable.
+		if (e.isComposing || e.keyCode === 229) return;
+		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			flushTermInput('\r');
+		} else if (e.key === 'Backspace' && !input.value) {
+			e.preventDefault();
+			sendToTerminal('\x7f'); // empty box: erase in the shell's own line
+		}
+	});
+	const send = button({ class: 'hd-term-send', 'aria-label': t('term.send'), 'data-i18n-aria': 'term.send' }, icon('send'), () => flushTermInput('\r'));
+	return el('form', { id: 'hd-term-input', hidden: true, onsubmit: (e) => e.preventDefault() }, input, send);
+}
+
+function sendToTerminal(text) {
+	return bridgeCall('workbench.action.terminal.sendSequence', { text });
+}
+
+/** Grows the box with its lines, up to five; past that it scrolls. */
+function fitTermInput(input) {
+	input.style.height = '';
+	input.style.height = `${Math.min(input.scrollHeight + 2, 128)}px`;
+}
+
+/**
+ * Sends what the box holds, then `after` (Enter, a key's sequence…), and empties the box.
+ * Lines inside it go as LF (Ctrl+J): a new line in Claude Code's prompt, the next command in a shell.
+ */
+function flushTermInput(after = '') {
+	const input = document.getElementById('hd-term-text');
+	const text = input.value.replace(/\r\n?/g, '\n') + after;
+	input.value = '';
+	fitTermInput(input);
+	if (text) sendToTerminal(text);
+}
+
+// Ctrl+C → \x03 and so on; Alt prefixes Esc, as terminals do.
+function termChord(ch, { ctrlKey, altKey }) {
+	let seq = ch;
+	if (ctrlKey && /^[a-z@[\\\]^_]$/i.test(ch)) seq = String.fromCharCode(ch.toUpperCase().charCodeAt(0) & 31);
+	return altKey ? `\x1b${seq}` : seq;
+}
+
+/** An accessory key while the box has focus; false leaves it to the usual handling. */
+function pressTermKey(def) {
+	if (def.clipboard === 'paste') {
+		navigator.clipboard
+			.readText()
+			.then((text) => {
+				if (!text) return;
+				const input = document.getElementById('hd-term-text');
+				input.setRangeText(text, ...termSelection(), 'end');
+				fitTermInput(input);
+			})
+			.catch(() => openInputSheet({ terminal: true }));
+		return true;
+	}
+	if (!def.key || !TERM_KEYS[def.key]) return false;
+	const { altKey } = consumeSticky();
+	flushTermInput(altKey ? `\x1b${TERM_KEYS[def.key]}` : TERM_KEYS[def.key]);
+	return true;
+}
+
+function termSelection() {
+	const input = document.getElementById('hd-term-text');
+	return [input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length];
+}
+
+function toggleTermInput() {
+	state.termInput = !state.termInput;
+	try {
+		localStorage.setItem('handide.termInput', state.termInput ? '1' : '0');
+	} catch {}
+	render();
+	if (state.termInput) document.getElementById('hd-term-text').focus();
+	toast(state.termInput ? t('term.on') : t('term.off', t('key.input')));
 }
 
 // ---------------------------------------------------------------- input sheet
@@ -1280,16 +1491,19 @@ async function loadDevices() {
 
 /**
  * When the PC this link belongs to is off, sw.js opens another one: it needs their links
- * kept here beforehand. Needs a trusted certificate (the ts.net address), as service
- * workers do; with the self-signed LAN one the registration just fails.
+ * kept here beforehand. It only opens a PC whose health check answers. Needs a trusted
+ * certificate (the ts.net address), as service workers do; with the self-signed LAN one
+ * the registration just fails.
  */
 function keepFallbackLinks(list) {
+	const own = list.find((d) => !d.id);
 	const pcs = list.filter((d) => d.id && d.link).map(({ name, link }) => ({ name, link }));
-	const self = list.find((d) => !d.id)?.link ?? null;
+	const self = own?.link ?? null;
+	const selfName = own?.name ?? '';
 	navigator.serviceWorker?.register(`${BASE}sw.js`, { scope: '/' }).catch(() => {});
 	globalThis.caches
 		?.open('handide-fallback')
-		.then((c) => c.put(`${BASE}fallback.json`, new Response(JSON.stringify({ pcs, self }), { headers: { 'content-type': 'application/json' } })))
+		.then((c) => c.put(`${BASE}fallback.json`, new Response(JSON.stringify({ pcs, self, selfName }), { headers: { 'content-type': 'application/json' } })))
 		.catch(() => {});
 }
 
@@ -1741,7 +1955,7 @@ function renderViewbar() {
 		def.agents && state.bridge
 			? button({ class: 'hd-viewbar-title hd-agent-btn', 'aria-label': t('aria.pickAgent'), 'data-act': 'agents' }, [el('span', { class: 'hd-agent-name' }, partLabel(def) || t(def.title)), icon('chevron-down')], toggleAgents)
 			: el('span', { class: 'hd-viewbar-title' }, t(def.title)),
-		...def.actions.map(([iconName, label, action]) =>
+		...(def.agents && state.bridge ? [button({ class: 'hd-icon-btn hd-agent-reload', 'aria-label': t('ext.reloadAll'), 'data-act': 'reloadAll' }, icon('refresh'), reloadAllExtensions)] : []),		...def.actions.map(([iconName, label, action]) =>
 			button({ class: 'hd-icon-btn', 'aria-label': t(label), 'data-act': action }, icon(iconName), () => (LAYER_ACTIONS[action] ? LAYER_ACTIONS[action]() : runAction(action))),
 		),
 	);
@@ -1795,22 +2009,55 @@ async function toggleAgents() {
 	if (!items.length) return toast(t('ext.listFailed'));
 	const current = partLabel(VIEW_BARS.ai).toLowerCase();
 	list.replaceChildren(
-		...items.map((a) =>
-			button(
-				{ class: `hd-agent${current.includes(a.title.toLowerCase()) ? ' active' : ''}`, 'data-agent': a.id, 'data-moved': a.views ? '' : null },
-				[el('span', {}, a.title), a.extension && a.extension !== a.title ? el('small', {}, a.extension) : null],
-				() => {
-					closeAgents();
-					bridgeCall('handide.view', { view: 'ai', agent: a.id });
+		...items.map((a) => {
+			// A small settings icon right after the name, for the extension the view belongs to
+			// (VS Code's own Chat has none). Only a tap on the icon itself counts: it does not
+			// reach the row, which picks the view.
+			const settings = a.extensionId
+				? button({ class: 'hd-agent-icon', 'data-settings': a.extensionId, 'aria-label': t('ext.settings') }, icon('gear'), async () => {
+						closeAgents();
+						state.view = 'editor';
+						render();
+						const result = await bridgeCall('handide.manageExtension', { id: a.extensionId, action: 'settings' });
+						if (!result?.ok) toast(t('ext.openSettingsFailed'));
+					})
+				: null;
+			for (const type of ['pointerdown', 'pointerup', 'click']) settings?.addEventListener(type, (e) => e.stopPropagation());
+			const row = el(
+				'div',
+				{
+					class: `hd-agent hd-extension-main${current.includes(a.title.toLowerCase()) ? ' active' : ''}`,
+					role: 'button',
+					'data-agent': a.id,
+					'data-moved': a.views ? '' : null,
+					onclick: () => {
+						closeAgents();
+						bridgeCall('handide.view', { view: 'ai', agent: a.id });
+					},
 				},
-			),
-		),
+				el('div', { class: 'hd-agent-line' }, el('span', {}, a.title), settings),
+				a.extension && a.extension !== a.title ? el('small', {}, a.extension) : null,
+			);
+			row.addEventListener('pointerdown', (e) => e.preventDefault()); // as button(): keep the editor's focus
+			return el(
+				'div',
+				{ class: 'hd-extension' },
+				row,
+				// Reloads the extension this view belongs to.
+				a.extensionId
+					? button({ class: 'hd-extension-action', 'data-reload': a.extensionId, 'aria-label': t('ext.reload') }, icon('refresh'), () => reloadExtension({ id: a.extensionId, title: a.extension }))
+					: null,
+			);
+		}),
 		button({ class: 'hd-agent hd-agent-manage', 'data-agent': 'manage' }, [el('span', {}, t('ext.manageList')), el('small', {}, t('ext.manageHint'))], showInstalled),
 	);
 	const bar = document.getElementById('hd-viewbar').getBoundingClientRect();
 	list.style.top = `${bar.bottom}px`;
 	list.style.left = `${bar.left}px`;
+	list.style.width = ''; // full width only for the manager and the marketplace
 	list.hidden = false;
+	state.agentsWidth = list.getBoundingClientRect().width; // the manager opened from here keeps it
+	fitAgentsList(list);
 	setTimeout(() => document.addEventListener('pointerdown', closeAgentsOutside, true));
 }
 
@@ -1819,6 +2066,8 @@ async function toggleAgents() {
 async function showInstalled() {
 	const list = document.getElementById('hd-agents');
 	const items = (await bridgeCall('handide.installedExtensions')) || [];
+	// Opened from the agent list: as wide as that list was (long text wraps).
+	if (!state.managerStandalone && state.agentsWidth) list.style.width = `${state.agentsWidth}px`;
 	const manage = async (id, action) => {
 		closeAgents();
 		state.view = 'editor';
@@ -1827,18 +2076,161 @@ async function showInstalled() {
 		if (!result?.ok) toast(t(action === 'settings' ? 'ext.openSettingsFailed' : 'ext.openManageFailed'));
 	};
 	list.replaceChildren(
-		button({ class: 'hd-agent hd-agent-manage', 'data-agent': 'back' }, el('span', {}, t('action.back')), () => {
-			closeAgents();
-			if (!state.managerStandalone) toggleAgents();
-		}),
-		button({ class: 'hd-agent', 'data-agent': 'install' }, [el('span', {}, t('ext.install')), el('small', {}, t('ext.installHint'))], () => {
-			manage('', 'install');
-		}),
-		...items.map((x) =>
-			button({ class: 'hd-agent', 'data-extension': x.id }, [el('span', {}, x.title), el('small', {}, x.enabled ? x.id : t('ext.disabled', x.id))], () => manage(x.id, 'details')),
+		// Back, with reload all at the right end of the same row.
+		el(
+			'div',
+			{ class: 'hd-extension' },
+			button({ class: 'hd-agent hd-agent-manage hd-extension-main', 'data-agent': 'back' }, el('span', {}, t('action.back')), () => {
+				closeAgents();
+				if (!state.managerStandalone) toggleAgents();
+			}),
+			button({ class: 'hd-extension-action', 'data-agent': 'reload-all', 'aria-label': t('ext.reloadAll'), title: t('ext.reloadAllHint') }, icon('refresh'), reloadAllExtensions),
 		),
+		...items.map((x) =>
+			el(
+				'div',
+				{ class: 'hd-extension' },
+				button({ class: 'hd-agent hd-extension-main', 'data-extension': x.id }, [el('span', {}, x.title), el('small', {}, x.enabled ? x.id : t('ext.disabled', x.id))], () =>
+					manage(x.id, 'details'),
+				),
+				x.enabled ? button({ class: 'hd-extension-action', 'data-reload': x.id, 'aria-label': t('ext.reload') }, icon('refresh'), () => reloadExtension(x)) : null,
+			),
+		),
+		...(items.length ? [] : [el('p', { class: 'hd-empty' }, t('ext.none'))]),
+		// Pinned to the bottom like the agent list's "Manage extensions", while the list scrolls.
+		button({ class: 'hd-agent hd-agent-manage hd-agent-footer', 'data-agent': 'install' }, [el('span', {}, t('ext.install')), el('small', {}, t('ext.installHint'))], showMarketplace),
 	);
-	if (!items.length) list.append(el('p', { class: 'hd-empty' }, t('ext.none')));
+	fitAgentsList(list);
+}
+
+// The list ends on a row's bottom edge, not partway through one: its height is cut down to
+// the rows that fit in 60% of the screen (above a pinned footer, if any), and scrolling
+// stops with a row's bottom edge there (mobile.css).
+function fitAgentsList(list) {
+	list.style.maxHeight = '';
+	list.style.scrollPaddingBottom = '';
+	if (list.scrollHeight <= list.clientHeight) return;
+	// A pinned footer keeps its room at the bottom; the rows above it end on an edge.
+	const footer = list.querySelector(':scope > .hd-agent-footer');
+	const below = footer?.offsetHeight ?? 0;
+	const limit = list.clientHeight - below;
+	let fit = 0;
+	for (const row of list.children) {
+		if (row === footer) continue;
+		const bottom = row.offsetTop + row.offsetHeight;
+		if (bottom > limit) break;
+		fit = bottom;
+	}
+	fit += below;
+	list.style.scrollPaddingBottom = `${below}px`; // scrolled rows stop with an edge on the footer
+	// The workbench sizes border boxes: the visible area is then exactly down to that row's
+	// bottom edge (its bottom padding would otherwise show a sliver of the next row).
+	const edges = list.offsetHeight - list.clientHeight; // borders
+	if (fit) list.style.maxHeight = `${fit + edges}px`;
+}
+
+// Extensions that failed to load. All of them: VS Code's "Restart Extension Host" (the
+// companion restarts too and its bridge reconnects); with no bridge, the extension host
+// itself is likely down, and reloading the page starts a new one. One of them: activated
+// again and its webviews reloaded (VS Code cannot restart a single extension).
+async function reloadAllExtensions() {
+	closeAgents();
+	toast(t('ext.reloadingAll'));
+	const s = await api(`${BASE}bridge/status`).catch(() => ({}));
+	if (!s.connected) return location.reload();
+	// The companion goes down with the host before it can answer, so this is not awaited;
+	// the next call is answered by the companion of the new host.
+	bridgeCallWith({ timeoutMs: 5000 }, 'workbench.action.restartExtensionHost');
+	await new Promise((r) => setTimeout(r, 2500));
+	state.agents = null;
+	if (!(await bridgeCallWith({ timeoutMs: 60_000 }, 'handide.state'))) return location.reload();
+	toast(t('ext.reloadedAll'));
+}
+
+async function reloadExtension(x) {
+	toast(t('ext.reloading', x.title));
+	const r = await bridgeCallWith({ timeoutMs: 60_000 }, 'handide.reloadExtension', { id: x.id });
+	if (r?.ok) {
+		state.agents = null;
+		toast(t('ext.reloaded', x.title));
+	} else toast(t('ext.reloadFailed', x.title, r?.error ?? ''));
+}
+
+// VS Code's marketplace search shows in the Extensions view (primary side bar, hidden on
+// the phone), so installing has its own list: search by name (most installed when empty),
+// tap to install. The companion queries the editor's gallery and installs through VS Code.
+async function showMarketplace() {
+	const list = document.getElementById('hd-agents');
+	list.style.left = '8px';
+	list.style.width = 'calc(100vw - 16px)';
+	const results = el('div', { class: 'hd-market-results' });
+	const input = el('input', {
+		type: 'search',
+		class: 'hd-market-search',
+		placeholder: t('ext.searchPlaceholder'),
+		enterkeyhint: 'search',
+		autocapitalize: 'off',
+		autocomplete: 'off',
+		spellcheck: 'false',
+	});
+	let seq = 0;
+	let timer;
+	const search = async () => {
+		clearTimeout(timer);
+		const mine = ++seq;
+		results.replaceChildren(el('p', { class: 'hd-empty' }, t('ext.searching')));
+		const items = await bridgeCall('handide.searchExtensions', { query: input.value });
+		if (mine !== seq) return; // a newer search is on its way
+		if (!items) return results.replaceChildren(el('p', { class: 'hd-empty' }, t('ext.searchFailed')));
+		if (!items.length) return results.replaceChildren(el('p', { class: 'hd-empty' }, t('ext.noResults')));
+		results.replaceChildren(...items.map(marketRow));
+	};
+	const form = el('form', { class: 'hd-market-form', onsubmit: (e) => (e.preventDefault(), input.blur(), search()) }, input);
+	input.addEventListener('input', () => {
+		clearTimeout(timer);
+		timer = setTimeout(search, 450);
+	});
+	list.replaceChildren(
+		button({ class: 'hd-agent hd-agent-manage', 'data-agent': 'back' }, el('span', {}, t('action.back')), showInstalled),
+		form,
+		results,
+	);
+	list.hidden = false;
+	search();
+	// Not on touch: the keyboard would cover the list before the user wants to type.
+	if (!matchMedia('(pointer: coarse)').matches) input.focus();
+}
+
+const compactCount = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
+
+function marketRow(x) {
+	const status = el('span', { class: 'hd-market-status' }, x.installed ? t('ext.installedBadge') : t('ext.installAction'));
+	const row = button(
+		{ class: `hd-agent hd-market-row${x.installed ? ' installed' : ''}`, 'data-market': x.id },
+		[
+			el('span', { class: 'hd-market-head' }, el('span', { class: 'hd-market-title' }, x.title), status),
+			el('small', {}, `${x.publisher} · ${t('ext.installs', compactCount(x.installs))}`),
+			x.description ? el('small', { class: 'hd-market-desc' }, x.description) : null,
+		],
+		async () => {
+			if (x.installed || row.classList.contains('busy')) return;
+			row.classList.add('busy');
+			status.textContent = t('ext.installingBadge');
+			const r = await bridgeCallWith({ timeoutMs: 300_000 }, 'handide.installExtension', { id: x.id });
+			row.classList.remove('busy');
+			if (r?.ok) {
+				x.installed = true;
+				row.classList.add('installed');
+				status.textContent = t('ext.installedBadge');
+				state.agents = null; // its views show up in the AI list
+				toast(t('ext.installDone', x.title));
+			} else {
+				status.textContent = t('ext.installAction');
+				toast(t('ext.installFailed', x.title, r?.error ?? ''));
+			}
+		},
+	);
+	return row;
 }
 
 async function openExtensionManager() {
@@ -1947,11 +2339,6 @@ function placeViewbar() {
 		bar.hidden = true;
 		return;
 	}
-	let width = r.width;
-	// Up to the view's first own button (the actions box itself stretches wider than its buttons).
-	const actionsSel = state.selectors.partTitleActions?.[def.part];
-	const lefts = actionsSel ? [...document.querySelectorAll(`${actionsSel} .action-item`)].map((a) => a.getBoundingClientRect()).filter((b) => b.width > 4).map((b) => b.left) : [];
-	if (lefts.length) width = Math.max(Math.min(...lefts) - r.left, r.width / 2);
 	if (def.agents) {
 		const name = bar.querySelector('.hd-agent-name');
 		const label = partLabel(def);
@@ -1959,6 +2346,29 @@ function placeViewbar() {
 	}
 	const moved = bar.hidden || bar.style.top !== `${r.top}px`;
 	bar.hidden = false;
+	let width = r.width;
+	// The view's own buttons (an extension's gear, new chat…) sit right after the bar, all of
+	// them kept: their room comes first, and only the bar's name pill shrinks when short. The
+	// title label under the bar takes the bar's width (mobile.css), which starts them after it.
+	const actionsSel = state.selectors.partTitleActions?.[def.part];
+	if (actionsSel) {
+		// Shown buttons only: a lone divider (or none at all) leaves the bar the whole strip.
+		const items = [...document.querySelectorAll(`${actionsSel} .action-item`)]
+			.filter((a) => !a.querySelector('.separator'))
+			.map((a) => a.getBoundingClientRect())
+			.filter((b) => b.width > 0);
+		const measured = items.length ? Math.max(...items.map((b) => b.right)) - Math.min(...items.map((b) => b.left)) : 0;
+		// Short of room, VS Code folds those buttons into its "…" menu, which measures narrower;
+		// the widest seen per view is kept so the room stays theirs and they unfold again.
+		const key = `${def.part}:${partLabel(def)}`;
+		const actions = (state.titleActions[key] = Math.max(state.titleActions[key] ?? 0, measured));
+		width = Math.max(0, Math.floor(r.width - actions));
+		// Less the strip's own left padding, which comes before the label.
+		const pad = parseFloat(getComputedStyle(title).paddingLeft) || 0;
+		const labelWidth = `${Math.max(0, width - pad)}px`;
+		// Only when it changes: the page's mutation observer calls this again for every write.
+		if (title.style.getPropertyValue('--hd-viewbar-width') !== labelWidth) title.style.setProperty('--hd-viewbar-width', labelWidth);
+	}
 	bar.style.top = `${r.top}px`;
 	bar.style.left = `${r.left}px`;
 	bar.style.width = `${width}px`;
@@ -2012,7 +2422,7 @@ function relayout() {
 
 function isTyping() {
 	const a = document.activeElement;
-	return !!a && a.matches?.(state.selectors.textInputs);
+	return !!a && (a.id === 'hd-term-text' || a.matches?.(state.selectors.textInputs));
 }
 
 // Accessory keys follow the soft keyboard: a text input has focus *and* the visible
@@ -2036,6 +2446,8 @@ function updateKeys() {
 }
 
 function onFocusIn(e) {
+	// The terminal itself mangles composed text (Korean…) on phones: typing goes to the box.
+	if (termInputShown() && e.target.classList?.contains('xterm-helper-textarea')) return document.getElementById('hd-term-text').focus();
 	if (e.target.matches?.(state.selectors.textInputs)) state.lastInput = e.target;
 	updateKeys();
 }
@@ -2074,7 +2486,7 @@ function build() {
 		el('button', { type: 'button', 'data-i18n': 'action.reconnect', onclick: () => location.reload() }, t('action.reconnect')),
 	);
 	const notice = el('div', { id: 'hd-notice', hidden: true });
-	const root = el('div', { id: 'hd-root' }, insecure, network, notice, keys);
+	const root = el('div', { id: 'hd-root' }, insecure, network, notice, buildTermInput(), keys);
 
 	const fab = el('button', { id: 'hd-fab', type: 'button', tabindex: '-1', 'aria-label': t('aria.menu'), 'data-i18n-aria': 'aria.menu' }, icon('menu'));
 	installFab(fab);
@@ -2218,6 +2630,8 @@ function watchNetwork() {
 }
 
 function pressKey(name, def) {
+	if (def.input && termInputUsable()) return toggleTermInput();
+	if (termInputFocused() && pressTermKey(def)) return;
 	if (def.menu) return openMenu();
 	if (def.clipboard === 'copy') return copySelection();
 	if (def.clipboard === 'paste') return pasteClipboard();
@@ -2264,6 +2678,9 @@ function render() {
 	if (!root) return;
 	const sheetOpen = !document.getElementById('hd-sheet').hidden;
 	root.dataset.keys = state.keysOn && !sheetOpen ? '1' : '';
+	const termBar = document.getElementById('hd-term-input');
+	termBar.hidden = !termInputShown();
+	if (termBar.hidden && termInputFocused()) document.activeElement.blur();
 	document.documentElement.dataset.hdView = state.view;
 	document.getElementById('hd-fab').hidden = state.keysOn || state.drawerOpen || state.menuOpen || sheetOpen;
 	for (const b of document.querySelectorAll('#hd-menu [data-item]')) b.classList.toggle('active', MENU_DEFS[b.dataset.item]?.view === state.view);

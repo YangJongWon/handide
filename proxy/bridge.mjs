@@ -79,9 +79,11 @@ export function createBridge({ token, log }) {
 		try {
 			if (pathname === '/__handide/bridge/call' && req.method === 'POST') {
 				// Phone screenshots are base64 in this JSON request (15MB file max in the layer).
-				const { command, args } = JSON.parse(await readBody(req, 24 << 20));
+				const { command, args, timeoutMs } = JSON.parse(await readBody(req, 24 << 20));
 				if (typeof command !== 'string') return sendJson(res, 400, { ok: false, error: 'command required' });
-				return sendJson(res, 200, await call(command, Array.isArray(args) ? args : []));
+				// Longer for slow commands (installing an extension), up to 5 minutes.
+				const wait = Math.min(Math.max(Number(timeoutMs) || 20_000, 1000), 300_000);
+				return sendJson(res, 200, await call(command, Array.isArray(args) ? args : [], wait));
 			}
 			if (pathname === '/__handide/bridge/status') return sendJson(res, 200, { ok: true, connected: extensionConnected() });
 			if (pathname === '/__handide/fs' && req.method === 'GET') {

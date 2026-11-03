@@ -388,6 +388,13 @@ html.hd-mobile #hd-viewbar .hd-agent-btn {
 	background: var(--hd-surface);
 	text-align: left;
 }
+/* Reload all, right after the extension pill; the bar's other buttons stay on the right. */
+html.hd-mobile #hd-viewbar .hd-agent-btn:has(+ .hd-agent-reload) {
+	margin-right: 0;
+}
+html.hd-mobile #hd-viewbar .hd-agent-reload {
+	margin-right: auto;
+}
 html.hd-mobile #hd-viewbar .hd-agent-btn::after {
 	content: attr(data-count);
 	font-size: 11px;
@@ -406,8 +413,9 @@ html.hd-mobile #hd-agents {
 	flex-direction: column;
 	min-width: 200px;
 	max-width: calc(100vw - 16px);
-	max-height: 60vh;
+	max-height: 60vh; /* cut down to whole rows by fitAgentsList() */
 	overflow-y: auto;
+	scroll-snap-type: y mandatory; /* rows stop with an edge on the footer (or the bottom) */
 	padding: 4px;
 	border: 1px solid var(--hd-border);
 	border-radius: 10px;
@@ -419,7 +427,17 @@ html.hd-mobile #hd-agents {
 html.hd-mobile #hd-agents[hidden] {
 	display: none;
 }
-html.hd-mobile .hd-agent {
+html.hd-mobile #hd-agents > * {
+	scroll-snap-align: end;
+}
+/* Stays at the list's bottom edge while the rows scroll under it. */
+html.hd-mobile #hd-agents > .hd-agent-footer {
+	position: sticky;
+	bottom: -4px; /* over the list's bottom padding, so nothing shows below it */
+	z-index: 1;
+	background: var(--hd-surface);
+	scroll-snap-align: none;
+}html.hd-mobile .hd-agent {
 	appearance: none;
 	border: 0;
 	border-radius: 8px;
@@ -439,6 +457,26 @@ html.hd-mobile .hd-agent small {
 	font-size: 12px;
 	opacity: 0.7;
 }
+/* An agent's name, then its extension's small settings and reload icons. */
+html.hd-mobile .hd-agent-line {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+html.hd-mobile .hd-agent-icon {
+	appearance: none;
+	border: 0;
+	margin: 0;
+	padding: 2px;
+	background: none;
+	color: inherit;
+	line-height: 0;
+	opacity: 0.7;
+	cursor: pointer;
+}
+html.hd-mobile .hd-agent-icon .codicon {
+	font-size: 14px;
+}
 html.hd-mobile .hd-agent-manage {
 	border-top: 1px solid var(--hd-border);
 	border-radius: 0 0 8px 8px;
@@ -446,6 +484,52 @@ html.hd-mobile .hd-agent-manage {
 html.hd-mobile .hd-agent.active {
 	background: var(--hd-btn-bg);
 	color: var(--hd-btn-fg);
+}
+/* Marketplace: search box, then results with an install state on the right. */
+html.hd-mobile .hd-market-form {
+	padding: 6px 4px;
+}
+html.hd-mobile .hd-market-search {
+	width: 100%;
+	box-sizing: border-box;
+	font: inherit;
+	font-size: 16px; /* ≥16px stops iOS from zooming the page on focus */
+	padding: 10px 12px;
+	border-radius: 10px;
+	border: 1px solid var(--hd-border);
+	background: var(--vscode-input-background, transparent);
+	color: var(--vscode-input-foreground, var(--hd-fg));
+}
+html.hd-mobile .hd-market-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+html.hd-mobile .hd-market-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+html.hd-mobile .hd-market-status {
+	flex: none;
+	padding: 4px 10px;
+	border-radius: 7px;
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
+	font-size: 12px;
+}
+html.hd-mobile .hd-market-row.installed .hd-market-status,
+html.hd-mobile .hd-market-row.busy .hd-market-status {
+	background: var(--hd-key-bg);
+	color: var(--hd-key-fg);
+}
+html.hd-mobile .hd-market-desc {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 }
 html.hd-mobile .hd-extension {
 	display: grid;
@@ -479,6 +563,29 @@ html.hd-mobile .part.auxiliarybar > .composite.title > .title-actions .action-la
 html.hd-mobile .part.auxiliarybar > .composite.title > .global-actions {
 	display: none;
 }
+/* An extension's own settings gear (and the divider after it): each one's settings open
+   from its ⚙ in the agent list. [vscode-dom] */
+html.hd-mobile .part.auxiliarybar > .composite.title > .title-actions .action-item:has(.codicon-gear, .codicon-settings-gear),
+html.hd-mobile .part.auxiliarybar > .composite.title > .title-actions .action-item:has(.codicon-gear, .codicon-settings-gear) + .action-item:has(.separator) {
+	display: none;
+}
+/* The title label lies under the view bar and takes its width (placeViewbar), so the
+   view's own buttons start right after the bar and only they lose out when room runs short. [vscode-dom] */
+html.hd-mobile .monaco-workbench .part.auxiliarybar > .composite.title > :is(.title-label, .composite-bar-container) {
+	flex: none;
+	box-sizing: border-box;
+	width: var(--hd-viewbar-width, auto);
+	max-width: none; /* VS Code caps the label at 40% */
+	padding: 0;
+}
+html.hd-mobile .part.auxiliarybar > .composite.title > .title-actions {
+	min-width: 0;
+	overflow: hidden;
+	padding-left: 0;
+}
+html.hd-mobile .part.auxiliarybar > .composite.title > .title-actions .actions-container {
+	justify-content: flex-start;
+}
 
 /* The AI drawer (VS Code's secondary side bar) slides in from the right. [vscode-dom] */
 html.hd-mobile[data-hd-view='ai'] .part.auxiliarybar {
@@ -506,6 +613,50 @@ html.hd-mobile #hd-root {
 html.hd-mobile #hd-root:has(> :not([hidden]):not(#hd-keys)),
 html.hd-mobile #hd-root[data-keys='1'] {
 	border-top: 1px solid var(--hd-border);
+}
+
+/* The terminal's input box: while the terminal drawer is open, above the accessory keys. */
+html.hd-mobile #hd-term-input {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	margin: 0;
+	padding: 6px;
+}
+html.hd-mobile #hd-term-input[hidden] {
+	display: none;
+}
+html.hd-mobile #hd-root:not([data-keys='1']) #hd-term-input {
+	padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
+html.hd-mobile #hd-term-text {
+	flex: 1;
+	min-width: 0;
+	height: 36px;
+	max-height: 128px;
+	padding: 7px 10px;
+	box-sizing: border-box;
+	resize: none;
+	overflow-y: auto;
+	line-height: 20px;
+	border: 1px solid var(--hd-border);
+	border-radius: 8px;
+	background: var(--vscode-input-background, transparent);
+	color: var(--vscode-input-foreground, var(--hd-fg));
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 16px; /* ≥16px stops iOS from zooming the page on focus */
+}
+html.hd-mobile #hd-term-text:focus {
+	outline: none;
+	border-color: var(--vscode-focusBorder, var(--hd-btn-bg));
+}
+html.hd-mobile #hd-term-input .hd-term-send {
+	flex: none;
+	width: 40px;
+	height: 36px;
+	border-radius: 8px;
+	background: var(--hd-btn-bg);
+	color: var(--hd-btn-fg);
 }
 
 /* Accessory keys: only while a text input has focus (the soft keyboard is up). */

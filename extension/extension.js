@@ -184,13 +184,90 @@ function installedExtensions() {
 	return list.sort((a, b) => a.title.localeCompare(b.title));
 }
 
+// Installing: VS Code's marketplace search lives in the Extensions view, which the phone
+// never shows (`ext install <name>` only hands the name over to it), so the layer has its
+// own search list. The gallery is the one the editor server's product.json names (the
+// Visual Studio Marketplace for VS Code, Open VSX for builds configured that way), and
+// installing goes through VS Code itself, like the Install button.
+const DEFAULT_GALLERY = 'https://marketplace.visualstudio.com/_apis/public/gallery';
+let galleryUrl;
+
+function gallery() {
+	if (galleryUrl === undefined) {
+		try {
+			galleryUrl = JSON.parse(fs.readFileSync(path.join(vscode.env.appRoot, 'product.json'), 'utf8')).extensionsGallery?.serviceUrl || DEFAULT_GALLERY;
+		} catch {
+			galleryUrl = DEFAULT_GALLERY;
+		}
+	}
+	return galleryUrl;
+}
+
+/** Marketplace search: {query} by name; an empty one lists the most installed. */
+async function searchExtensions({ query = '' } = {}) {
+	const text = String(query).trim();
+	const criteria = [
+		{ filterType: 8, value: 'Microsoft.VisualStudio.Code' }, // target
+		{ filterType: 12, value: '4096' }, // exclude unpublished
+	];
+	if (text) criteria.push({ filterType: 10, value: text }); // search text
+	const res = await fetch(`${gallery().replace(/\/$/, '')}/extensionquery`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', accept: 'application/json;api-version=3.0-preview.1' },
+		// sortBy 4: install count. Flags: statistics | latest version only | validated only.
+		body: JSON.stringify({ filters: [{ criteria, pageNumber: 1, pageSize: 30, sortBy: text ? 0 : 4, sortOrder: 0 }], flags: 0x100 | 0x200 | 0x20 }),
+		signal: AbortSignal.timeout(15000),
+	});
+	if (!res.ok) throw new Error(`marketplace ${res.status}`);
+	const data = await res.json();
+	const installed = new Set(installedExtensions().map((x) => x.id.toLowerCase()));
+	return (data.results?.[0]?.extensions ?? []).map((e) => {
+		const id = `${e.publisher?.publisherName}.${e.extensionName}`;
+		return {
+			id,
+			title: e.displayName || e.extensionName,
+			publisher: e.publisher?.displayName || e.publisher?.publisherName || '',
+			description: e.shortDescription || '',
+			installs: e.statistics?.find((s) => s.statisticName === 'install')?.value ?? 0,
+			installed: installed.has(id.toLowerCase()) || id.toLowerCase() === selfId.toLowerCase(),
+		};
+	});
+}
+
+/** Installs {id} from the marketplace; errors come back as {ok: false, error}. */
+async function installExtension({ id }) {
+	if (typeof id !== 'string' || !/^[\w-]+\.[\w.-]+$/.test(id)) return { ok: false, error: 'invalid extension id' };
+	try {
+		await run('workbench.extensions.installExtension', id);
+		return { ok: true };
+	} catch (err) {
+		return { ok: false, error: String(err?.message ?? err) };
+	}
+}
+
+/**
+ * Reloads one extension as far as VS Code allows: there is no API to restart a single
+ * extension, so a failed or never-started one is activated again and every webview (the
+ * agents' chats) starts over. When activation keeps failing, only restarting the whole
+ * extension host helps; the layer offers that next to it.
+ */
+async function reloadExtension({ id }) {
+	const ext = typeof id === 'string' && vscode.extensions.getExtension(id);
+	if (!ext) return { ok: false, error: 'not loaded (disabled, or the extension host has not picked it up)' };
+	if (!ext.isActive) {
+		try {
+			await ext.activate();
+		} catch (err) {
+			return { ok: false, error: String(err?.message ?? err) };
+		}
+	}
+	await run('workbench.action.webview.reloadWebviewAction').catch(() => {});
+	return { ok: true };
+}
+
 /** Opens extension management in a deterministic mobile-friendly editor layout. */
 async function manageExtension({ id, action = 'details' }) {
 	await showView({ view: 'editor' });
-	if (action === 'install') {
-		await run('workbench.action.quickOpen', 'ext install ');
-		return { ok: true };
-	}
 	if (typeof id !== 'string' || !id.includes('.')) throw new Error('invalid extension id');
 	if (action === 'settings') {
 		await run('workbench.action.openSettings', `@ext:${id}`);
@@ -698,6 +775,9 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.deleteUpload', deleteUpload),
 		vscode.commands.registerCommand('handide.installedExtensions', installedExtensions),
 		vscode.commands.registerCommand('handide.manageExtension', manageExtension),
+		vscode.commands.registerCommand('handide.searchExtensions', searchExtensions),
+		vscode.commands.registerCommand('handide.installExtension', installExtension),
+		vscode.commands.registerCommand('handide.reloadExtension', reloadExtension),
 		vscode.commands.registerCommand('handide.searchPeers', searchPeers),
 		vscode.workspace.registerFileSystemProvider(PEER_SCHEME, peerFiles, { isCaseSensitive: true, isReadonly: true }),
 		vscode.window.registerTreeDataProvider('handide.peers', peersTree),

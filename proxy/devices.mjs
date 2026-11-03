@@ -30,6 +30,7 @@ const HUB_COOKIE = '__handide_hub'; // this PC's token while the phone uses anot
 const PRIVATE_COOKIES = new Set(['__handide_port', 'vscode-cli-secret-half']);
 const LIST_PATH = '/__handide/devices';
 const USE_PATH = '/__handide/devices/use';
+const HEALTH_PATH = '/__handide/health';
 const PAIR_PATH = '/__handide/pair';
 const DEFAULT_PORT = 9000;
 const SCAN_INTERVAL_MS = 30_000;
@@ -468,6 +469,8 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 		upReq.on('error', (err) => {
 			if (res.headersSent) return res.destroy();
 			log(`${device.name}: ${err.message}`);
+			const home = req.method === 'GET' && req.url.split('?')[0] === '/';
+			if (home) return serveThisPc(res);
 			if (wantsHtml) sendPage(res, 502, `${device.name} is not reachable`, `Start handide on that PC (and check it is on), then retry. (${escapeHtml(err.message)})`, device.name);
 			else {
 				res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
@@ -477,9 +480,47 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 		req.pipe(upReq);
 	}
 
+	/** This PC's editor, dropping a picked PC that is not answering. */
+	function serveThisPc(res) {
+		res.writeHead(302, {
+			location: `/?tkn=${encodeURIComponent(token)}`,
+			'cache-control': 'no-store',
+			'set-cookie': [
+				`${DEVICE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`,
+				`${TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=604800; SameSite=Lax`,
+			],
+		});
+		res.end();
+	}
+
+	const deviceUp = (device) => deviceRequest(device, HEALTH_PATH, { timeoutMs: 4000 }).then((r) => r.status === 204, () => false);
+
+	/**
+	 * A page load for a picked PC. The pick is a cookie, so a reload would keep opening
+	 * that PC even after it went away; check it still answers, and if it does not, open
+	 * this PC (the one that just answered) instead.
+	 */
+	async function openSelected(req, res, device, proto) {
+		if (!(await deviceUp(device))) {
+			log(`${device.name} is not answering; opening this PC`);
+			return serveThisPc(res);
+		}
+		const expected = device.token;
+		if (cookies(req)[TOKEN_COOKIE] !== expected && query(req).get('tkn') !== expected && authed(req)) {
+			const tkn = query(req).get('tkn') === token ? `&tkn=${encodeURIComponent(token)}` : '';
+			res.writeHead(302, { location: `${USE_PATH}?id=${encodeURIComponent(device.name)}${tkn}`, 'cache-control': 'no-store' });
+			res.end();
+			return;
+		}
+		forward(req, res, device, proto);
+	}
+
 	/** Handles the request if it is about devices or belongs to another PC. */
 	function handle(req, res, proto) {
 		const pathname = req.url.split('?')[0];
+		// Reachability of this process. Never forwarded: a picked PC that is down must not
+		// hide the fact that this one answers.
+		if (pathname === HEALTH_PATH) return false;
 		if (pathname === PAIR_PATH) {
 			pair(req, res).catch(() => res.headersSent || res.writeHead(500).end());
 			return true;
@@ -496,13 +537,19 @@ export function createDeviceRouter({ token, dataDir, selfName, log, remote = () 
 			return true;
 		}
 		const device = selected(req);
-		// A page load whose token does not fit the PC it would reach (this PC's QR code
-		// scanned while another PC is picked, or a PC that was removed): settle it first.
-		const expected = device ? device.token : token;
 		const wantsPage = req.method === 'GET' && pathname === '/' && (req.headers.accept || '').includes('text/html');
-		if (wantsPage && cookies(req)[TOKEN_COOKIE] !== expected && query(req).get('tkn') !== expected && authed(req)) {
+		if (wantsPage && device) {
+			openSelected(req, res, device, proto).catch((err) => {
+				if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
+				res.end(err.message);
+			});
+			return true;
+		}
+		// A page load whose token does not fit this PC (its QR code scanned while another
+		// PC was picked, or a PC that was removed): settle it first.
+		if (wantsPage && cookies(req)[TOKEN_COOKIE] !== token && query(req).get('tkn') !== token && authed(req)) {
 			const tkn = query(req).get('tkn') === token ? `&tkn=${encodeURIComponent(token)}` : '';
-			res.writeHead(302, { location: `${USE_PATH}?id=${encodeURIComponent(device?.name ?? '')}${tkn}`, 'cache-control': 'no-store' });
+			res.writeHead(302, { location: `${USE_PATH}?id=${tkn}`, 'cache-control': 'no-store' });
 			res.end();
 			return true;
 		}
