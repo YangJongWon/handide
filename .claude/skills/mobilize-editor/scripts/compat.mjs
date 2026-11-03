@@ -79,13 +79,16 @@ const engine = manifest.engines?.vscode ?? '*';
 const minV = parse(engine);
 const selectors = JSON.parse(readFileSync(join(ROOT, 'layer/selectors.json'), 'utf8'));
 const testedV = parse(selectors.testedWith?.version);
+// With a recorded commit handide serves that very web build (proxy/server.mjs: pinnedCommit),
+// whatever the desktop CLI's version: the layer and the companion then run on what was checked.
+const pinned = !pretend && /^[0-9a-f]{40}$/.test(selectors.testedWith?.commit ?? '');
 const internalCommands = ['vscode.moveViews', 'workbench.action.toggleMaximizedPanel', 'workbench.action.maximizeAuxiliaryBar', 'workbench.action.maximizeEditorHideSidebar'];
 
 const reasons = [];
 if (minV.length && cmp(editorV, minV) < 0) {
 	result.companion = { status: 'incompatible', engine, reason: `editor ${result.editor.version} is older than the extension's engines.vscode ${engine}` };
 	reasons.push(result.companion.reason);
-} else if (testedV.length && cmp(editorV, testedV) !== 0) {
+} else if (!pinned && testedV.length && cmp(editorV, testedV) !== 0) {
 	result.companion = {
 		status: 'uncertain',
 		engine,
@@ -98,7 +101,8 @@ if (minV.length && cmp(editorV, minV) < 0) {
 }
 
 // ---------------------------------------------------------------- layer
-if (!testedV.length || cmp(editorV, testedV) === 0) result.layer = { status: 'tested', testedWith: selectors.testedWith };
+if (pinned) result.layer = { status: 'tested', pinned: true, testedWith: selectors.testedWith, note: `the phone gets the checked web build ${selectors.testedWith.version}; "editorServer": "latest" in the layout config turns that off` };
+else if (!testedV.length || cmp(editorV, testedV) === 0) result.layer = { status: 'tested', testedWith: selectors.testedWith };
 else {
 	result.layer = {
 		status: cmp(editorV, testedV) > 0 ? 'untested-newer' : 'untested-older',

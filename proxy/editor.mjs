@@ -1,7 +1,7 @@
 // Finds an installed editor CLI that can serve its own web UI (`serve-web`) and starts it.
 // The editor itself is never modified; we only launch it with a private data dir.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import os from 'node:os';
@@ -59,6 +59,42 @@ export function editorVersion(cli) {
 		windowsHide: true,
 	});
 	return `${r.stdout}`.split(/\r?\n/).filter(Boolean).slice(0, 2).join(' ');
+}
+
+// serve-web does not run the desktop editor's own build: it downloads the newest server of
+// the CLI's quality into <cli data dir>/serve-web/<commit>/ and serves that, unless
+// --commit-id names one. So the web UI on the phone can be newer than the desktop editor.
+
+/** Where `cli` keeps the servers serve-web downloaded (VSCODE_CLI_DATA_DIR overrides it). */
+export function serveWebCacheDir(cli) {
+	const dataDir = process.env.VSCODE_CLI_DATA_DIR || join(os.homedir(), /insiders/i.test(cli) ? '.vscode-insiders' : '.vscode', 'cli');
+	return join(dataDir, 'serve-web');
+}
+
+/** { version, commit, quality } of a downloaded server, or null when it is not there. */
+export function serverBuild(cli, commit) {
+	try {
+		const p = JSON.parse(readFileSync(join(serveWebCacheDir(cli), commit, 'product.json'), 'utf8'));
+		return { version: p.version, commit: p.commit ?? commit, quality: p.quality };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The server build a workbench page came from: the commit in its static URLs
+ * ("/stable-<commit>/static/…"), else the one serve-web used last (its lru.json).
+ */
+export function servedBuild(cli, html = '') {
+	let commit = /\/(?:stable|insider|exploration)-([0-9a-f]{40})\//.exec(html)?.[1];
+	if (!commit) {
+		try {
+			commit = JSON.parse(readFileSync(join(serveWebCacheDir(cli), 'lru.json'), 'utf8'))[0];
+		} catch {
+			return null;
+		}
+	}
+	return commit ? serverBuild(cli, commit) ?? { version: null, commit } : null;
 }
 
 /** Every process as { pid, ppid, start, cmd }; start is 0 where the platform does not say. */
@@ -199,7 +235,7 @@ export function startReaper({ dataDir, log, intervalMs = 5 * 60_000 }) {
  * Starts `serve-web` on localhost only; the proxy is the sole public entry point.
  * Resolves once the CLI prints its "Web UI available" line.
  */
-export function startServeWeb({ cli, port, token, dataDir, folder, workspace, env, log }) {
+export function startServeWeb({ cli, port, token, dataDir, folder, workspace, commit, env, log }) {
 	const args = [
 		'serve-web',
 		'--host', '127.0.0.1',
@@ -210,6 +246,8 @@ export function startServeWeb({ cli, port, token, dataDir, folder, workspace, en
 		'--disable-telemetry',
 		'--server-data-dir', dataDir,
 	];
+	// The server build handide was checked on, instead of whatever is newest today.
+	if (commit) args.push('--commit-id', commit);
 	if (workspace) args.push('--default-workspace', workspace);
 	else if (folder) args.push('--default-folder', folder);
 	const child = spawn(cli, args, {

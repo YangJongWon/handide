@@ -30,10 +30,10 @@ export function killTree(child) {
 }
 
 /**
- * @param {{ mode?: string, editor?: string, host?: string, runDir?: string }} opts
+ * @param {{ mode?: string, editor?: string, host?: string, runDir?: string, serverCommit?: string }} opts
  * @returns {Promise<{ child, url, port, token, workspace, editor, runDir }>}
  */
-export async function startProxy({ mode = 'extension', editor, host, runDir = OUT } = {}) {
+export async function startProxy({ mode = 'extension', editor, host, runDir = OUT, serverCommit } = {}) {
 	const workspace = join(runDir, 'workspace');
 	mkdirSync(workspace, { recursive: true });
 	writeFileSync(join(workspace, 'hello.js'), SAMPLE);
@@ -47,6 +47,7 @@ export async function startProxy({ mode = 'extension', editor, host, runDir = OU
 	const token = randomBytes(12).toString('hex');
 	const args = [join(ROOT, 'proxy/server.mjs'), '--port', String(port), '--token', token, '--folder', workspace, '--data-dir', join(runDir, 'data'), '--config', configPath, '--no-remote'];
 	if (editor) args.push('--editor', editor);
+	if (serverCommit) args.push('--server-commit', serverCommit);
 	if (host) args.push('--host', host);
 	else args.push('--local'); // checks use http://localhost (+ adb reverse on Android)
 	const child = spawn(process.execPath, args, { cwd: ROOT, windowsHide: true });

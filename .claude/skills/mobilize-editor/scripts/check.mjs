@@ -6,6 +6,9 @@
 //   npm run check -- --browser webkit --devices "iPhone 14" # WebKit, not a real iPhone
 //   npm run check -- --mode builtin        # test the no-extension fallback
 //   npm run check -- --editor <cli>        # a specific editor build
+//   npm run check -- --pinned              # the web build handide serves now (default: the newest)
+//   npm run check -- --server-commit <sha> # a specific web build
+//   npm run check -- --record              # all passed: make the build checked here the one handide serves
 //   npm run check -- --url http://host:port/?tkn=...   # an already running handide
 //   npm run check -- --android [serial]    # real Chrome on an emulator / USB phone (adb reverse)
 //
@@ -23,7 +26,8 @@ const { chromium, webkit, devices: DEVICES, _android: android } = await loadPlay
 const BROWSERS = { chromium, webkit };
 
 function parseArgs(argv) {
-	const o = { devices: ['Pixel 7', 'iPhone 14'], browser: 'chromium', mode: 'extension', editor: undefined, url: undefined, android: false };
+	// Default: the newest web build, since a check is how a new VS Code gets verified.
+	const o = { devices: ['Pixel 7', 'iPhone 14'], browser: 'chromium', mode: 'extension', editor: undefined, url: undefined, android: false, serverCommit: 'latest', record: false };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === '--devices') o.devices = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
@@ -31,6 +35,9 @@ function parseArgs(argv) {
 		else if (a === '--browser') o.browser = argv[++i];
 		else if (a === '--editor') o.editor = argv[++i];
 		else if (a === '--url') o.url = argv[++i];
+		else if (a === '--server-commit') o.serverCommit = argv[++i];
+		else if (a === '--pinned') o.serverCommit = undefined;
+		else if (a === '--record') o.record = true;
 		else if (a === '--android') o.android = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
 	}
 	if (!Object.hasOwn(BROWSERS, o.browser)) throw new Error('--browser must be chromium or webkit');
@@ -712,6 +719,32 @@ async function checkAndroid(serial, ctx) {
 // ------------------------------------------------------------------ main
 
 const opts = parseArgs(process.argv.slice(2));
+/** The web build the page was served from (proxy/server.mjs: /__handide/editor), or null. */
+async function servedBuildOf(proxy) {
+	if (!proxy?.token) return null;
+	const r = await fetch(`http://localhost:${proxy.port}/__handide/editor`, { headers: { cookie: `vscode-tkn=${proxy.token}`, 'x-handide': '1' } }).catch(() => null);
+	const info = await r?.json().catch(() => null);
+	return info?.served?.commit ? info.served : null;
+}
+
+/**
+ * --record: after a full pass, layer/selectors.json testedWith names the build just
+ * checked, which handide then serves by default (proxy/server.mjs: pinnedCommit).
+ */
+function recordTested({ report, served, opts }) {
+	if (report.failed || !report.passed) return console.log('not recorded: the check did not pass'), false;
+	if (!served?.version) return console.log('not recorded: the web build checked is not known'), false;
+	if (opts.mode !== 'extension' || opts.android) return console.log('not recorded: record from the default run (extension mode, emulated devices)'), false;
+	const file = join(ROOT, 'layer/selectors.json');
+	const text = readFileSync(file, 'utf8');
+	const testedWith = { editor: 'VS Code', version: served.version, commit: served.commit, checked: report.date.slice(0, 10), devices: opts.devices, browser: `${opts.browser} ${report.browserVersion ?? ''}`.trim() };
+	const next = text.replace(/"testedWith":\s*\{[^}]*\}/, () => `"testedWith": ${JSON.stringify(testedWith)}`);
+	if (next === text && !text.includes(JSON.stringify(testedWith))) return console.log('not recorded: testedWith not found in layer/selectors.json'), false;
+	writeFileSync(file, next);
+	console.log(`recorded: layer/selectors.json testedWith = VS Code ${served.version} (${served.commit.slice(0, 10)})`);
+	return true;
+}
+
 // Never reuse a profile or marker files after failed cleanup (Windows may keep
 // them locked). Every run gets fresh state without deleting another run's files.
 mkdirSync(OUT, { recursive: true });
@@ -760,11 +793,15 @@ try {
 
 	const failed = all.filter((r) => !r.ok);
 	const skipped = all.filter((r) => r.skipped);
-	const report = { date: new Date().toISOString(), editor: proxy.editor, mode: opts.mode, browser: opts.android ? 'Android Chrome' : `${opts.browser} device emulation (not a physical phone)`, browserVersion: browser?.version(), runDir, testedWith: selectors.testedWith, passed: all.length - failed.length - skipped.length, failed: failed.length, skipped: skipped.length, results: all };
+	const served = await servedBuildOf(proxy);
+	if (served) console.log(`
+web build checked: VS Code ${served.version ?? '?'} (${served.commit})`);
+	const report = { date: new Date().toISOString(), editor: proxy.editor, served, mode: opts.mode, browser: opts.android ? 'Android Chrome' : `${opts.browser} device emulation (not a physical phone)`, browserVersion: browser?.version(), runDir, testedWith: selectors.testedWith, passed: all.length - failed.length - skipped.length, failed: failed.length, skipped: skipped.length, results: all };
 	writeFileSync(join(runDir, 'report.json'), JSON.stringify(report, null, 2));
 	writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
 	console.log(`\n${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped → check-output/report.json`);
 	exitCode = failed.length ? 1 : 0;
+	if (opts.record) exitCode = recordTested({ report, served, opts }) ? exitCode : 1;
 } catch (err) {
 	console.error(`check aborted: ${err.message}`);
 } finally {

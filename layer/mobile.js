@@ -171,6 +171,7 @@ const STRINGS = {
 		'link.open': 'Open link',
 		'preview.browser': 'Open in browser',
 		'notice.offline': 'The connection was lost. It is checked again automatically once the network is back.',
+		'standdown.notice': 'The phone layout is off: this VS Code ({1}) changed what it relies on, so plain VS Code is shown. On the PC, update handide or run "npm run check" in its folder.',
 		'trust.notice': 'Trust this folder so that views, file opening and agent extensions work.',
 		'trust.manage': 'Manage trust',
 		'settings.language': 'Language',
@@ -327,6 +328,7 @@ const STRINGS = {
 		'link.open': '링크 열기',
 		'preview.browser': '브라우저로 열기',
 		'notice.offline': '연결이 끊겼습니다. 네트워크가 돌아오면 자동으로 다시 확인합니다.',
+		'standdown.notice': '폰 레이아웃을 껐습니다. 이 VS Code({1})가 레이아웃이 기대는 구조를 바꿔서 순정 VS Code를 보여 줍니다. PC에서 handide를 업데이트하거나 handide 폴더에서 "npm run check"를 실행하세요.',
 		'trust.notice': '이 폴더를 신뢰해야 화면 전환, 파일 열기, 에이전트 확장이 동작합니다.',
 		'trust.manage': '신뢰 설정',
 		'settings.language': '언어',
@@ -483,6 +485,7 @@ const STRINGS = {
 		'link.open': 'リンクを開く',
 		'preview.browser': 'ブラウザで開く',
 		'notice.offline': '接続が切れました。ネットワークが戻ると自動で再確認します。',
+		'standdown.notice': 'スマホ用レイアウトをオフにしました。この VS Code（{1}）がレイアウトの前提を変えたため、通常の VS Code を表示しています。PC で handide を更新するか、handide のフォルダーで "npm run check" を実行してください。',
 		'trust.notice': 'このフォルダを信頼すると、画面の切り替え・ファイルを開く・エージェント拡張機能が使えます。',
 		'trust.manage': '信頼の設定',
 		'settings.language': '言語',
@@ -639,6 +642,7 @@ const STRINGS = {
 		'link.open': '打开链接',
 		'preview.browser': '在浏览器中打开',
 		'notice.offline': '连接已断开。网络恢复后会自动重新检查。',
+		'standdown.notice': '已关闭手机布局：此 VS Code（{1}）改变了布局所依赖的结构，因此显示原版 VS Code。请在电脑上更新 handide，或在 handide 文件夹中运行 "npm run check"。',
 		'trust.notice': '信任此文件夹后，视图切换、打开文件和智能体扩展才能工作。',
 		'trust.manage': '管理信任',
 		'settings.language': '语言',
@@ -3083,6 +3087,34 @@ function installLocalLinks() {
 	);
 }
 
+// The DOM hooks the layer cannot lay out the screen without. VS Code creates all of them
+// as the workbench starts, so one still missing a while later means this build changed
+// them: plain VS Code is better than a layout that hides parts of it.
+const ESSENTIAL_HOOKS = (s) => [s.workbench, s.parts.editor, s.parts.panel, s.parts.sidebar];
+
+/** Turns the layer off on this page and says why, on the phone and in the PC's log. */
+async function standDown(reason) {
+	if (document.getElementById('hd-standdown')) return;
+	document.documentElement.classList.remove('hd-mobile', 'hd-menu-open', 'hd-drawer-open');
+	// Everything the layer added stays in the DOM (timers still find it) but is not shown.
+	const style = document.createElement('style');
+	style.textContent = 'body > [id^="hd-"]:not(#hd-standdown) { display: none !important; }';
+	document.head.append(style);
+	const info = await api(`${BASE}editor`).catch(() => null);
+	const build = info?.served?.version ?? info?.served?.commit?.slice(0, 10) ?? '?';
+	const box = el('div', { id: 'hd-standdown', role: 'alert' }, el('span', {}, t('standdown.notice', build)), el('button', { type: 'button', 'aria-label': 'Close', onclick: () => box.remove() }, '×'));
+	box.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:100000;display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:#5c2b00;color:#fff;font:14px/1.4 system-ui,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.4)';
+	box.lastElementChild.style.cssText = 'flex:none;background:none;border:0;color:inherit;font-size:20px;line-height:1';
+	document.body.append(box);
+	api(`${BASE}editor/report`, { method: 'POST', body: { reason: `${reason} (VS Code ${build})` } }).catch(() => {});
+}
+
+async function checkHooks(selectors) {
+	await new Promise((r) => setTimeout(r, 10_000));
+	const missing = ESSENTIAL_HOOKS(selectors).filter((s) => s && !document.querySelector(s));
+	if (missing.length) standDown(`missing ${missing.join(', ')}`);
+}
+
 async function main() {
 	installLocalLinks(); // desktop browsers on another machine need it too
 	const [config, commands, selectors] = await Promise.all([loadJson('config.json'), loadJson('commands.json'), loadJson('selectors.json')]);
@@ -3122,7 +3154,10 @@ async function main() {
 		true,
 	);
 
+	// waitFor never settles when the workbench selector itself changed.
+	setTimeout(() => document.querySelector(selectors.workbench) || standDown(`missing ${selectors.workbench}`), 60_000);
 	syncTheme(await waitFor(selectors.workbench));
+	checkHooks(selectors);
 	watchTrust();
 	watchTitle();
 	state.folder = pageFolder();
@@ -3140,4 +3175,7 @@ async function main() {
 	}
 }
 
-main().catch((err) => console.error('[handide] layer failed', err));
+main().catch((err) => {
+	console.error('[handide] layer failed', err);
+	if (mobileUi()) standDown(`layer error: ${err.message}`);
+});

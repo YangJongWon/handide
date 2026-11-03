@@ -53,7 +53,7 @@ Scripts (all in `scripts/`, run from the repo root):
 
 ## Workflow B — VS Code updated, or `npm run check` fails
 
-1. `npm run compat` and `npm run check`. Open `check-output/report.json`; look at the screenshot named after each failing step in `check-output/<device>/`. Note that `serve-web` may have downloaded a newer web server than the desktop VS Code.
+1. `npm run compat` and `npm run check` (the newest web build; `--pinned` for the one handide serves now). Open `check-output/report.json` (`served` names the web build checked); look at the screenshot named after each failing step in `check-output/<device>/`. The web build is not the desktop VS Code's: serve-web downloads its own server, and handide pins it to `layer/selectors.json` → `testedWith.commit` (`proxy/server.mjs: pinnedCommit`). On a phone the layer turns itself off and shows plain VS Code when its essential hooks are missing (`layer/mobile.js: standDown`), and the PC log says so.
 2. Map the failure to its fix:
 
 | Failing check | Likely cause | Fix |
@@ -81,7 +81,7 @@ Scripts (all in `scripts/`, run from the repo root):
 | `no-layer-errors` | JS exception in the layer | message is in the report |
 
 3. Re-run `npm run check` (both modes if the change touched shared code; `--android` for input/gesture/viewport changes) until it passes.
-4. Update `layer/selectors.json` → `testedWith.version`, so `compat` stops reporting "untested".
+4. `npm run check -- --record`: after a full pass it writes the web build just checked to `layer/selectors.json` → `testedWith` (version + commit), which handide then serves. Never edit `testedWith` by hand. CI does the same weekly (`.github/workflows/check.yml`) and opens a pull request.
 5. Summarize for the user: what broke, what changed, the check result.
 
 ## Workflow C — personalize

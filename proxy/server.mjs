@@ -12,12 +12,12 @@ import net from 'node:net';
 import os from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node:fs/promises';
+import { readFile, readdir, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node:fs/promises';
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSessionKeeper } from './sessions.mjs';
-import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
+import { detectEditorCli, editorVersion, servedBuild, serverBuild, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, connectJson, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
@@ -45,6 +45,32 @@ const CONNECT_PATH = '/__handide/connect';
 // The same as JSON, for the desktop extension's QR panel; ?folder= picks the project.
 const CONNECT_JSON_PATH = '/__handide/connect.json';
 let CONNECT = null;
+
+// Which VS Code web UI the phone gets, against the build the layer was checked on
+// (layer/selectors.json testedWith). The layer reads it from /__handide/editor.
+const EDITOR = { cli: null, desktop: null, tested: null, pinned: null, served: null };
+
+/**
+ * The server build serve-web is told to use: the checked one (testedWith.commit) unless
+ * the layout config says "editorServer": "latest" or --server-commit names another.
+ */
+async function pinnedCommit(opts) {
+	if (opts.serverCommit) return opts.serverCommit === 'latest' ? null : opts.serverCommit;
+	const config = await readFile(CONFIG_PATH, 'utf8').then(parseJsonc, () => ({}));
+	if (config.editorServer === 'latest') return null;
+	return /^[0-9a-f]{40}$/.test(EDITOR.tested?.commit ?? '') ? EDITOR.tested.commit : null;
+}
+
+/** Notes the build a workbench page came from; says so once when it is not the checked one. */
+function noteServedBuild(html, log) {
+	const build = EDITOR.cli && servedBuild(EDITOR.cli, html);
+	if (!build || build.commit === EDITOR.served?.commit) return;
+	EDITOR.served = build;
+	const name = build.version ? `VS Code ${build.version}` : `VS Code build ${build.commit.slice(0, 10)}`;
+	if (build.commit === EDITOR.tested?.commit) return log(`phone web UI: ${name}, the build handide was checked on`);
+	log(`phone web UI: ${name}, not the build handide was checked on (${EDITOR.tested?.version ?? 'none recorded'}).`);
+	log('  If the phone layout misbehaves, the layer steps aside and shows plain VS Code; "npm run check" in the handide folder tells what changed.');
+}
 
 // The open files the desktop editor hands to the phone with its phone button
 // (desktop/extension.js), kept per folder until the phone's editor on that folder takes
@@ -189,6 +215,10 @@ Usage:  handide [folder] [options]      (folder defaults to the current director
   --open              open the connect page (large QR code) in this PC's browser
   --reset-profile     overwrite the mobile VS Code settings with handide's defaults
   --upstream <port>   use an already running serve-web on localhost:<port>
+  --server-commit <sha|latest>
+                      VS Code web build to serve (default: the one handide was checked
+                      on, layer/selectors.json; "editorServer": "latest" in the layout
+                      config makes "latest" the default)
 
 Phones need a secure context (https, or localhost): VS Code refuses to connect
 over plain http://<LAN-IP>. The default LAN mode takes care of that. Other ways:
@@ -228,6 +258,7 @@ function parseArgs(argv) {
 		else if (a === '--new-token') opts.newToken = true;
 		else if (a === '--editor') opts.editor = next();
 		else if (a === '--upstream') opts.upstream = Number(next());
+		else if (a === '--server-commit') opts.serverCommit = next();
 		else if (a === '--reset-profile') opts.resetProfile = true;
 		else if (a === '--open') opts.open = true;
 		else if (a === '--config') opts.config = resolve(next());
@@ -251,7 +282,7 @@ ${USAGE}`);
 	return opts;
 }
 
-const VALUE_OPTIONS = new Set(['--port', '--host', '--folder', '--data-dir', '--token', '--editor', '--upstream', '--config', '--cert', '--key']);
+const VALUE_OPTIONS = new Set(['--port', '--host', '--folder', '--data-dir', '--token', '--editor', '--upstream', '--server-commit', '--config', '--cert', '--key']);
 const PATH_OPTIONS = new Set(['--folder', '--data-dir', '--config', '--cert', '--key']);
 
 /**
@@ -455,6 +486,10 @@ async function installCompanion(dataDir) {
 	const folder = `${id}-${manifest.version}`;
 	const dest = join(extDir, folder);
 	await rm(dest, { recursive: true, force: true });
+	// Copies of other versions: the registry below forgets them, so nothing would load them again.
+	for (const old of await readdir(extDir).catch(() => [])) {
+		if (old !== folder && old.toLowerCase().startsWith(`${id.toLowerCase()}-`)) await rm(join(extDir, old), { recursive: true, force: true }).catch(() => {});
+	}
 	await cp(src, dest, { recursive: true, filter: (p) => !p.includes(`${sep}node_modules`) });
 	await writeFile(join(dest, 'package.json'), JSON.stringify(manifest, null, '\t') + '\n');
 
@@ -564,7 +599,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		}
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
-		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
+		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
@@ -593,6 +628,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 			let html = Buffer.concat(chunks).toString('utf8');
 			html = html.replaceAll(upHost, host);
 			if (upRes.statusCode === 200 && html.includes('vscode-workbench-web-configuration')) {
+				noteServedBuild(html, log);
 				if (!(await workspaceTrustWanted())) html = disableWorkspaceTrust(html);
 				html = injectLayer(localWebviews ? useLocalWebviews(html, `${proto}://${host}`) : html, await layerVersion());
 			}
@@ -745,6 +781,13 @@ async function main() {
 	let reaper;
 	const bridge = createBridge({ token: opts.token });
 	const bridgeEnv = await bridge.listen();
+	EDITOR.tested = JSON.parse(await readFile(join(LAYER_DIR, 'selectors.json'), 'utf8')).testedWith ?? null;
+	bridge.layerRoute('/__handide/editor', async () => ({ ok: true, desktop: EDITOR.desktop, served: EDITOR.served, tested: EDITOR.tested, pinned: EDITOR.pinned }));
+	// The layer stepped aside on this phone (layer/mobile.js: standDown): worth a line in the PC's log.
+	bridge.layerRoute('/__handide/editor/report', async (body) => {
+		log(`phone layout turned off on a phone: ${String(body?.reason ?? 'unknown').slice(0, 200)}; plain VS Code shown there. Run "npm run check".`);
+		return { ok: true };
+	});
 
 	// Other PCs, and the projects they serve: the companion extension lists them in its
 	// Other PCs view. Their files are fetched as they are opened (proxy/projects.mjs),
@@ -776,7 +819,14 @@ async function main() {
 
 	if (!upstreamPort) {
 		const cli = detectEditorCli(opts.editor);
-		log(`editor: ${cli} (${editorVersion(cli)})`);
+		EDITOR.cli = cli;
+		EDITOR.desktop = editorVersion(cli);
+		log(`editor: ${cli} (${EDITOR.desktop})`);
+		EDITOR.pinned = await pinnedCommit(opts);
+		if (EDITOR.pinned) {
+			const have = serverBuild(cli, EDITOR.pinned);
+			log(`phone web UI pinned to ${have?.version ? `VS Code ${have.version}` : `build ${EDITOR.pinned.slice(0, 10)}`}${EDITOR.pinned === EDITOR.tested?.commit ? ', the build handide was checked on' : ''}${have ? '' : ' (downloaded on the first page load)'}`);
+		} else log('phone web UI: the newest VS Code build serve-web finds (not pinned)');
 		stopOrphanedServers(opts.dataDir, log);
 		await seedProfile(opts.dataDir, opts.resetProfile, log);
 		upstreamPort = await freePort();
@@ -787,6 +837,7 @@ async function main() {
 			dataDir: opts.dataDir,
 			folder: opts.folder,
 			workspace,
+			commit: EDITOR.pinned,
 			// How agents in the editor's terminals read the other PCs' projects.
 			env: { ...bridgeEnv, ...(await peerLauncherEnv(opts.dataDir, fileURLToPath(import.meta.url))) },
 			log: (t) => { if (process.env.HANDIDE_VERBOSE) log(t); },
