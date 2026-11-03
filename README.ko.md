@@ -246,6 +246,7 @@ handide는 작업 영역 신뢰를 꺼 두므로, 설정에 `"workspaceTrust": t
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
 npm run check                  # Chromium에서 Pixel 7 + iPhone 14 기기 에뮬레이션
+npm run check -- --browser webkit --devices "iPhone 14" # WebKit 엔진 검사
 npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실제 크롬
 ```
 
@@ -256,7 +257,7 @@ npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실�
 <details>
 <summary>검증 상태와 알려진 제한</summary>
 
-레이어에 기록된 테스트 대상은 Windows의 VS Code CLI 1.138.0입니다. 최신 로컬 검사 결과와 브라우저는 `check-output/report.json`에서 확인하세요. 두 기기 설정 모두 Chromium으로 실행하므로 iPhone 에뮬레이션 통과가 Safari/WebKit이나 실제 기기 검증을 뜻하지는 않습니다. 실제 기기와 외부 네트워크 접속은 별도 검사가 필요합니다. 이전 builtin 모드 검사에서는 iPhone 레이아웃의 간헐적 실패가 기록되어 있습니다.
+레이어에 기록된 테스트 대상은 Windows의 VS Code CLI 1.138.0입니다. 최신 로컬 결과, 브라우저 버전, 건너뛴 검사는 `check-output/report.json`에서 확인하세요. 기본값은 Chromium이며 `--browser webkit`으로 Playwright의 WebKit 엔진을 실행합니다. 어느 쪽도 실제 iPhone의 키보드·인증서·네트워크 전환까지 재현하지는 않습니다. WebKit 실행기는 네이티브 스와이프 주입을 지원하지 않아 해당 검사는 통과 대신 건너뜀으로 기록합니다. 실제 기기와 외부 네트워크 접속은 별도 검사가 필요합니다. 이전 builtin 모드 검사에서는 iPhone 레이아웃의 간헐적 실패가 기록되어 있습니다.
 
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.
 - `serve-web`이 데스크톱보다 새 VS Code 웹 서버를 받을 수 있어서, 폰 쪽 VS Code 버전이 더 높을 수 있습니다.

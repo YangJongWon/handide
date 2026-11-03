@@ -303,6 +303,14 @@ async function warmLastAgent() {
 	if (extension) await extension.activate().catch(() => {});
 }
 
+/** Literal text insertion for browsers where Monaco's synthetic paste loses text. */
+async function insertText({ text, path: expectedPath }) {
+	const editor = vscode.window.activeTextEditor;
+	if (!editor || typeof text !== 'string') return { ok: false };
+	if (expectedPath && vscode.Uri.file(expectedPath).toString() !== editor.document.uri.toString()) return { ok: false };
+	return { ok: await editor.insertSnippet(new vscode.SnippetString().appendText(text), editor.selections, { keepWhitespace: true }) };
+}
+
 /** New file (opened) or folder at an absolute path, for the layer's file drawer. */
 async function create({ path: target, folder }) {
 	const uri = vscode.Uri.file(target);
@@ -701,7 +709,7 @@ function state() {
 	const editor = vscode.window.activeTextEditor;
 	return {
 		folders: (vscode.workspace.workspaceFolders ?? []).map((f) => ({ name: f.name, path: f.uri.fsPath, uri: f.uri.toString() })),
-		active: editor ? { path: editor.document.uri.fsPath, uri: editor.document.uri.toString(), dirty: editor.document.isDirty } : null,
+		active: editor ? { path: editor.document.uri.fsPath, uri: editor.document.uri.toString(), dirty: editor.document.isDirty, cursor: { line: editor.selection.active.line, character: editor.selection.active.character } } : null,
 	};
 }
 
@@ -766,6 +774,7 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.view', showView),
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
+		vscode.commands.registerCommand('handide.insertText', insertText),
 		vscode.commands.registerCommand('handide.setPeers', ({ peers }) => peersTree.set(peers)),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
 		vscode.commands.registerCommand('handide.create', create),

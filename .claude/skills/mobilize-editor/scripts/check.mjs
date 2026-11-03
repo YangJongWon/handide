@@ -3,6 +3,7 @@
 //
 //   npm run check                          # start a private proxy, test Pixel 7 + iPhone 14
 //   npm run check -- --devices "Pixel 7"   # one device
+//   npm run check -- --browser webkit --devices "iPhone 14" # WebKit, not a real iPhone
 //   npm run check -- --mode builtin        # test the no-extension fallback
 //   npm run check -- --editor <cli>        # a specific editor build
 //   npm run check -- --url http://host:port/?tkn=...   # an already running handide
@@ -17,19 +18,23 @@ import { join } from 'node:path';
 import { OUT, ROOT, SAMPLE, killTree, loadPlaywright, startProxy } from './lib/proxy.mjs';
 import { grantTrust, trustDisabled } from './lib/trust.mjs';
 
-const TYPED = '// 모바일 입력 확인';
-const { chromium, devices: DEVICES, _android: android } = await loadPlaywright();
+const TYPED = '// 모바일 입력 확인 $1 ${literal} \\path';
+const { chromium, webkit, devices: DEVICES, _android: android } = await loadPlaywright();
+const BROWSERS = { chromium, webkit };
 
 function parseArgs(argv) {
-	const o = { devices: ['Pixel 7', 'iPhone 14'], mode: 'extension', editor: undefined, url: undefined, android: false };
+	const o = { devices: ['Pixel 7', 'iPhone 14'], browser: 'chromium', mode: 'extension', editor: undefined, url: undefined, android: false };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === '--devices') o.devices = argv[++i].split(',').map((s) => s.trim()).filter(Boolean);
 		else if (a === '--mode') o.mode = argv[++i];
+		else if (a === '--browser') o.browser = argv[++i];
 		else if (a === '--editor') o.editor = argv[++i];
 		else if (a === '--url') o.url = argv[++i];
 		else if (a === '--android') o.android = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
 	}
+	if (!Object.hasOwn(BROWSERS, o.browser)) throw new Error('--browser must be chromium or webkit');
+	if (o.android && o.browser !== 'chromium') throw new Error('--android uses Chrome; omit --browser webkit');
 	return o;
 }
 
@@ -43,14 +48,14 @@ async function checkDevice(target, ctx) {
 	const results = [];
 	const shotDir = join(ctx.runDir ?? OUT, deviceName.replace(/\W+/g, '-'));
 	mkdirSync(shotDir, { recursive: true });
-	const record = (name, ok, detail = '') => {
-		results.push({ device: deviceName, name, ok, detail });
-		console.log(`${ok ? 'PASS' : 'FAIL'}  ${deviceName.padEnd(10)} ${name.padEnd(22)} ${detail}`);
+	const record = (name, ok, detail = '', skipped = false) => {
+		results.push({ device: deviceName, name, ok, detail, ...(skipped ? { skipped: true } : {}) });
+		console.log(`${skipped ? 'SKIP' : ok ? 'PASS' : 'FAIL'}  ${deviceName.padEnd(10)} ${name.padEnd(22)} ${detail}`);
 	};
 	const step = async (name, fn) => {
 		try {
 			const r = await fn();
-			record(name, r?.ok ?? true, r?.detail ?? '');
+			record(name, r?.ok ?? true, r?.detail ?? '', r?.skipped ?? false);
 			return r?.ok ?? true;
 		} catch (err) {
 			record(name, false, err.message.split('\n')[0]);
@@ -82,7 +87,8 @@ async function checkDevice(target, ctx) {
 	// A handide-peer:// path alone does not make it the layer's: with other PCs in the
 	// workspace, VS Code and extensions read them (settings, agent files) at startup, some
 	// before the companion has registered that provider.
-	const aboutLayer = (text) => /handide/.test(text.replace(/handide-peer:\/\/[^'"\s]*/g, ''));
+	// A workspace path containing "handide" is not evidence of a layer error.
+	const aboutLayer = (text) => /\[handide\]|\/__handide\/|mobile\.js/.test(text);
 	page.on('console', (m) => m.type() === 'error' && aboutLayer(m.text()) && errors.push(m.text()));
 	const sel = JSON.parse(readFileSync(join(ROOT, 'layer/selectors.json'), 'utf8'));
 	let vw = 0; // measured after load
@@ -128,7 +134,7 @@ async function checkDevice(target, ctx) {
 	}
 
 	await step('layer-injected', async () => {
-		await page.goto(ctx.url, { timeout: 120_000 });
+		await page.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
 		// Notices and keys are hidden at startup, so this container can have zero height.
 		await page.waitForSelector('#hd-root', { state: 'attached', timeout: 120_000 });
 		await page.waitForSelector('#hd-fab', { timeout: 120_000 });
@@ -218,6 +224,14 @@ async function checkDevice(target, ctx) {
 		await tap(`#hd-menu [data-item="${item}"]`);
 	};
 	const closeBar = () => tap('#hd-viewbar [data-act="back"]');
+	// WebKit on Windows does not reliably inject macOS Meta chords. Use VS Code's
+	// Quick Open line picker for setup; the accessory keys themselves remain UI-tested.
+	const documentStart = async () => {
+		await menu('quickOpen');
+		await page.locator(sel.quickInputBox).fill(':1:1');
+		await page.keyboard.press('Enter');
+		await page.waitForTimeout(400);
+	};
 	// Accessory keys follow the soft keyboard. Emulation has none: shrink the viewport the
 	// way a keyboard does. On a real phone, tapping the editor raises the real one.
 	let fullViewport = null;
@@ -440,7 +454,7 @@ async function checkDevice(target, ctx) {
 	});
 
 	await step('swipe', async () => {
-		if (!target.swipe) return { ok: true, detail: 'skipped (no swipe support)' };
+		if (!target.swipe) return { skipped: true, detail: 'native swipe injection unavailable for this browser; verify on a real device' };
 		const h = Math.round(await viewportHeight());
 		await target.swipe(page, 4, h / 2, 230, h / 2);
 		await page.waitForTimeout(900);
@@ -510,8 +524,7 @@ async function checkDevice(target, ctx) {
 		await showKeyboard();
 		// A tap can land after the first character; jump to the document start
 		// (VS Code uses Mac bindings on Apple devices).
-		await page.keyboard.press(apple ? 'Meta+ArrowUp' : 'Control+Home');
-		await page.waitForTimeout(400);
+		await documentStart();
 		await tap('#hd-keys [data-key="input"]');
 		await page.fill('#hd-sheet textarea', TYPED + '\n');
 		await tap('#hd-sheet button[type="submit"]');
@@ -525,7 +538,8 @@ async function checkDevice(target, ctx) {
 	await step('accessory-keys', async () => {
 		const cursorY = async () => (await box(sel.check.cursor))?.y;
 		// Start from the top so ↓ always has somewhere to go (narrow editors wrap a lot).
-		await page.keyboard.press(apple ? 'Meta+ArrowUp' : 'Control+Home');
+		await documentStart();
+		await tap(page.locator(sel.check.editorLine).first(), { x: 4, y: 4 });
 		await page.waitForTimeout(300);
 		const before = await cursorY();
 		const shown = await keysShown();
@@ -590,6 +604,7 @@ async function checkDevice(target, ctx) {
 			await page.waitForTimeout(1200);
 			await Promise.all([page.waitForNavigation({ timeout: 60_000 }), tap('.hd-picker-actions .hd-primary')]);
 			await page.waitForSelector('#hd-fab', { timeout: 120_000 });
+			await page.waitForSelector(sel.workbench, { timeout: 120_000 });
 			await grantTrust(page); // a newly opened folder asks for trust again
 			await page.waitForTimeout(5000);
 			await menu('files');
@@ -703,6 +718,7 @@ mkdirSync(OUT, { recursive: true });
 const runDir = mkdtempSync(join(OUT, 'run-'));
 
 let proxy;
+let browser;
 let exitCode = 1;
 try {
 	proxy = opts.url ? { url: opts.url, workspace: null, editor: 'external', runDir } : await startProxy({ ...opts, runDir });
@@ -717,14 +733,17 @@ try {
 	if (opts.android) {
 		all.push(...(await checkAndroid(opts.android, ctx)));
 	} else {
-		const browser = await chromium.launch();
+		browser = await BROWSERS[opts.browser].launch();
+		console.log(`browser: ${opts.browser} ${browser.version()} (device emulation, not a physical phone)\n`);
 		for (const name of opts.devices) {
 			const device = DEVICES[name];
 			if (!device) throw new Error(`unknown Playwright device "${name}"`);
 			const { defaultBrowserType, ...deviceOpts } = device;
 			let context;
 			const open = async () => {
-				context = await browser.newContext(deviceOpts);
+				// Assertions use VS Code's English labels; WebKit otherwise inherits the
+				// host locale, unlike Chromium's default, and can load a language pack.
+				context = await browser.newContext({ ...deviceOpts, locale: 'en-US' });
 				return { page: await context.newPage(), close: () => context.close() };
 			};
 			// A real touch swipe (start, moves, end) through the DevTools protocol.
@@ -735,20 +754,21 @@ try {
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 				await cdp.detach();
 			};
-			all.push(...(await checkDevice({ name, open, swipe }, ctx)));
+			all.push(...(await checkDevice({ name, open, swipe: opts.browser === 'chromium' ? swipe : null }, ctx)));
 		}
-		await browser.close();
 	}
 
 	const failed = all.filter((r) => !r.ok);
-	const report = { date: new Date().toISOString(), editor: proxy.editor, mode: opts.mode, browser: opts.android ? 'Android Chrome' : 'Chromium device emulation (not Safari)', runDir, testedWith: selectors.testedWith, passed: all.length - failed.length, failed: failed.length, results: all };
+	const skipped = all.filter((r) => r.skipped);
+	const report = { date: new Date().toISOString(), editor: proxy.editor, mode: opts.mode, browser: opts.android ? 'Android Chrome' : `${opts.browser} device emulation (not a physical phone)`, browserVersion: browser?.version(), runDir, testedWith: selectors.testedWith, passed: all.length - failed.length - skipped.length, failed: failed.length, skipped: skipped.length, results: all };
 	writeFileSync(join(runDir, 'report.json'), JSON.stringify(report, null, 2));
 	writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
-	console.log(`\n${report.passed} passed, ${report.failed} failed → check-output/report.json`);
+	console.log(`\n${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped → check-output/report.json`);
 	exitCode = failed.length ? 1 : 0;
 } catch (err) {
 	console.error(`check aborted: ${err.message}`);
 } finally {
+	if (browser) await browser.close().catch(() => {});
 	killTree(proxy?.child);
 }
 process.exit(exitCode);

@@ -246,6 +246,7 @@ Without the token in the link, VS Code answers 403 and the connect page is only 
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
 npm run check                  # Chromium: Pixel 7 + iPhone 14 device emulation
+npm run check -- --browser webkit --devices "iPhone 14" # WebKit engine check
 npm run check -- --android     # real Chrome on an emulator or USB phone
 ```
 
@@ -258,7 +259,7 @@ The repo includes a Claude Code skill (`.claude/skills/mobilize-editor`): open t
 <details>
 <summary>Verification status and known limitations</summary>
 
-The layer's recorded test target is VS Code CLI 1.138.0 on Windows. Check `check-output/report.json` for the latest local result and browser. Both device presets use Chromium: iPhone emulation does not verify Safari/WebKit or a physical phone. Real-device and remote-network behavior need separate checks. Earlier builtin-mode checks recorded an intermittent iPhone-layout failure.
+The layer's recorded test target is VS Code CLI 1.138.0 on Windows. Check `check-output/report.json` for the latest local result, browser version and skipped checks. Device presets use Chromium by default; `--browser webkit` runs Playwright's WebKit engine. Neither emulates a physical iPhone's keyboard, certificates or network transitions. Native swipe injection is unavailable in the WebKit runner and is reported as skipped, not passed. Real-device and remote-network behavior need separate checks. Earlier builtin-mode checks recorded an intermittent iPhone-layout failure.
 
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.
 - `serve-web` can download a newer VS Code web server than your desktop version, so the phone may run a newer VS Code than the one you tested with.

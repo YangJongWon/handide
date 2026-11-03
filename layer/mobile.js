@@ -76,6 +76,7 @@ const STRINGS = {
 		'term.on': 'Terminal input box on',
 		'term.off': 'Terminal input box off (the {1} key turns it back on)',
 		'sheet.placeholder': 'Type here (any language) → insert',
+		'sheet.failed': 'Could not insert the text. Your input was kept.',
 		'need.create': 'Creating a file needs the handide extension (check that the folder is trusted).',
 		'need.open': 'Opening a file needs the handide extension (check that the folder is trusted).',
 		'need.folder': 'Changing the folder needs the handide extension.',
@@ -224,6 +225,7 @@ const STRINGS = {
 		'term.on': '터미널 입력란 켜짐',
 		'term.off': '터미널 입력란 꺼짐 ({1} 키로 다시 켜기)',
 		'sheet.placeholder': '여기에 입력 (한글 OK) → 삽입',
+		'sheet.failed': '삽입하지 못했습니다. 입력한 내용은 유지됩니다.',
 		'need.create': '파일을 만들려면 handide 확장이 필요합니다 (폴더 신뢰 확인).',
 		'need.open': '파일을 열려면 handide 확장이 필요합니다 (폴더 신뢰 확인).',
 		'need.folder': '폴더를 바꾸려면 handide 확장이 필요합니다.',
@@ -372,6 +374,7 @@ const STRINGS = {
 		'term.on': 'ターミナル入力欄オン',
 		'term.off': 'ターミナル入力欄オフ（{1} キーで再びオン）',
 		'sheet.placeholder': 'ここに入力（日本語可）→ 挿入',
+		'sheet.failed': '挿入できませんでした。入力内容は保持されています。',
 		'need.create': 'ファイルを作成するには handide 拡張機能が必要です（フォルダが信頼されているか確認してください）。',
 		'need.open': 'ファイルを開くには handide 拡張機能が必要です（フォルダが信頼されているか確認してください）。',
 		'need.folder': 'フォルダを変更するには handide 拡張機能が必要です。',
@@ -520,6 +523,7 @@ const STRINGS = {
 		'term.on': '终端输入框已开启',
 		'term.off': '终端输入框已关闭（按 {1} 键重新开启）',
 		'sheet.placeholder': '在此输入（支持中文）→ 插入',
+		'sheet.failed': '无法插入文本，输入内容已保留。',
 		'need.create': '创建文件需要 handide 扩展（请确认已信任该文件夹）。',
 		'need.open': '打开文件需要 handide 扩展（请确认已信任该文件夹）。',
 		'need.folder': '更改文件夹需要 handide 扩展。',
@@ -1364,11 +1368,15 @@ function openInputSheet(opts = {}) {
 	area.placeholder = t(opts.terminal ? 'sheet.terminal' : 'sheet.placeholder');
 	area.focus();
 	render();
-	sheet.onsubmit = (e) => {
+	sheet.onsubmit = async (e) => {
 		e.preventDefault();
 		sheet.hidden = true;
 		if (area.value && toTerminal) bridgeCall('workbench.action.terminal.sendSequence', { text: area.value });
-		else if (area.value) pasteInto(target, area.value);
+		else if (area.value && (await pasteInto(target, area.value)) === false) {
+			sheet.hidden = false;
+			area.focus();
+			toast(t('sheet.failed'));
+		}
 		render();
 	};
 }
@@ -1383,7 +1391,8 @@ function closeInputSheet() {
  * - Editor using EditContext (current Chrome, desktop and Android): a `textupdate`,
  *   the same path the soft keyboard uses. A synthetic paste is *accepted* there but
  *   inserts nothing on Android Chrome, so it is not used for the editor.
- * - Anything else (terminal, VS Code inputs, browsers without EditContext): a paste.
+ * - Editor without EditContext: the companion inserts literal text through VS Code.
+ * - Anything else (terminal, VS Code inputs, no companion): a paste.
  */
 function pasteInto(target, text) {
 	target.focus?.();
@@ -1394,6 +1403,14 @@ function pasteInto(target, text) {
 		const caret = start + text.length;
 		ec.dispatchEvent(new TextUpdateEvent('textupdate', { text, updateRangeStart: start, updateRangeEnd: ec.selectionEnd, selectionStart: caret, selectionEnd: caret }));
 		how = 'textupdate';
+	} else if (state.bridge && target.closest?.(`${state.selectors.parts.editor} .monaco-editor`)) {
+		// WebKit can acknowledge a synthetic paste without changing the document.
+		// appendText in the companion keeps $, braces and backslashes literal.
+		document.documentElement.dataset.hdLastPaste = 'bridge insert requested';
+		return bridgeCall('handide.insertText', { text, path: state.activePath }).then((r) => {
+			document.documentElement.dataset.hdLastPaste = `bridge insert ${r?.ok ? 'ok' : 'failed'}`;
+			return !!r?.ok;
+		});
 	} else {
 		const data = new DataTransfer();
 		data.setData('text/plain', text);
@@ -1402,6 +1419,7 @@ function pasteInto(target, text) {
 	}
 	// Breadcrumb for `npm run check` when an insert goes missing.
 	document.documentElement.dataset.hdLastPaste = `${target.tagName}.${[...(target.classList || [])].join('.')} ${how}`;
+	return true;
 }
 
 // ---------------------------------------------------------------- menu sheet
@@ -2536,7 +2554,9 @@ function build() {
 			'div',
 			{ class: 'hd-sheet-actions' },
 			el('button', { type: 'button', 'data-act': 'cancel', 'data-i18n': 'action.cancel', onclick: closeInputSheet }, t('action.cancel')),
-			el('button', { type: 'submit', 'data-i18n': 'action.insert' }, t('action.insert')),
+			// Use the same pointer tap path as the other controls: WebKit may suppress
+			// the synthesized click after pointerdown keeps focus in the textarea.
+			el('button', { type: 'submit', 'data-i18n': 'action.insert', onclick: () => sheet.requestSubmit() }, t('action.insert')),
 		),
 	);
 	// Tapping the buttons must not take the focus (and the keyboard) from the text box.
@@ -2642,6 +2662,13 @@ function pressKey(name, def) {
 	}
 	if (def.input) return openInputSheet();
 	if (def.action) return runAction(def.action);
+	const cursorCommand = { ArrowLeft: 'cursorLeft', ArrowRight: 'cursorRight', ArrowUp: 'cursorUp', ArrowDown: 'cursorDown' }[def.key];
+	const target = focusTarget();
+	if (cursorCommand && state.bridge && target.closest?.(`${state.selectors.parts.editor} .monaco-editor`)) {
+		const mods = consumeSticky();
+		if (!mods.ctrlKey && !mods.altKey) return bridgeCall(cursorCommand + (mods.shiftKey ? 'Select' : ''));
+		return sendKey({ key: def.key, keyCode: def.keyCode, ...mods, target });
+	}
 	sendKey({ key: def.key, keyCode: def.keyCode, ...consumeSticky() });
 }
 

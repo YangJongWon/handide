@@ -512,6 +512,11 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		if (ports?.upgrade(req, socket, head)) return;
 		const upstream = net.connect(upstreamPort, '127.0.0.1', () => {
 			const headers = toUpstreamHeaders(req);
+			// WebKit can offer legacy x-webkit-deflate-frame, whose negotiation with
+			// the editor server fails. Compression is optional: omit unsupported
+			// offers so these clients get an uncompressed connection instead.
+			const compression = headers['sec-websocket-extensions'];
+			if (compression && !/(?:^|,)\s*permessage-deflate\s*(?:;|,|$)/i.test(compression)) delete headers['sec-websocket-extensions'];
 			const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
 			for (const [k, v] of Object.entries(headers)) {
 				for (const value of [].concat(v)) lines.push(`${k}: ${value}`);

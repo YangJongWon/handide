@@ -241,6 +241,7 @@ handide 默认关闭工作区信任，只有在配置中设置 `"workspaceTrust"
 git clone https://github.com/YangJongWon/handide.git && cd handide
 npm install && npm link
 npm run check                  # 使用 Chromium 模拟 Pixel 7 + iPhone 14
+npm run check -- --browser webkit --devices "iPhone 14" # WebKit 引擎检查
 npm run check -- --android     # 在模拟器或 USB 连接的手机上用真实 Chrome
 ```
 
@@ -251,7 +252,7 @@ npm run check -- --android     # 在模拟器或 USB 连接的手机上用真实
 <details>
 <summary>验证状态与已知限制</summary>
 
-布局层记录的测试目标是 Windows 上的 VS Code CLI 1.138.0。最新本地结果及浏览器见 `check-output/report.json`。两种设备配置均使用 Chromium，因此 iPhone 模拟并不代表 Safari/WebKit 或实体设备验证。实体设备和外部网络需要单独检查。此前 builtin 模式检查记录过 iPhone 布局的间歇性失败。
+布局层记录的测试目标是 Windows 上的 VS Code CLI 1.138.0。最新结果、浏览器版本和跳过的检查见 `check-output/report.json`。默认使用 Chromium，`--browser webkit` 可运行 Playwright 的 WebKit 引擎。两者都不模拟实体 iPhone 的键盘、证书和网络切换。WebKit 运行器不支持原生滑动注入，该检查会记为跳过而非通过。实体设备和外部网络需要单独检查。此前 builtin 模式检查记录过 iPhone 布局的间歇性失败。
 
 - 每个浏览器和文件夹需要信任一次。
 - 配套扩展使用的少数布局命令属于 VS Code 内部命令。`npm run compat` 会标出未测试的版本，`npm run check` 用于确认。
