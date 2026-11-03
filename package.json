@@ -1,6 +1,6 @@
 {
   "name": "handide",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "license": "MIT",
   "description": "Your real VS Code on your phone: run handide in a folder, scan the QR code, and code from the phone with your own extensions and AI agents.",
@@ -17,7 +17,8 @@
     "check": "node .claude/skills/mobilize-editor/scripts/check.mjs",
     "compat": "node .claude/skills/mobilize-editor/scripts/compat.mjs",
     "installer": "node installer/build.mjs",
-    "vsix": "node desktop/build.mjs"
+    "vsix": "node desktop/build.mjs",
+    "version:check": "node scripts/version.mjs"
   },
   "engines": {
     "node": ">=20"

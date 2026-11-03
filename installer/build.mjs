@@ -11,6 +11,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeIcon } from './icon.mjs';
+import { handideVersion } from '../scripts/version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -77,7 +78,7 @@ function findIscc() {
 	return spawnSync('where', ['iscc'], { encoding: 'utf8' }).stdout?.split(/\r?\n/)[0] || null;
 }
 
-const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const version = handideVersion(); // the same for the command, the companion and the desktop extension
 log(`handide ${version}`);
 
 rmSync(STAGE, { recursive: true, force: true, maxRetries: 5 }); // retries: antivirus scans hold files briefly

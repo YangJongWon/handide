@@ -3,7 +3,7 @@
   "displayName": "handide Mobile",
   "description": "Companion for the handide mobile layer: one full-screen area per tab, layer keybindings, Agent Hub.",
   "publisher": "handide",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "license": "MIT",
   "engines": {
     "vscode": "^1.100.0"

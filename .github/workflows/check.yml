@@ -1,0 +1,87 @@
+# The mobile layer against a real VS Code web build (npm run check: Pixel 7 + iPhone 14
+# device emulation, its own handide on localhost, no remote access).
+#
+#   pull requests, pushes to main, releases (installer.yml): the build handide serves
+#     (layer/selectors.json testedWith.commit); a failure blocks the release.
+#   weekly and by hand with server=latest: the newest VS Code. When it passes, a pull
+#     request moves testedWith to it, so the next release serves it. When it fails, this
+#     run fails: the layer needs a fix before that VS Code reaches anyone.
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * 1' # Mondays; VS Code stable ships about weekly
+  workflow_dispatch:
+    inputs:
+      server:
+        description: 'Web build: pinned (what handide serves) or latest'
+        type: choice
+        options: [pinned, latest]
+        default: latest
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: check-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      LATEST: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.server == 'latest') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Browsers
+        run: npx playwright install chromium webkit
+      - name: VS Code
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\Microsoft VS Code\bin\code-tunnel.exe")) { choco install vscode -y --no-progress }
+          & "$env:ProgramFiles\Microsoft VS Code\bin\code-tunnel.exe" --version
+      - name: Check (newest VS Code, record it)
+        if: env.LATEST == 'true'
+        run: npm run check -- --record
+      - name: Check (the build handide serves)
+        if: env.LATEST != 'true'
+        run: npm run check -- --pinned
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: check-output
+          path: |
+            check-output/report.json
+            check-output/run-*/**/*.png
+            check-output/run-*/report.json
+          retention-days: 14
+      - name: Propose the newer build
+        if: env.LATEST == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet -- layer/selectors.json
+          if ($LASTEXITCODE -eq 0) { Write-Host 'testedWith already names this build'; exit 0 }
+          $v = (Get-Content layer/selectors.json -Raw | ConvertFrom-Json).testedWith.version
+          $branch = "vscode-$v"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c $branch
+          git commit -am "Serve VS Code $v on the phone (checked)"
+          git push -f origin $branch
+          gh pr view $branch *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh pr create --head $branch --title "Serve VS Code $v on the phone" --body "npm run check passed on VS Code $v (report in this run's check-output artifact). Merging makes the next release serve this build."
+          }

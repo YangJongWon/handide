@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handideVersion } from '../scripts/version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -28,6 +29,8 @@ function run(cmd, args, cwd) {
 	}
 }
 
+// One version for the command, the companion and this extension (scripts/version.mjs).
+handideVersion();
 const manifest = JSON.parse(readFileSync(join(HERE, 'package.json'), 'utf8'));
 rmSync(STAGE, { recursive: true, force: true, maxRetries: 5 }); // retries: antivirus scans hold files briefly
 mkdirSync(STAGE, { recursive: true });

@@ -3,7 +3,7 @@
 	"publisher": "yangjongwon",
 	"displayName": "handide: VS Code on your phone",
 	"description": "Open this project on your phone: press the phone button, scan the QR code, and code from the phone with your own VS Code, extensions and AI agents.",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"license": "MIT",
 	"icon": "icon.png",
 	"repository": {

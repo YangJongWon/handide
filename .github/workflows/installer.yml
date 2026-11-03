@@ -1,6 +1,8 @@
-# Builds the Windows installer. On a v* tag it is attached to that tag's GitHub release
-# (created if needed); otherwise it is kept as a workflow artifact.
-name: Windows installer
+# Builds the Windows installer and the desktop extension, after the phone layout passed on
+# the VS Code build handide serves (check.yml). On a v* tag both are attached to that tag's
+# GitHub release (created if needed) and the extension goes to the Marketplace; otherwise
+# they are kept as a workflow artifact.
+name: Release
 
 on:
   push:
@@ -9,25 +11,57 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write # check.yml asks for it (its weekly run opens pull requests)
 
 jobs:
+  # No release whose phone layout fails on the VS Code build it serves.
+  check:
+    uses: ./.github/workflows/check.yml
+
   build:
+    needs: check
     runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX != '' }}
+      HAS_VSCE: ${{ secrets.VSCE_PAT != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/version.mjs --tag ${{ github.ref_name }}
       - name: Inno Setup
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
       - name: Build
         run: node installer/build.mjs
+      # Signed only when the repository has a code-signing certificate (base64 .pfx and its
+      # password as secrets); unsigned builds still work but SmartScreen warns on first run.
+      - name: Sign
+        if: env.HAS_CERT == 'true'
+        shell: pwsh
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX }}
+          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+          $exe = Get-ChildItem installer/out/handide-setup-*.exe | Select-Object -First 1
+          & $signtool.FullName sign /f $pfx /p $env:CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Remove-Item $pfx
+      - name: Desktop extension
+        run: node desktop/build.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: handide-setup
-          path: installer/out/handide-setup-*.exe
+          path: |
+            installer/out/handide-setup-*.exe
+            desktop/out/handide-*.vsix
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -35,6 +69,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $exe = Get-ChildItem installer/out/handide-setup-*.exe | Select-Object -First 1
+          $vsix = Get-ChildItem desktop/out/handide-*.vsix | Select-Object -First 1
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -ne 0) { gh release create $env:GITHUB_REF_NAME --generate-notes }
-          gh release upload $env:GITHUB_REF_NAME $exe.FullName --clobber
+          gh release upload $env:GITHUB_REF_NAME $exe.FullName $vsix.FullName --clobber
+      # The same .vsix to the Marketplace, when a publisher token is set up (secret VSCE_PAT).
+      - name: Publish to the Marketplace
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_VSCE == 'true'
+        shell: pwsh
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          $vsix = Get-ChildItem desktop/out/handide-*.vsix | Select-Object -First 1
+          npx --yes @vscode/vsce@latest publish --packagePath $vsix.FullName
