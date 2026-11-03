@@ -1154,6 +1154,35 @@ function visiblePart(name) {
 }
 const visibleParts = () => Object.keys(state.selectors.parts).filter(visiblePart);
 
+// The drawer last shown (code, terminal or the AI drawer) comes back when the page loads
+// again: after the phone dropped it in the background, a reconnect, or a visit to another
+// PC and back. VS Code restores the open files and terminals itself, and the companion
+// the extension last shown in the AI drawer; only the layer always started on the code.
+// Kept per address (each PC has its own) and per folder (a relayed PC shares the address).
+const viewKey = () => `handide.view:${state.folder?.path ?? ''}`;
+
+function savedView() {
+	try {
+		const view = localStorage.getItem(viewKey());
+		return VIEW_PARTS[view] ? view : 'editor';
+	} catch {
+		return 'editor'; // storage blocked (private browsing)
+	}
+}
+
+/** Saved on every render, but only once the saved view is shown: the first renders would replace it. */
+function rememberView() {
+	if (!state.viewRestored) return;
+	try {
+		localStorage.setItem(viewKey(), state.view);
+	} catch {}
+}
+
+function restoreView() {
+	state.viewRestored = true;
+	showView(savedView());
+}
+
 function showView(view) {
 	state.view = view;
 	// While VS Code carries out the switch, the layout is in between: don't let
@@ -2797,6 +2826,7 @@ function render() {
 	termBar.hidden = !termInputShown();
 	if (termBar.hidden && termInputFocused()) document.activeElement.blur();
 	document.documentElement.dataset.hdView = state.view;
+	rememberView();
 	document.getElementById('hd-fab').hidden = state.keysOn || state.drawerOpen || state.menuOpen || sheetOpen;
 	for (const b of document.querySelectorAll('#hd-menu [data-item]')) b.classList.toggle('active', MENU_DEFS[b.dataset.item]?.view === state.view);
 	for (const b of root.querySelectorAll('[data-key]')) {
@@ -3167,11 +3197,11 @@ async function main() {
 	if (!builtin() && (await waitForBridge())) {
 		loadAgents(); // make the extension picker instant when it is opened later
 		await refreshState();
-		showView('editor');
+		restoreView();
 		// Keep the drawer's active file and folder current.
 		setInterval(() => state.drawerOpen || refreshState(), 5000);
 	} else {
-		setTimeout(() => showView('editor'), 2500);
+		setTimeout(restoreView, 2500);
 	}
 }
 
