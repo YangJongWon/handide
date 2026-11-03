@@ -8,21 +8,64 @@
 // --json", "handide switch ..."); "handide desktop" installs this extension and records in
 // handide.json how to run that command, since an editor started from the Dock or the
 // Start menu may not have it on its PATH.
+//
+// Open on Phone (the phone button in the status bar): a QR code that opens this window's
+// project in handide on the phone, starting handide first when it is not running.
 const vscode = require('vscode');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
+const os = require('os');
 const path = require('path');
 
 const REMOTE_SSH = { cursor: 'anysphere.remote-ssh', vscode: 'ms-vscode-remote.remote-ssh' };
 const PLATFORM = { win32: 'windows', darwin: 'macOS', linux: 'linux' };
 
-function handideCommand() {
+/** The first file of `names` in one of `dirs`. */
+const findIn = (dirs, names) => {
+	for (const d of dirs) for (const n of names) if (d && fs.existsSync(path.join(d, n))) return path.join(d, n);
+	return null;
+};
+
+/**
+ * Node and handide's server.mjs: from handide.json ("handide desktop"), else from where
+ * handide is installed (the Windows installer, or npm's "handide" shim on the PATH). Run
+ * as node + script, never through a shell: on Windows a shell started detached opens a
+ * console window for node.
+ */
+function locateHandide() {
 	try {
 		const c = JSON.parse(fs.readFileSync(path.join(__dirname, 'handide.json'), 'utf8'));
-		return { cmd: c.node, pre: [c.server] };
+		if (fs.existsSync(c.node) && fs.existsSync(c.server)) return c;
 	} catch {
-		return { cmd: 'handide', pre: [] };
+		// not installed by "handide desktop": look below
 	}
+	const pathDirs = (process.env.PATH || '').split(path.delimiter);
+	const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node'];
+	const installer = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'handide');
+	const shim = findIn([installer, ...pathDirs], process.platform === 'win32' ? ['handide.cmd'] : ['handide']);
+	if (!shim) return null;
+	const dir = path.dirname(shim);
+	// installer/handide.cmd: <dir>\node\node.exe <dir>\app\proxy\server.mjs
+	const bundled = { node: path.join(dir, 'node', nodeNames[0]), server: path.join(dir, 'app', 'proxy', 'server.mjs') };
+	if (fs.existsSync(bundled.node) && fs.existsSync(bundled.server)) return bundled;
+	// npm: the shim next to node_modules (Windows), or a link into it (macOS, Linux)
+	let server = path.join(dir, 'node_modules', 'handide', 'proxy', 'server.mjs');
+	if (!fs.existsSync(server)) {
+		try {
+			server = fs.realpathSync(shim);
+		} catch {
+			return null;
+		}
+	}
+	const node = findIn([dir, ...pathDirs], nodeNames);
+	return node && fs.existsSync(server) ? { node, server } : null;
+}
+
+function handideCommand() {
+	const c = locateHandide();
+	return c ? { cmd: c.node, pre: [c.server] } : { cmd: 'handide', pre: [] };
 }
 
 /** Runs the handide command; resolves to the JSON of its last output line. */
@@ -251,6 +294,227 @@ async function switchMenu(context) {
 	if (picked?.run) await picked.run();
 }
 
+// ---------------------------------------------------------------- open on the phone
+
+const handidePort = () => vscode.workspace.getConfiguration('handide').get('port') ?? 9000;
+const START_LOG = path.join(os.tmpdir(), 'handide-from-editor.log');
+const START_WAIT_MS = 180_000; // the first run may download the editor server
+
+const failure = (code, message) => Object.assign(new Error(message), { code });
+
+/** The running handide's links opening `folder`, each with its QR code (proxy/connect.mjs: connectJson). */
+function connectInfo(folder) {
+	const port = handidePort();
+	return new Promise((ok, fail) => {
+		const req = http.get(
+			// Only served to this PC under a localhost name (proxy/connect.mjs: isConnectAllowed).
+			{ host: '127.0.0.1', port, path: `/__handide/connect.json?folder=${encodeURIComponent(folder)}`, headers: { host: `localhost:${port}` }, timeout: 5_000 },
+			(res) => {
+				let body = '';
+				res.setEncoding('utf8');
+				res.on('data', (c) => (body += c));
+				res.on('end', () => {
+					if (res.statusCode === 503) return fail(failure('STARTING', 'handide is still starting'));
+					try {
+						const info = JSON.parse(body);
+						if (info.ok) return ok(info);
+					} catch {
+						// not handide's JSON: below
+					}
+					fail(failure('OLD', `something on port ${port} does not answer as a current handide. If it is an older handide, stop it, update it ("npm install -g github:YangJongWon/handide") and try again.`));
+				});
+			},
+		);
+		req.on('timeout', () => req.destroy(failure('ETIMEDOUT', `handide on port ${port} does not answer`)));
+		req.on('error', fail);
+	});
+}
+
+/**
+ * Starts handide on `folder`, detached so it outlives this window and the phone keeps
+ * working when the editor closes. Resolves once it answers; its output goes to START_LOG.
+ */
+async function startHandide(folder, progress) {
+	const found = locateHandide();
+	if (!found) throw failure('NOT_FOUND', 'handide is not installed on this PC.');
+	const out = fs.openSync(START_LOG, 'w');
+	const child = spawn(found.node, [found.server, folder, '--port', String(handidePort())], {
+		cwd: folder,
+		detached: true,
+		stdio: ['ignore', out, out],
+		windowsHide: true,
+	});
+	fs.closeSync(out);
+	let exited = null;
+	child.on('error', (err) => (exited = err.message));
+	child.on('exit', (code) => (exited = `exit code ${code}`));
+	child.unref();
+	progress.report({ message: 'starting handide…' });
+	for (const until = Date.now() + START_WAIT_MS; Date.now() < until; ) {
+		await new Promise((r) => setTimeout(r, 1_000));
+		if (exited !== null) throw failure('EXITED', `handide stopped (${exited}).`);
+		try {
+			return await connectInfo(folder);
+		} catch (err) {
+			if (err.code === 'OLD') throw err;
+		}
+	}
+	throw failure('EXITED', 'handide did not start in time.');
+}
+
+/** Nothing listens on the port, so starting handide there is the fix. */
+const notRunning = (err) => err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET';
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+function phoneHtml(info, folder, webview) {
+	const nonce = crypto.randomBytes(18).toString('base64');
+	const links = info.links;
+	const remote = links[0]?.remote;
+	const lead = !links.length
+		? info.local
+			? 'handide runs for this PC only (--local), so there is no link for the phone. Stop it and start it without --local.'
+			: 'handide found no network address on this PC. Check that it is on Wi-Fi or wired, then start handide again.'
+		: !remote
+			? 'The phone needs to be on the same Wi-Fi as this PC. To use it away from home too, run "handide remote" once in a terminal.'
+			: links[0].public
+				? 'Works at home and away; nothing to install on the phone.'
+				: 'Works anywhere while the Tailscale app is on on the phone (same account as this PC).';
+	const tabs = links
+		.map((l, i) => `<button type="button" class="tab" data-i="${i}" aria-selected="${i === 0}">${escapeHtml(l.label)} · ${escapeHtml(new URL(l.url).hostname)}</button>`)
+		.join('');
+	// The SVGs come from handide on this PC (proxy/connect.mjs: connectJson).
+	const panels = links
+		.map(
+			(l, i) => `<section class="panel" data-i="${i}"${i ? ' hidden' : ''}>
+				<div class="qr">${l.svg}</div>
+				<div class="link"><code>${escapeHtml(l.url)}</code><button type="button" class="copy" data-url="${escapeHtml(l.url)}">Copy</button></div>
+			</section>`,
+		)
+		.join('');
+	const notes = [
+		links.some((l) => !l.remote) && info.selfSigned
+			? '<li>The first visit on a LAN address shows a certificate warning (handide made the certificate for this PC). Android Chrome: <i>Advanced</i> → <i>Proceed</i>. iPhone Safari: <i>Show Details</i> → <i>visit this website</i>.</li>'
+			: '',
+		'<li>When VS Code asks whether to trust the folder, trust it: the mobile tabs and agent extensions need it.</li>',
+		'<li>handide keeps running after this editor closes. To have it start at logon: <code>handide service install</code>.</li>',
+	].join('');
+	return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+	body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
+	main { max-width: 480px; margin: 0 auto; padding: 24px 12px; }
+	h1 { font-size: 1.6em; margin: 0 0 4px; }
+	.folder { color: var(--vscode-descriptionForeground); margin: 0 0 12px; overflow-wrap: anywhere; }
+	.lead { margin: 0 0 16px; }
+	.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+	.tab { border: 1px solid var(--vscode-panel-border); background: none; color: inherit; border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit; }
+	.tab[aria-selected="true"] { border-color: var(--vscode-focusBorder); color: var(--vscode-textLink-foreground); font-weight: 600; }
+	.qr { background: #fff; border-radius: 12px; padding: 12px; width: min(100%, 360px); margin: 0 auto 12px; }
+	.qr svg { display: block; width: 100%; height: auto; }
+	.link { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+	.link code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .9em; }
+	.copy { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 4px 10px; cursor: pointer; font: inherit; }
+	ul { padding-left: 18px; color: var(--vscode-descriptionForeground); }
+	li { margin-bottom: 6px; }
+	.note { color: var(--vscode-descriptionForeground); font-size: .9em; }
+</style>
+</head>
+<body>
+<main>
+	<h1>${links.length ? 'Scan with your phone camera' : 'No link for the phone'}</h1>
+	<p class="folder">${escapeHtml(folder)}</p>
+	<p class="lead">${escapeHtml(lead)}</p>
+	${links.length > 1 ? `<div class="tabs">${tabs}</div>` : ''}
+	${panels}
+	${links.length ? `<ul>${notes}</ul><p class="note">The link contains your access token: use it only on your own devices.</p>` : ''}
+</main>
+<script nonce="${nonce}">
+	const vscode = acquireVsCodeApi();
+	for (const b of document.querySelectorAll('.tab')) {
+		b.addEventListener('click', () => {
+			for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t === b));
+			for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.i !== b.dataset.i;
+		});
+	}
+	for (const c of document.querySelectorAll('.copy')) {
+		c.addEventListener('click', () => {
+			vscode.postMessage({ copy: c.dataset.url });
+			c.textContent = 'Copied';
+			setTimeout(() => (c.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+</body>
+</html>`;
+}
+
+let phonePanel = null;
+
+/** Renders the panel again only when the links changed, so a picked tab stays picked. */
+function showPhone(info, folder) {
+	const key = JSON.stringify([folder, info.links.map((l) => l.url), info.local]);
+	if (phonePanel.key === key) return;
+	phonePanel.key = key;
+	phonePanel.folder = folder;
+	phonePanel.webview.html = phoneHtml(info, folder, phonePanel.webview);
+}
+
+/** Shows the QR code for this window's folder; the away-from-home link joins it once handide has it. */
+async function openOnPhone() {
+	const uri = folderUri();
+	if (!uri || uri.scheme !== 'file') {
+		return vscode.window.showInformationMessage('handide: open a folder on this PC first; that project then opens on the phone.');
+	}
+	const folder = uri.fsPath;
+	let info;
+	try {
+		info = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'handide' }, async (progress) => {
+			try {
+				return await connectInfo(folder);
+			} catch (err) {
+				if (!notRunning(err)) throw err;
+				return startHandide(folder, progress);
+			}
+		});
+	} catch (err) {
+		if (err.code === 'NOT_FOUND') {
+			const how = 'How to install';
+			const pick = await vscode.window.showErrorMessage(`handide: ${err.message} Install it, then press the phone button again.`, how);
+			if (pick === how) await vscode.env.openExternal(vscode.Uri.parse('https://github.com/YangJongWon/handide#quick-start'));
+			return;
+		}
+		if (err.code !== 'EXITED') return vscode.window.showErrorMessage(`handide: ${err.message}`);
+		const log = 'Show log';
+		const pick = await vscode.window.showErrorMessage(`handide: ${err.message} Run "handide" in a terminal to see why, or check the log.`, log);
+		if (pick === log) await vscode.window.showTextDocument(vscode.Uri.file(START_LOG));
+		return;
+	}
+
+	if (phonePanel) phonePanel.reveal(vscode.ViewColumn.Active);
+	else {
+		const panel = vscode.window.createWebviewPanel('handide.phone', 'Open on Phone', vscode.ViewColumn.Active, { enableScripts: true });
+		phonePanel = panel;
+		panel.iconPath = new vscode.ThemeIcon('device-mobile');
+		panel.webview.onDidReceiveMessage((m) => m?.copy && vscode.env.clipboard.writeText(String(m.copy)));
+		// The away-from-home link comes after the LAN one (tunnels take a while), and a
+		// restarted handide may have other addresses.
+		const timer = setInterval(async () => {
+			if (!panel.visible) return;
+			const next = await connectInfo(panel.folder).catch(() => null);
+			if (next && phonePanel === panel) showPhone(next, panel.folder);
+		}, 5_000);
+		panel.onDidDispose(() => {
+			clearInterval(timer);
+			if (phonePanel === panel) phonePanel = null;
+		});
+	}
+	showPhone(info, folder);
+}
+
 function activate(context) {
 	const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 	item.command = 'handide.switch';
@@ -268,8 +532,17 @@ function activate(context) {
 		});
 	}
 	item.show();
+	const phone = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+	phone.command = 'handide.openOnPhone';
+	phone.text = '$(device-mobile)';
+	phone.tooltip = 'handide: open this project on your phone (QR code)';
+	const showPhone = () => (folderUri()?.scheme === 'file' ? phone.show() : phone.hide());
+	showPhone();
 	context.subscriptions.push(
 		item,
+		phone,
+		vscode.workspace.onDidChangeWorkspaceFolders(showPhone),
+		vscode.commands.registerCommand('handide.openOnPhone', openOnPhone),
 		vscode.commands.registerCommand('handide.openOnPC', openOnPC),
 		vscode.commands.registerCommand('handide.switch', () => switchMenu(context)),
 	);

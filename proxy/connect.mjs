@@ -32,6 +32,24 @@ export function isConnectAllowed(req) {
 	return loopback && localHost;
 }
 
+/** "c:\Users\x" → "/c:/Users/x": the folder as serve-web's ?folder= takes it. */
+const folderParam = (folder) => (/^[a-zA-Z]:[\\/]/.test(folder) ? `/${folder.replace(/\\/g, '/')}` : folder);
+
+/**
+ * The connect info for the desktop extension's QR panel (desktop/extension.js): the
+ * links opening `folder` when given, each with its QR code as SVG.
+ */
+export async function connectJson(info, { selfSigned, folder } = {}) {
+	const withFolder = (url) => (folder ? `${url}&folder=${encodeURIComponent(folderParam(folder))}` : url);
+	const links = await Promise.all(
+		info.links.map(async (l) => {
+			const url = withFolder(l.url);
+			return { ...l, url, svg: await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#000000', light: '#ffffff' } }) };
+		}),
+	);
+	return { ok: true, local: info.local, port: info.port, localUrl: withFolder(info.localUrl), links, selfSigned: selfSigned ?? null };
+}
+
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export async function renderConnectPage(info, { selfSigned } = {}) {

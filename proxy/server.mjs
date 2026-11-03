@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSessionKeeper } from './sessions.mjs';
 import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
-import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
+import { accessInfo, connectJson, isConnectAllowed, renderConnectPage } from './connect.mjs';
 import { PHONE_APP_URL, openBrowser, setupRemote, startTailscale } from './tailscale.mjs';
 import { startCloudflare } from './cloudflare.mjs';
 import { canServeWebviews, isWebviewAsset, isWebviewHost, patchWebviewHost, useLocalWebviews, withToken } from './webview.mjs';
@@ -42,6 +42,8 @@ const LAYER_PREFIX = '/__handide/';
 let CONFIG_PATH = join(ROOT, 'layer.config.json');
 // PC-side page with a large QR code; filled in once the server is listening.
 const CONNECT_PATH = '/__handide/connect';
+// The same as JSON, for the desktop extension's QR panel; ?folder= picks the project.
+const CONNECT_JSON_PATH = '/__handide/connect.json';
 let CONNECT = null;
 
 async function serveConnect(req, res) {
@@ -56,11 +58,18 @@ async function serveConnect(req, res) {
 		res.end('handide is still starting, reload in a moment.');
 		return;
 	}
+	const [pathname, query = ''] = req.url.split('?');
+	if (pathname === CONNECT_JSON_PATH) {
+		const folder = new URLSearchParams(query).get('folder') || undefined;
+		res.writeHead(200, { ...headers, 'content-type': 'application/json; charset=utf-8' });
+		res.end(JSON.stringify(await connectJson(CONNECT.info, { selfSigned: CONNECT.selfSigned, folder })));
+		return;
+	}
 	res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8' });
 	res.end(await renderConnectPage(CONNECT.info, CONNECT));
 }
 
-const isConnectRequest = (req) => req.method === 'GET' && req.url.split('?')[0] === CONNECT_PATH;
+const isConnectRequest = (req) => req.method === 'GET' && [CONNECT_PATH, CONNECT_JSON_PATH].includes(req.url.split('?')[0]);
 
 const MIME = {
 	'.css': 'text/css; charset=utf-8',
