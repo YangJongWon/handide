@@ -168,4 +168,7 @@ async function bundledHandide(report) {
 	return { node, server };
 }
 
-module.exports = { bundledHandide, bundledReady };
+/** Where the bundled handide of this extension version runs from; null in a build without it. */
+const bundledServer = () => (hasBundled() ? path.join(appDir(), 'proxy', 'server.mjs') : null);
+
+module.exports = { bundledHandide, bundledReady, bundledServer };

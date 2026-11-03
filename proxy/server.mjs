@@ -46,6 +46,60 @@ const CONNECT_PATH = '/__handide/connect';
 const CONNECT_JSON_PATH = '/__handide/connect.json';
 let CONNECT = null;
 
+// The open files the desktop editor hands to the phone with its phone button
+// (desktop/extension.js), kept per folder until the phone's editor on that folder takes
+// them (extension/extension.js: takeHandoff, through the bridge's /handoff).
+const HANDOFF_PATH = '/__handide/handoff';
+const HANDOFF_TTL_MS = 30 * 60_000;
+const HANDOFFS = new Map(); // folder key -> { files, active, selection, at }
+const folderKey = (p) => {
+	const r = resolve(String(p)).replace(/[\\/]+$/, '');
+	return process.platform === 'win32' ? r.toLowerCase() : r;
+};
+
+const readBody = (req, limit) =>
+	new Promise((ok, fail) => {
+		const chunks = [];
+		let size = 0;
+		req.on('data', (c) => {
+			size += c.length;
+			if (size > limit) {
+				fail(new Error('body too large'));
+				req.destroy();
+			} else chunks.push(c);
+		});
+		req.on('end', () => ok(Buffer.concat(chunks).toString('utf8')));
+		req.on('error', fail);
+	});
+
+async function receiveHandoff(req, res) {
+	// The custom header keeps a web page in this PC's browser from posting one: it would need CORS.
+	if (req.headers['x-handide'] !== '1') return res.writeHead(403).end();
+	let body;
+	try {
+		body = JSON.parse(await readBody(req, 256 << 10));
+	} catch {
+		return res.writeHead(400).end();
+	}
+	if (typeof body?.folder !== 'string' || !body.folder || !Array.isArray(body.files)) return res.writeHead(400).end();
+	const files = body.files.filter((f) => typeof f === 'string' && !f.split('/').includes('..')).slice(0, 50);
+	const active = typeof body.active === 'string' && files.includes(body.active) ? body.active : null;
+	const selection = Array.isArray(body.selection) && body.selection.length === 4 && body.selection.every((n) => Number.isInteger(n) && n >= 0) ? body.selection : null;
+	HANDOFFS.set(folderKey(body.folder), { files, active, selection, at: Date.now() });
+	res.writeHead(204, { 'cache-control': 'no-store' }).end();
+}
+
+/** GET /handoff?folder= on the bridge: the files handed over for that folder, once. */
+function takeHandoff(req, res) {
+	const folder = new URL(req.url, 'http://bridge').searchParams.get('folder');
+	const key = folder && folderKey(folder);
+	const handoff = key && HANDOFFS.get(key);
+	if (handoff) HANDOFFS.delete(key);
+	const fresh = handoff && Date.now() - handoff.at < HANDOFF_TTL_MS ? handoff : null;
+	res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+	res.end(JSON.stringify(fresh));
+}
+
 async function serveConnect(req, res) {
 	const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 	if (!isConnectAllowed(req)) {
@@ -53,6 +107,7 @@ async function serveConnect(req, res) {
 		res.end('This page is only available on the PC running handide: http://localhost:<port>/__handide/connect');
 		return;
 	}
+	if (req.method === 'POST') return receiveHandoff(req, res);
 	if (!CONNECT) {
 		res.writeHead(503, { ...headers, 'content-type': 'text/plain; charset=utf-8', 'retry-after': '2' });
 		res.end('handide is still starting, reload in a moment.');
@@ -62,14 +117,17 @@ async function serveConnect(req, res) {
 	if (pathname === CONNECT_JSON_PATH) {
 		const folder = new URLSearchParams(query).get('folder') || undefined;
 		res.writeHead(200, { ...headers, 'content-type': 'application/json; charset=utf-8' });
-		res.end(JSON.stringify(await connectJson(CONNECT.info, { selfSigned: CONNECT.selfSigned, folder, remote: CONNECT.remote })));
+		res.end(JSON.stringify(await connectJson(CONNECT.info, { selfSigned: CONNECT.selfSigned, folder, remote: CONNECT.remote, server: fileURLToPath(import.meta.url) })));
 		return;
 	}
 	res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8' });
 	res.end(await renderConnectPage(CONNECT.info, CONNECT));
 }
 
-const isConnectRequest = (req) => req.method === 'GET' && [CONNECT_PATH, CONNECT_JSON_PATH].includes(req.url.split('?')[0]);
+const isConnectRequest = (req) => {
+	const pathname = req.url.split('?')[0];
+	return req.method === 'GET' ? [CONNECT_PATH, CONNECT_JSON_PATH].includes(pathname) : req.method === 'POST' && pathname === HANDOFF_PATH;
+};
 
 const MIME = {
 	'.css': 'text/css; charset=utf-8',
@@ -656,6 +714,7 @@ async function main() {
 	await rememberFolder(opts.dataDir, opts.folder).catch(() => {});
 	const relay = createPeerRelay({ devices });
 	bridge.route('/peer/', relay.handle);
+	bridge.route('/handoff', takeHandoff);
 	// The workspace file other PCs used to need, kept with this PC's folder alone for editor
 	// URLs that open it (projects.mjs: writeWorkspace).
 	let workspace = null;

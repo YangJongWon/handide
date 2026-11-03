@@ -713,6 +713,50 @@ function state() {
 	};
 }
 
+// ---------------------------------------------------------------- handoff from the desktop
+
+/**
+ * The files the desktop editor had open when its phone button was pressed (handed to
+ * handide by desktop/extension.js, kept per folder): opened here as there, the active one
+ * last with its selection. Asked for when this editor starts and whenever it comes to the
+ * front, so picking the phone up after pressing the button is enough.
+ */
+let takingHandoff = false;
+async function takeHandoff() {
+	const url = process.env.HANDIDE_BRIDGE_URL;
+	const secret = process.env.HANDIDE_BRIDGE_SECRET;
+	const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+	if (!url || !secret || !root || takingHandoff) return;
+	takingHandoff = true;
+	try {
+		const res = await fetch(`${url}/handoff?folder=${encodeURIComponent(root.fsPath)}`, { headers: { 'x-handide-secret': secret } });
+		const handoff = res.ok ? await res.json() : null;
+		if (!handoff?.files?.length) return;
+		const uriOf = (f) => vscode.Uri.joinPath(root, ...f.split('/'));
+		let opened = 0;
+		for (const f of handoff.files) {
+			if (f === handoff.active) continue;
+			if (await vscode.window.showTextDocument(uriOf(f), { preview: false, preserveFocus: true }).then(() => true, () => false)) opened++;
+		}
+		if (handoff.active) {
+			const editor = await vscode.window.showTextDocument(uriOf(handoff.active), { preview: false }).then(undefined, () => null);
+			if (editor) {
+				opened++;
+				if (handoff.selection) {
+					const [a, b, c, d] = handoff.selection;
+					editor.selection = new vscode.Selection(a, b, c, d);
+					editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenter);
+				}
+			}
+		}
+		if (opened) vscode.window.showInformationMessage(`Continuing from the desktop: ${opened} file${opened === 1 ? '' : 's'} opened.`);
+	} catch {
+		// handide without handoffs, or the bridge is restarting: nothing to open
+	} finally {
+		takingHandoff = false;
+	}
+}
+
 // ---------------------------------------------------------------- bridge client
 
 /** JSON args → VS Code values: {$file: path} and {$uri: string} become vscode.Uri. */
@@ -796,6 +840,13 @@ async function activate(context) {
 	selfId = context.extension.id;
 	selfPath = context.extensionPath;
 	startBridge(context);
+	takeHandoff();
+	// While this editor is in front: the button on the desktop may be pressed at any time.
+	const handoffTimer = setInterval(() => vscode.window.state.focused && takeHandoff(), 5_000);
+	context.subscriptions.push(
+		{ dispose: () => clearInterval(handoffTimer) },
+		vscode.window.onDidChangeWindowState((s) => s.focused && takeHandoff()),
+	);
 	await moveViewsToPanel();
 	setTimeout(warmLastAgent, 1200);
 }

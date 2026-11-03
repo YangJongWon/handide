@@ -19,7 +19,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
-const { bundledHandide, bundledReady } = require('./runtime');
+const { bundledHandide, bundledReady, bundledServer } = require('./runtime');
 
 const REMOTE_SSH = { cursor: 'anysphere.remote-ssh', vscode: 'ms-vscode-remote.remote-ssh' };
 const PLATFORM = { win32: 'windows', darwin: 'macOS', linux: 'linux' };
@@ -334,7 +334,7 @@ function connectInfo(folder) {
  * Starts handide on `folder`, detached so it outlives this window and the phone keeps
  * working when the editor closes. Resolves once it answers; its output goes to START_LOG.
  */
-async function startHandide(folder, progress) {
+async function startHandide(folder, progress, extra = []) {
 	let found = locateHandide();
 	if (!found) {
 		try {
@@ -346,7 +346,7 @@ async function startHandide(folder, progress) {
 	if (!found) throw failure('NOT_FOUND', 'handide is not installed on this PC.');
 	const out = fs.openSync(START_LOG, 'w');
 	const port = handidePort();
-	const child = spawn(found.node, [found.server, folder, '--port', String(port)], {
+	const child = spawn(found.node, [found.server, folder, '--port', String(port), ...extra], {
 		cwd: folder,
 		detached: true,
 		stdio: ['ignore', out, out],
@@ -454,6 +454,122 @@ async function setupRemote() {
 	}, 1_000);
 }
 
+/**
+ * Hands this window's open files and cursor to handide, for the phone's editor on the same
+ * folder to open (extension/extension.js: takeHandoff). An older handide answers 404: no harm.
+ */
+function postHandoff(folder) {
+	const port = handidePort();
+	const body = JSON.stringify({ folder, ...openFiles() });
+	return new Promise((ok) => {
+		const req = http.request(
+			{ host: '127.0.0.1', port, method: 'POST', path: '/__handide/handoff', timeout: 5_000, headers: { host: `localhost:${port}`, 'content-type': 'application/json', 'x-handide': '1', 'content-length': Buffer.byteLength(body) } },
+			(res) => (res.resume(), ok(res.statusCode === 204)),
+		);
+		req.on('timeout', () => req.destroy());
+		req.on('error', () => ok(false));
+		req.end(body);
+	});
+}
+
+/** Files of `folder` with unsaved changes: the phone opens what is on disk. */
+async function saveFirst(folder) {
+	const inside = (p) => {
+		const rel = path.relative(folder, p);
+		return rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+	};
+	const dirty = vscode.workspace.textDocuments.filter((d) => d.isDirty && d.uri.scheme === 'file' && inside(d.uri.fsPath));
+	if (!dirty.length) return true;
+	const save = 'Save and Continue';
+	const skip = 'Continue Without Saving';
+	const names = dirty.map((d) => path.relative(folder, d.uri.fsPath)).join('\n');
+	const pick = await vscode.window.showWarningMessage(
+		`${dirty.length} file${dirty.length === 1 ? ' has' : 's have'} unsaved changes. The phone opens the files as they are saved on disk.`,
+		{ modal: true, detail: names },
+		save,
+		skip,
+	);
+	if (pick === save) return (await Promise.all(dirty.map((d) => d.save()))).every(Boolean) || (vscode.window.showErrorMessage('handide: some files could not be saved.'), false);
+	return pick === skip;
+}
+
+const WARNED = 'handide.keyWarningSeen';
+
+/** Once: what the QR code gives away, before the first one is shown. */
+async function warnOnce() {
+	if (extContext.globalState.get(WARNED)) return true;
+	const ok = 'I Understand';
+	const pick = await vscode.window.showWarningMessage(
+		'The QR code is a key to this PC.',
+		{
+			modal: true,
+			detail:
+				'Anyone who opens its link can use this PC through VS Code: read and change its files and run commands in its terminal. Scan it only with your own phone, and do not share the link or a screenshot of it. If it gets out, run "handide: Replace Access Token".',
+		},
+		ok,
+	);
+	if (pick !== ok) return false;
+	await extContext.globalState.update(WARNED, true);
+	return true;
+}
+
+/** A new access token: every link handed out before stops working. */
+async function newToken() {
+	const started = startedHandide();
+	const running = !started && (await connectInfo('').then(() => true, (err) => !notRunning(err)));
+	if (running) {
+		return vscode.window.showWarningMessage('handide: the handide that is running was not started from the editor. Stop it and start it again with "handide --new-token".');
+	}
+	const replace = 'Replace Token';
+	const pick = await vscode.window.showWarningMessage(
+		'Replace the access token?',
+		{ modal: true, detail: 'Every link and QR code handed out so far stops working, on every phone. Phones connect again by scanning the new QR code.' },
+		replace,
+	);
+	if (pick !== replace) return;
+	const uri = folderUri();
+	const folder = uri?.scheme === 'file' ? uri.fsPath : os.homedir();
+	try {
+		await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'handide' }, async (progress) => {
+			if (started) {
+				progress.report({ message: 'stopping handide…' });
+				await killHandide(started);
+			}
+			await startHandide(folder, progress, ['--new-token']);
+		});
+	} catch (err) {
+		return vscode.window.showErrorMessage(`handide: ${err.message}`);
+	}
+	phonePanel?.dispose();
+	vscode.window.showInformationMessage('handide: the access token is replaced; the old links no longer work.');
+	if (uri?.scheme === 'file') await openOnPhone();
+}
+
+/**
+ * The handide this editor started runs from another server.mjs than the one it would start
+ * now, which happens after the extension was updated: offers to restart it on the new one.
+ * One started elsewhere (a terminal, "handide service") is left alone. Resolves true when
+ * it was stopped, so the caller starts the new one.
+ */
+async function restartIfOutdated(info) {
+	const started = startedHandide();
+	const expected = locateHandide()?.server ?? bundledServer();
+	if (!started || !expected) return false;
+	const same = (a, b) => (process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
+	if (info.server && same(info.server, expected)) return false;
+	const restart = 'Restart handide';
+	const pick = await vscode.window.showInformationMessage(
+		'handide: the handide running was started by an older version of this extension. Restart it on the new one? Phones connect again by themselves.',
+		restart,
+	);
+	if (pick !== restart) return false;
+	await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'handide' }, async (progress) => {
+		progress.report({ message: 'stopping the older handide…' });
+		await killHandide(started);
+	});
+	return true;
+}
+
 /** Nothing listens on the port, so starting handide there is the fix. */
 const notRunning = (err) => err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET';
 
@@ -499,7 +615,13 @@ function phoneHtml(info, folder, webview) {
 			</section>`,
 		)
 		.join('');
+	const warning = `<div class="warn">
+		<p><b>This QR code is a key to this PC.</b> Whoever opens the link can use this PC through VS Code: read and change its files and run commands in its terminal.</p>
+		<p>Scan it only with your own phone. Do not share the link or a screenshot of this panel.${remote && links[0].public ? ' The link from anywhere works from the whole internet: the key in it is its only lock.' : ''}</p>
+		<p><button type="button" class="newtoken">Replace access token</button> if it got out: every link handed out so far stops working.</p>
+	</div>`;
 	const notes = [
+		'<li>Your open files and cursor go along: the phone opens them as on this screen, once it shows this folder.</li>',
 		links.some((l) => !l.remote) && info.selfSigned
 			? '<li>The first visit on a LAN address shows a certificate warning (handide made the certificate for this PC). Android Chrome: <i>Advanced</i> → <i>Proceed</i>. iPhone Safari: <i>Show Details</i> → <i>visit this website</i>.</li>'
 			: '',
@@ -528,6 +650,11 @@ function phoneHtml(info, folder, webview) {
 	ul { padding-left: 18px; color: var(--vscode-descriptionForeground); }
 	li { margin-bottom: 6px; }
 	.note { color: var(--vscode-descriptionForeground); font-size: .9em; }
+	.warn { background: var(--vscode-inputValidation-warningBackground); border: 1px solid var(--vscode-inputValidation-warningBorder); border-radius: 8px; padding: 10px 12px; margin: 0 0 16px; }
+	.warn p { margin: 0 0 8px; }
+	.warn p:last-child { margin: 0; }
+	.warn b { font-weight: 700; }
+	.newtoken { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: 1px solid var(--vscode-inputValidation-warningBorder); border-radius: 4px; padding: 4px 10px; margin-right: 4px; cursor: pointer; font: inherit; font-weight: 600; }
 	.away { border: 1px solid var(--vscode-panel-border); border-radius: 8px; padding: 10px 12px; margin: 0 0 16px; }
 	.away p { margin: 0 0 8px; }
 	.away p:last-child { margin: 0; }
@@ -539,10 +666,11 @@ function phoneHtml(info, folder, webview) {
 	<h1>${links.length ? 'Scan with your phone camera' : 'No link for the phone'}</h1>
 	<p class="folder">${escapeHtml(folder)}</p>
 	<p class="lead">${escapeHtml(lead)}</p>
+	${links.length ? warning : ''}
 	${links.length > 1 ? `<div class="tabs">${tabs}</div>` : ''}
 	${panels}
 	${awayNote}
-	${links.length ? `<ul>${notes}</ul><p class="note">The link contains your access token: use it only on your own devices.</p>` : ''}
+	${links.length ? `<ul>${notes}</ul>` : ''}
 </main>
 <script nonce="${nonce}">
 	const vscode = acquireVsCodeApi();
@@ -553,6 +681,7 @@ function phoneHtml(info, folder, webview) {
 		});
 	}
 	document.querySelector('.setup')?.addEventListener('click', () => vscode.postMessage({ setupRemote: true }));
+	document.querySelector('.newtoken')?.addEventListener('click', () => vscode.postMessage({ newToken: true }));
 	for (const c of document.querySelectorAll('.copy')) {
 		c.addEventListener('click', () => {
 			vscode.postMessage({ copy: c.dataset.url });
@@ -583,6 +712,8 @@ async function openOnPhone() {
 		return vscode.window.showInformationMessage('handide: open a folder on this PC first; that project then opens on the phone.');
 	}
 	const folder = uri.fsPath;
+	if (!(await saveFirst(folder))) return;
+	if (!(await warnOnce())) return;
 	let info;
 	try {
 		info = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'handide' }, async (progress) => {
@@ -607,6 +738,8 @@ async function openOnPhone() {
 		return;
 	}
 
+	if (await restartIfOutdated(info)) return openOnPhone();
+	await postHandoff(folder);
 	if (phonePanel) phonePanel.reveal(vscode.ViewColumn.Active);
 	else {
 		const panel = vscode.window.createWebviewPanel('handide.phone', 'Open on Phone', vscode.ViewColumn.Active, { enableScripts: true });
@@ -615,6 +748,7 @@ async function openOnPhone() {
 		panel.webview.onDidReceiveMessage((m) => {
 			if (m?.copy) vscode.env.clipboard.writeText(String(m.copy));
 			if (m?.setupRemote) setupRemote();
+			if (m?.newToken) newToken();
 		});
 		// The away-from-home link comes after the LAN one (tunnels take a while), and a
 		// restarted handide may have other addresses.
@@ -662,6 +796,7 @@ function activate(context) {
 		vscode.commands.registerCommand('handide.openOnPhone', openOnPhone),
 		vscode.commands.registerCommand('handide.stop', stopHandide),
 		vscode.commands.registerCommand('handide.setupRemote', setupRemote),
+		vscode.commands.registerCommand('handide.newToken', newToken),
 		vscode.commands.registerCommand('handide.openOnPC', openOnPC),
 		vscode.commands.registerCommand('handide.switch', () => switchMenu(context)),
 	);
