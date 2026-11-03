@@ -69,6 +69,13 @@ const STRINGS = {
 		'img.saved': 'Saved to {1}. Paste it into the agent input box.',
 		'img.failed': 'The image could not be attached: {1}',
 		'img.tapToCopy': 'Tap to copy the path',
+		'away.busy': '{1} is still working in the previous page…',
+		'away.done': '{1} finished in the previous page · View',
+		'away.waiting': '{1} is waiting for you in the previous page · View',
+		'away.stillBusy': 'Still working. It opens here when it is done.',
+		'away.opened': 'Opened what {1} did while you were away',
+		'away.openFailed': 'Could not open the session ({1}).',
+		'network.retrying': 'Reconnecting…',
 		'img.copied': 'Copied. Paste it into the agent input box.',
 		'sheet.terminal': 'Long-press here to paste → send to the terminal',
 		'term.placeholder': 'Type here, Enter for a new line, ➤ runs it',
@@ -218,6 +225,13 @@ const STRINGS = {
 		'img.saved': '{1}에 저장했습니다. 에이전트 입력창에 붙여넣으세요.',
 		'img.failed': '이미지 첨부 실패: {1}',
 		'img.tapToCopy': '탭해서 경로 복사',
+		'away.busy': '이전 화면에서 {1} 작업 중…',
+		'away.done': '이전 화면의 {1} 작업 완료 · 보기',
+		'away.waiting': '이전 화면의 {1}이(가) 확인을 기다림 · 보기',
+		'away.stillBusy': '아직 작업 중입니다. 끝나면 여기에 열립니다.',
+		'away.opened': '자리를 비운 동안 {1}이(가) 한 작업을 열었습니다',
+		'away.openFailed': '세션을 열지 못했습니다 ({1}).',
+		'network.retrying': '다시 연결하는 중…',
 		'img.copied': '복사했습니다. 에이전트 입력창에 붙여넣으세요.',
 		'sheet.terminal': '여기에 길게 눌러 붙여넣기 → 터미널로 보내기',
 		'term.placeholder': '여기에 입력 (한글 OK), Enter는 줄바꿈, ➤로 실행',
@@ -367,6 +381,13 @@ const STRINGS = {
 		'img.saved': '{1} に保存しました。エージェントの入力欄に貼り付けてください。',
 		'img.failed': '画像を添付できませんでした: {1}',
 		'img.tapToCopy': 'タップしてパスをコピー',
+		'away.busy': '前の画面で {1} が作業中…',
+		'away.done': '前の画面の {1} の作業が完了 · 表示',
+		'away.waiting': '前の画面の {1} が確認を待っています · 表示',
+		'away.stillBusy': 'まだ作業中です。終わるとここに開きます。',
+		'away.opened': '離れている間の {1} の作業を開きました',
+		'away.openFailed': 'セッションを開けませんでした（{1}）。',
+		'network.retrying': '再接続中…',
 		'img.copied': 'コピーしました。エージェントの入力欄に貼り付けてください。',
 		'sheet.terminal': 'ここを長押しで貼り付け → ターミナルへ送信',
 		'term.placeholder': 'ここに入力、Enter で改行、➤ で実行',
@@ -516,6 +537,13 @@ const STRINGS = {
 		'img.saved': '已保存到 {1}。请粘贴到智能体输入框。',
 		'img.failed': '附加图片失败：{1}',
 		'img.tapToCopy': '点按复制路径',
+		'away.busy': '{1} 仍在之前的页面中工作…',
+		'away.done': '之前页面中的 {1} 已完成 · 查看',
+		'away.waiting': '之前页面中的 {1} 正在等待确认 · 查看',
+		'away.stillBusy': '仍在工作，完成后会在这里打开。',
+		'away.opened': '已打开离开期间 {1} 完成的工作',
+		'away.openFailed': '无法打开会话（{1}）。',
+		'network.retrying': '正在重新连接…',
 		'img.copied': '已复制。请粘贴到智能体输入框。',
 		'sheet.terminal': '长按此处粘贴 → 发送到终端',
 		'term.placeholder': '在此输入，Enter 换行，➤ 执行',
@@ -2501,7 +2529,9 @@ function build() {
 		'div',
 		{ id: 'hd-network', hidden: true, role: 'status', 'aria-live': 'polite' },
 		el('span', { 'data-i18n': 'notice.offline' }, t('notice.offline')),
-		el('button', { type: 'button', 'data-i18n': 'action.reconnect', onclick: () => location.reload() }, t('action.reconnect')),
+		// Not a reload: a new page starts new extension hosts, and the agents' work in
+		// the kept ones would not be on it. VS Code reconnects this page by itself.
+		el('button', { type: 'button', id: 'hd-network-retry', 'data-i18n': 'action.reconnect' }, t('action.reconnect')),
 	);
 	const notice = el('div', { id: 'hd-notice', hidden: true });
 	const root = el('div', { id: 'hd-root' }, insecure, network, notice, buildTermInput(), keys);
@@ -2603,10 +2633,11 @@ function build() {
 	const toastEl = el('div', { id: 'hd-toast', hidden: true, role: 'status' });
 	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
 	const uploadPill = el('button', { id: 'hd-upload', type: 'button', hidden: true, 'aria-live': 'polite' });
+	const awayPill = el('button', { id: 'hd-away', type: 'button', hidden: true, 'aria-live': 'polite' });
 	const agents = el('div', { id: 'hd-agents', hidden: true, role: 'menu', 'aria-label': t('aria.agents'), 'data-i18n-aria': 'aria.agents' });
 	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, galleryBox, toastEl, voicePill, uploadPill);
+	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, galleryBox, toastEl, voicePill, uploadPill, awayPill);
 	renderDrawer();
 }
 
@@ -2643,10 +2674,63 @@ function watchNetwork() {
 		failures = 2;
 		show(false);
 	});
+	document.getElementById('hd-network-retry').onclick = () => {
+		toast(t('network.retrying'));
+		failures = 0;
+		probe();
+	};
 	window.addEventListener('online', probe);
 	document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && probe());
 	setInterval(probe, 5000);
 	probe();
+}
+
+// ---------------------------------------------------------------- work from a page that is gone
+
+// The proxy keeps an extension host running while its page is away (proxy/sessions.mjs).
+// The same page rejoins it when it comes back. When the browser discarded the page
+// instead, this new page has new extension hosts: it lists the agents still working in
+// the old one, and once one is done (or needs an answer) opens that session here, so
+// what it did is on screen, and the old extension host is let go.
+const awayWork = { status: new Map(), opened: new Set(), timer: 0 };
+
+async function watchAwayWork() {
+	clearTimeout(awayWork.timer);
+	let agents = [];
+	if (document.visibilityState === 'visible' && state.bridge) {
+		const r = await api(`${BASE}sessions`).catch(() => null);
+		agents = (r?.agents ?? []).filter((a) => !awayWork.opened.has(a.sessionId));
+	}
+	const pill = document.getElementById('hd-away');
+	const name = (a) => (a.kind === 'claude' ? 'Claude' : a.kind);
+	const ready = agents.find((a) => a.status !== 'busy');
+	const shown = ready ?? agents[0];
+	if (!shown) pill.hidden = true;
+	else {
+		const key = shown.status === 'busy' ? 'away.busy' : shown.status === 'idle' ? 'away.done' : 'away.waiting';
+		pill.replaceChildren(el('strong', {}, t(key, name(shown))), shown.name ? el('small', {}, shown.name) : '');
+		pill.hidden = false;
+		pill.onclick = () => (shown.status === 'busy' ? toast(t('away.stillBusy')) : openAwayWork(shown));
+	}
+	// Done (or waiting for an answer the old page can no longer show): open it here,
+	// unless the user is typing.
+	for (const a of agents) {
+		awayWork.status.set(a.sessionId, a.status);
+		if (a === ready && !state.keysOn) openAwayWork(a);
+	}
+	awayWork.timer = setTimeout(watchAwayWork, agents.length ? 5000 : 30_000);
+}
+
+async function openAwayWork(a) {
+	if (awayWork.opened.has(a.sessionId)) return;
+	awayWork.opened.add(a.sessionId);
+	document.getElementById('hd-away').hidden = true;
+	// The old CLI ends first: one process per conversation.
+	await api(`${BASE}sessions/release`, { method: 'POST', body: { session: a.session } }).catch(() => null);
+	const r = await api(`${BASE}bridge/call`, { method: 'POST', body: { command: 'claude-vscode.editor.open', args: [a.sessionId], timeoutMs: 30_000 } }).catch((err) => ({ ok: false, error: err.message }));
+	if (!r?.ok) return toast(t('away.openFailed', r?.error ?? ''));
+	showView('ai');
+	toast(t('away.opened', 'Claude'));
 }
 
 function pressKey(name, def) {
@@ -3016,6 +3100,8 @@ async function main() {
 	render();
 	installGestures();
 	watchNetwork();
+	setTimeout(watchAwayWork, 4000);
+	document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && watchAwayWork());
 
 	updateKeys();
 	vv?.addEventListener('resize', updateKeys);

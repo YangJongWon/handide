@@ -263,6 +263,7 @@ The layer's recorded test target is VS Code CLI 1.138.0 on Windows. Check `check
 
 - A few layout commands the companion uses are internal to VS Code. `npm run compat` flags untested versions and `npm run check` confirms them.
 - `serve-web` can download a newer VS Code web server than your desktop version, so the phone may run a newer VS Code than the one you tested with.
+- A phone browser in the background drops its connection. On Windows the editor server ends the extension host as soon as that happens (`renderer closed the socket` in its log), so the proxy keeps the editor server's end of each extension host connection open (`proxy/sessions.mjs`, up to 3 h, `HANDIDE_SESSION_HOLD_MS`) and joins the page to it again when it reconnects: agents keep working while the phone is away and the page shows their progress when it is back. When the browser discarded the page instead, the new page shows Claude Code's work from the old one and opens that conversation when it is done. Checked in Chromium with closed and with stalled (half-open) connections, and with a page discarded and opened again; WebKit engine checks do not test the iOS lifecycle.
 
 </details>
 

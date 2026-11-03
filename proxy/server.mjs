@@ -16,6 +16,7 @@ import { readFile, writeFile, stat, mkdir, copyFile, access, cp, rm } from 'node
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createSessionKeeper } from './sessions.mjs';
 import { detectEditorCli, editorVersion, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, isConnectAllowed, renderConnectPage } from './connect.mjs';
@@ -429,7 +430,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share }) {
+function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -458,7 +459,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		}
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
-		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
+		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
@@ -510,6 +511,9 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 	server.on('upgrade', (req, socket, head) => {
 		if (devices?.upgrade(req, socket, head, clientBase(req).proto)) return;
 		if (ports?.upgrade(req, socket, head)) return;
+		// The page's connections to the editor server: extension hosts outlive a dropped
+		// page connection (proxy/sessions.mjs).
+		if (sessions?.upgrade(req, socket, head, toUpstreamHeaders(req))) return;
 		const upstream = net.connect(upstreamPort, '127.0.0.1', () => {
 			const headers = toUpstreamHeaders(req);
 			// WebKit can offer legacy x-webkit-deflate-frame, whose negotiation with
@@ -705,7 +709,11 @@ async function main() {
 		selfSigned = cert.fingerprint;
 	}
 	const ports = createPortForwarder({ token: opts.token, log });
-	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share });
+	const sessions = createSessionKeeper({ upstreamPort, dataDir: opts.dataDir, log });
+	bridge.setAway(sessions.awayPids);
+	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents() }));
+	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
+	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share, sessions });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);

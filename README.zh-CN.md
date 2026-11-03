@@ -257,6 +257,7 @@ npm run check -- --android     # 在模拟器或 USB 连接的手机上用真实
 - 每个浏览器和文件夹需要信任一次。
 - 配套扩展使用的少数布局命令属于 VS Code 内部命令。`npm run compat` 会标出未测试的版本，`npm run check` 用于确认。
 - `serve-web` 可能下载比桌面版更新的 VS Code Web 服务器，因此手机端运行的 VS Code 可能比你测试的版本更新。
+- 手机浏览器进入后台后连接会断开。Windows 上的编辑器服务器会立即结束扩展宿主（日志中的 `renderer closed the socket`），因此代理会保持扩展宿主连接的服务器端（`proxy/sessions.mjs`，最长 3 小时，`HANDIDE_SESSION_HOLD_MS`），页面重连时再接回去：离开期间智能体继续工作，回来后进度照常显示。若浏览器丢弃了页面而以新页面打开，新页面会提示旧页面中 Claude Code 的工作，并在完成后打开该对话。已在 Chromium 中用关闭的连接、无响应（half-open）的连接以及页面丢弃后重新打开进行检查；WebKit 引擎检查不验证 iOS 生命周期。
 
 </details>
 

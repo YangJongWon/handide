@@ -261,6 +261,7 @@ npm run check -- --android     # 에뮬레이터나 USB로 연결한 폰의 실�
 
 - 동반 확장이 쓰는 레이아웃 명령 몇 개는 VS Code 내부 명령입니다. `npm run compat`이 검증 안 된 버전을 알려 주고, `npm run check`로 확인합니다.
 - `serve-web`이 데스크톱보다 새 VS Code 웹 서버를 받을 수 있어서, 폰 쪽 VS Code 버전이 더 높을 수 있습니다.
+- 폰 브라우저가 백그라운드로 가면 연결이 끊깁니다. Windows의 편집기 서버는 그 즉시 확장 호스트를 종료하므로(로그의 `renderer closed the socket`), 프록시가 확장 호스트 연결의 서버 쪽을 열어 둔 채(`proxy/sessions.mjs`, 최대 3시간, `HANDIDE_SESSION_HOLD_MS`) 페이지가 재접속하면 다시 이어 붙입니다. 폰을 보지 않는 동안에도 에이전트는 계속 작업하고, 돌아오면 진행 상황이 그대로 보입니다. 브라우저가 페이지를 폐기해 새 페이지로 열린 경우에는 이전 페이지의 Claude Code 작업을 알려 주고, 끝나면 그 대화를 엽니다. Chromium에서 연결 종료, 응답 없이 멈춘(half-open) 연결, 페이지 폐기 후 다시 열기로 검사했으며, WebKit 엔진 검사는 iOS 수명 주기를 검증하지 않습니다.
 
 </details>
 

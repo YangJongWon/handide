@@ -757,7 +757,7 @@ function startBridge(context) {
 	(async () => {
 		while (!stopped) {
 			try {
-				const res = await fetch(`${url}/next`, { headers });
+				const res = await fetch(`${url}/next?pid=${process.pid}`, { headers }); // pid: the proxy skips extension hosts whose page is away
 				if (!res.ok) throw new Error(`bridge ${res.status}`);
 				for (const call of await res.json()) handle(call); // concurrently: a slow command must not block others
 			} catch {

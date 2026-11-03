@@ -62,7 +62,7 @@ export function editorVersion(cli) {
 }
 
 /** Every process as { pid, ppid, start, cmd }; start is 0 where the platform does not say. */
-function listProcesses() {
+export function listProcesses() {
 	if (process.platform === 'win32') {
 		const script = 'Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{ pid = $_.ProcessId; ppid = $_.ParentProcessId; '
 			+ 'start = $(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }); cmd = $_.CommandLine } } | ConvertTo-Json -Compress';
@@ -87,7 +87,7 @@ function parentOf(p, byPid) {
 	return parent;
 }
 
-function killTree(pid) {
+export function killTree(pid) {
 	if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 });
 	else {
 		try {

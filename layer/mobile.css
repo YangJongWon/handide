@@ -1100,7 +1100,8 @@ html.hd-mobile #hd-voice[hidden] {
 }
 
 /* A saved phone image: tap to copy its path for an extension agent's input. */
-html.hd-mobile #hd-upload {
+html.hd-mobile #hd-upload,
+html.hd-mobile #hd-away {
 	position: fixed;
 	left: 50%;
 	top: calc(env(safe-area-inset-top) + 56px);
@@ -1120,12 +1121,17 @@ html.hd-mobile #hd-upload {
 	box-shadow: 0 4px 12px var(--hd-shadow);
 	-webkit-tap-highlight-color: transparent;
 }
-html.hd-mobile #hd-upload small {
+html.hd-mobile #hd-upload small,
+html.hd-mobile #hd-away small {
 	font-size: 12px;
 	opacity: 0.75;
 	overflow-wrap: anywhere;
 }
-html.hd-mobile #hd-upload[hidden] {
+html.hd-mobile #hd-away {
+	top: calc(env(safe-area-inset-top) + 110px);
+}
+html.hd-mobile #hd-upload[hidden],
+html.hd-mobile #hd-away[hidden] {
 	display: none;
 }
 

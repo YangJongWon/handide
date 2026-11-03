@@ -44,14 +44,21 @@ const cookie = (req, name) => {
 export function createBridge({ token, log }) {
 	const secret = randomBytes(24).toString('hex');
 	const queue = []; // calls waiting for the extension
-	const polls = []; // extension long-polls waiting for calls
+	const polls = []; // extension long-polls waiting for calls: { res, pid }
 	const inflight = new Map(); // id -> { resolve, timer }
 	let lastPoll = 0;
 	let seq = 0;
+	// Extension hosts kept running while their page is away (proxy/sessions.mjs): their
+	// companions keep polling, but the phone's calls belong to the page it has open.
+	let awayPids = () => new Set();
 
 	const flush = () => {
-		while (queue.length && polls.length) {
-			const res = polls.shift();
+		if (!queue.length || !polls.length) return;
+		const away = awayPids();
+		while (queue.length) {
+			const i = polls.findIndex((p) => !away.has(p.pid));
+			if (i < 0) return;
+			const [{ res }] = polls.splice(i, 1);
 			sendJson(res, 200, queue.splice(0, queue.length));
 		}
 	};
@@ -85,6 +92,8 @@ export function createBridge({ token, log }) {
 				const wait = Math.min(Math.max(Number(timeoutMs) || 20_000, 1000), 300_000);
 				return sendJson(res, 200, await call(command, Array.isArray(args) ? args : [], wait));
 			}
+			const extra = layerRoutes.get(pathname);
+			if (extra) return sendJson(res, 200, await extra(req.method === 'POST' ? JSON.parse((await readBody(req)) || '{}') : null));
 			if (pathname === '/__handide/bridge/status') return sendJson(res, 200, { ok: true, connected: extensionConnected() });
 			if (pathname === '/__handide/fs' && req.method === 'GET') {
 				const url = new URL(req.url, 'http://x');
@@ -106,15 +115,17 @@ export function createBridge({ token, log }) {
 		if (req.headers['x-handide-secret'] !== secret) return sendJson(res, 403, { error: 'forbidden' });
 		const route = routes.find(([prefix]) => req.url.startsWith(prefix));
 		if (route) return route[1](req, res);
-		lastPoll = Date.now();
-		if (req.url === '/next' && req.method === 'GET') {
-			polls.push(res);
+		const pid = Number(new URL(req.url, 'http://x').searchParams.get('pid')) || null;
+		if (!pid || !awayPids().has(pid)) lastPoll = Date.now();
+		if (req.url.split('?')[0] === '/next' && req.method === 'GET') {
+			const poll = { res, pid };
+			polls.push(poll);
 			req.on('close', () => {
-				const i = polls.indexOf(res);
+				const i = polls.indexOf(poll);
 				if (i >= 0) polls.splice(i, 1);
 			});
 			setTimeout(() => {
-				const i = polls.indexOf(res);
+				const i = polls.indexOf(poll);
 				if (i >= 0) {
 					polls.splice(i, 1);
 					sendJson(res, 200, []);
@@ -150,7 +161,12 @@ export function createBridge({ token, log }) {
 	/** Serves `prefix` on the private listener (same secret) with `handler(req, res)`. */
 	const route = (prefix, handler) => routes.push([prefix, handler]);
 
-	return { call, handleLayer, listen, route, extensionConnected, close: () => internal.close() };
+	const setAway = (fn) => (awayPids = fn);
+	/** More layer endpoints, behind the same token check: handler(body) -> JSON. */
+	const layerRoutes = new Map();
+	const layerRoute = (path, handler) => layerRoutes.set(path, handler);
+
+	return { call, handleLayer, listen, route, extensionConnected, setAway, layerRoute, close: () => internal.close() };
 }
 
 /**
