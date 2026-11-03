@@ -19,7 +19,7 @@ const SOURCES = [
 const SKIP_PUBLISHERS = new Set(['anysphere']);
 // For the desktop editor only: handide's own (desktop/) and the remote connectors it uses,
 // which have nothing to connect to inside the phone's editor (already a remote).
-const SKIP_IDS = new Set(['handide.handide-desktop', 'ms-vscode-remote.remote-ssh', 'ms-vscode-remote.remote-ssh-edit', 'ms-vscode.remote-explorer']);
+const SKIP_IDS = new Set(['yangjongwon.handide', 'handide.handide-desktop', 'ms-vscode-remote.remote-ssh', 'ms-vscode-remote.remote-ssh-edit', 'ms-vscode.remote-explorer']);
 
 const cmpVersion = (a, b) => {
 	const pa = String(a).split(/[.-]/).map((x) => parseInt(x, 10) || 0);

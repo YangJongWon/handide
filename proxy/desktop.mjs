@@ -13,6 +13,7 @@ import { describeDevices, loadDevices } from './devices.mjs';
 import { enableServer, ensureKey, includeClientConfig, sshServerOn, writeClientConfig } from './ssh.mjs';
 
 const DESKTOP_DIR = new URL('../desktop/', import.meta.url);
+const LEGACY_ID = 'handide.handide-desktop';
 
 /** The desktop editors installed here, with the extension each one uses for Remote - SSH. */
 function desktopEditors() {
@@ -177,6 +178,8 @@ export async function desktopCommand(args, { dataDir, serverPath, log }) {
 		const r = runCli(e.cli, ['--install-extension', vsix.file, '--force']);
 		log(`${e.name}: ${r.status === 0 ? 'handide extension installed' : `install failed: ${`${r.stderr || r.stdout || r.error?.message || ''}`.trim().split('\n').pop()}`}`);
 		const installed = `${runCli(e.cli, ['--list-extensions']).stdout || ''}`.toLowerCase();
+		// The same extension under its id from before it was on the Marketplace: same commands.
+		if (installed.includes(LEGACY_ID)) runCli(e.cli, ['--uninstall-extension', LEGACY_ID]);
 		if (!installed.includes(e.remoteSSH)) {
 			const s = runCli(e.cli, ['--install-extension', e.remoteSSH]);
 			log(`${e.name}: Remote - SSH (${e.remoteSSH}) ${s.status === 0 ? 'installed' : 'could not be installed; install it from the Extensions view'}`);

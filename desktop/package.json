@@ -1,10 +1,30 @@
 {
-	"name": "handide-desktop",
-	"publisher": "handide",
-	"displayName": "handide",
-	"description": "Open this project on your phone with a QR code, and open a project of your other PCs where it lives, in this editor (Remote - SSH over your tailnet).",
+	"name": "handide",
+	"publisher": "yangjongwon",
+	"displayName": "handide: VS Code on your phone",
+	"description": "Open this project on your phone: press the phone button, scan the QR code, and code from the phone with your own VS Code, extensions and AI agents. Needs handide on this PC.",
 	"version": "0.1.0",
 	"license": "MIT",
+	"icon": "icon.png",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/YangJongWon/handide"
+	},
+	"homepage": "https://github.com/YangJongWon/handide#readme",
+	"bugs": {
+		"url": "https://github.com/YangJongWon/handide/issues"
+	},
+	"categories": [
+		"Other"
+	],
+	"keywords": [
+		"mobile",
+		"phone",
+		"qr",
+		"remote",
+		"tailscale",
+		"claude-code"
+	],
 	"engines": {
 		"vscode": "^1.80.0"
 	},
@@ -12,6 +32,11 @@
 		"ui"
 	],
 	"main": "./extension.js",
+	"files": [
+		"LICENSE",
+		"extension.js",
+		"icon.png"
+	],
 	"activationEvents": [
 		"onStartupFinished"
 	],
