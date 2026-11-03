@@ -24,7 +24,7 @@ Nothing else to install: [handide](https://github.com/YangJongWon/handide) comes
 handide keeps running after VS Code closes, so the phone stays connected. **handide: Stop** in the Command Palette stops it.
 
 - **Same Wi-Fi:** works right away. The first visit shows a certificate warning once, because handide makes its own certificate for your PC.
-- **Away from home:** install [Tailscale](https://tailscale.com/download) on this PC and sign in. The QR code then works on mobile data too, with nothing to install on the phone.
+- **Away from home:** press **Set up access from anywhere** in the QR panel (or run **handide: Set Up Access from Anywhere**). It installs [Tailscale](https://tailscale.com) on this PC when it is missing and signs you in, in a terminal and the browser. The QR code then works on mobile data too, with nothing to install on the phone.
 
 The link contains your access token: use it only on your own devices.
 

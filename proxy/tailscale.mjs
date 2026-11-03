@@ -176,26 +176,30 @@ async function publish(cli, verb, target, log, dnsName) {
 	};
 	if (res.code === 0) return { stop };
 	const hint = res.out.trim().split('\n').slice(-2).join(' ');
-	return { reason: res.timedOut ? `tailscale ${verb} timed out` : `tailscale ${verb} failed`, hint };
+	return { code: 'failed', reason: res.timedOut ? `tailscale ${verb} timed out` : `tailscale ${verb} failed`, hint };
 }
 
 /**
  * Publishes http(s)://127.0.0.1:<port> at https://<machine>.<tailnet>.ts.net.
  * Public (Funnel: any browser, the access token guards it) unless `private`, then only
  * devices signed in to the tailnet (Serve). Falls back to Serve when Funnel is not allowed.
- * Resolves to { url, public, stop } on success, or { reason, hint? }.
+ * Resolves to { url, public, stop } on success, or { code, reason, hint? }: code is
+ * not-installed, signed-out, not-running, taken (another handide or program has the
+ * address) or failed.
  */
 export async function startTailscale({ port, tls, log, private: tailnetOnly }) {
 	const cli = await findCli();
-	if (!cli) return { reason: 'not installed' };
+	if (!cli) return { code: 'not-installed', reason: 'not installed' };
 	const { state, dnsName } = await readStatus(cli);
-	if (state !== 'Running' || !dnsName) return { reason: state === 'NeedsLogin' ? 'signed out, run "handide remote"' : `state ${state || 'unknown'}` };
+	if (state !== 'Running' || !dnsName) {
+		return state === 'NeedsLogin' ? { code: 'signed-out', reason: 'signed out, run "handide remote"' } : { code: 'not-running', reason: `state ${state || 'unknown'}` };
+	}
 
 	// The LAN port speaks TLS with a self-signed certificate, hence https+insecure.
 	const target = `${tls ? 'https+insecure' : 'http'}://127.0.0.1:${port}`;
 	const url = `https://${dnsName}`;
 	const taken = await addressTakenBy(cli, dnsName, target);
-	if (taken) return { reason: `${url} already forwards to ${taken}`, hint: 'phones reach this handide on the LAN; stop the other one to give this one the address' };
+	if (taken) return { code: 'taken', reason: `${url} already forwards to ${taken}`, hint: 'phones reach this handide on the LAN; stop the other one to give this one the address' };
 	if (!tailnetOnly) {
 		const pub = await publish(cli, 'funnel', target, log, dnsName);
 		if (pub.stop) return { url, public: true, stop: pub.stop };

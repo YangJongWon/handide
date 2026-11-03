@@ -380,19 +380,78 @@ const alive = (pid) => {
 	}
 };
 
-/** Stops the handide this editor started (one started in a terminal stops with Ctrl+C there). */
-async function stopHandide() {
+/** The handide this editor started, while it runs. */
+function startedHandide() {
 	const started = extContext.globalState.get(STARTED);
-	if (!started || !alive(started.pid)) {
-		await extContext.globalState.update(STARTED, undefined);
-		return vscode.window.showInformationMessage('handide: no handide started from the editor is running. One started in a terminal stops with Ctrl+C there.');
-	}
-	// With its editor server and everything else it started.
+	return started && alive(started.pid) ? started : null;
+}
+
+/** Stops `started` with its editor server and everything else it started; resolves once its port is free. */
+async function killHandide(started) {
 	if (process.platform === 'win32') spawn('taskkill', ['/pid', String(started.pid), '/T', '/F'], { windowsHide: true });
 	else process.kill(-started.pid, 'SIGTERM'); // detached: its own process group
 	await extContext.globalState.update(STARTED, undefined);
+	for (const until = Date.now() + 15_000; Date.now() < until; ) {
+		await new Promise((r) => setTimeout(r, 500));
+		if (!(await connectInfo('').then(() => true, (err) => !notRunning(err)))) return;
+	}
+}
+
+/** Stops the handide this editor started (one started in a terminal stops with Ctrl+C there). */
+async function stopHandide() {
+	const started = startedHandide();
+	if (!started) {
+		await extContext.globalState.update(STARTED, undefined);
+		return vscode.window.showInformationMessage('handide: no handide started from the editor is running. One started in a terminal stops with Ctrl+C there.');
+	}
+	await killHandide(started);
 	phonePanel?.dispose();
 	vscode.window.showInformationMessage('handide: stopped. The phone button starts it again.');
+}
+
+/**
+ * "handide remote" in a terminal of this editor: installs Tailscale when missing, signs in
+ * and allows the address from anywhere, asking in the browser where it must. A real
+ * terminal, since an installer may ask for a password there. Then handide starts again
+ * to publish the address: it only tries when it starts.
+ */
+async function setupRemote() {
+	let found = locateHandide();
+	if (!found) {
+		try {
+			found = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'handide' }, (progress) =>
+				bundledHandide((message) => progress.report({ message })),
+			);
+		} catch (err) {
+			return vscode.window.showErrorMessage(`handide: could not set up handide: ${err.message}`);
+		}
+	}
+	if (!found) return vscode.window.showErrorMessage('handide: handide is not installed on this PC.');
+	const terminal = vscode.window.createTerminal({
+		name: 'handide: access from anywhere',
+		shellPath: found.node,
+		shellArgs: [found.server, 'remote'],
+		iconPath: new vscode.ThemeIcon('globe'),
+	});
+	terminal.show();
+	// The terminal stays open after the run so its output can be read; exitStatus says how it went.
+	const timer = setInterval(async () => {
+		if (!terminal.exitStatus) return;
+		clearInterval(timer);
+		if (terminal.exitStatus.code !== 0) return;
+		const started = startedHandide();
+		if (started) {
+			const restart = 'Restart handide';
+			const pick = await vscode.window.showInformationMessage('handide: access from anywhere is set up. Restart handide to add the link from anywhere?', restart);
+			if (pick !== restart) return;
+			await killHandide(started);
+			await openOnPhone();
+		} else if (await connectInfo('').then(() => true, () => false)) {
+			vscode.window.showInformationMessage('handide: access from anywhere is set up. Restart the handide that is running (it was not started from the editor) to add the link from anywhere.');
+		} else {
+			vscode.window.showInformationMessage('handide: access from anywhere is set up. The phone button now shows a link that works anywhere.');
+		}
+	}, 1_000);
 }
 
 /** Nothing listens on the port, so starting handide there is the fix. */
@@ -409,10 +468,25 @@ function phoneHtml(info, folder, webview) {
 			? 'handide runs for this PC only (--local), so there is no link for the phone. Stop it and start it without --local.'
 			: 'handide found no network address on this PC. Check that it is on Wi-Fi or wired, then start handide again.'
 		: !remote
-			? 'The phone needs to be on the same Wi-Fi as this PC. To use it away from home too, install Tailscale on this PC and sign in.'
+			? 'The phone needs to be on the same Wi-Fi as this PC.'
 			: links[0].public
 				? 'Works at home and away; nothing to install on the phone.'
 				: 'Works anywhere while the Tailscale app is on on the phone (same account as this PC).';
+	// Why there is no link from anywhere (proxy/tailscale.mjs: startTailscale); null from an older handide.
+	const status = info.remote ?? { code: 'unknown' };
+	const why = {
+		pending: 'Getting the link that works anywhere… (the first time, Tailscale may ask in the browser).',
+		'not-installed': 'Away from home: Tailscale is not installed on this PC.',
+		'signed-out': 'Away from home: Tailscale is signed out on this PC.',
+		'not-running': 'Away from home: Tailscale is not running on this PC.',
+		failed: `Away from home: no link (${status.reason ?? 'Tailscale failed'}).`,
+		taken: `Away from home: ${status.reason}. Stop that handide to give this one the address.`,
+		unknown: 'Away from home: not set up.',
+	}[status.code];
+	const canSetUp = ['not-installed', 'signed-out', 'not-running', 'failed', 'unknown'].includes(status.code);
+	const awayNote = links.length && !remote && why
+		? `<div class="away"><p>${escapeHtml(why)}</p>${canSetUp ? '<button type="button" class="setup">Set up access from anywhere</button>' : ''}</div>`
+		: '';
 	const tabs = links
 		.map((l, i) => `<button type="button" class="tab" data-i="${i}" aria-selected="${i === 0}">${escapeHtml(l.label)} · ${escapeHtml(new URL(l.url).hostname)}</button>`)
 		.join('');
@@ -454,6 +528,10 @@ function phoneHtml(info, folder, webview) {
 	ul { padding-left: 18px; color: var(--vscode-descriptionForeground); }
 	li { margin-bottom: 6px; }
 	.note { color: var(--vscode-descriptionForeground); font-size: .9em; }
+	.away { border: 1px solid var(--vscode-panel-border); border-radius: 8px; padding: 10px 12px; margin: 0 0 16px; }
+	.away p { margin: 0 0 8px; }
+	.away p:last-child { margin: 0; }
+	.setup { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 6px 12px; cursor: pointer; font: inherit; }
 </style>
 </head>
 <body>
@@ -463,6 +541,7 @@ function phoneHtml(info, folder, webview) {
 	<p class="lead">${escapeHtml(lead)}</p>
 	${links.length > 1 ? `<div class="tabs">${tabs}</div>` : ''}
 	${panels}
+	${awayNote}
 	${links.length ? `<ul>${notes}</ul><p class="note">The link contains your access token: use it only on your own devices.</p>` : ''}
 </main>
 <script nonce="${nonce}">
@@ -473,6 +552,7 @@ function phoneHtml(info, folder, webview) {
 			for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.i !== b.dataset.i;
 		});
 	}
+	document.querySelector('.setup')?.addEventListener('click', () => vscode.postMessage({ setupRemote: true }));
 	for (const c of document.querySelectorAll('.copy')) {
 		c.addEventListener('click', () => {
 			vscode.postMessage({ copy: c.dataset.url });
@@ -489,7 +569,7 @@ let phonePanel = null;
 
 /** Renders the panel again only when the links changed, so a picked tab stays picked. */
 function showPhone(info, folder) {
-	const key = JSON.stringify([folder, info.links.map((l) => l.url), info.local]);
+	const key = JSON.stringify([folder, info.links.map((l) => l.url), info.local, info.remote?.code]);
 	if (phonePanel.key === key) return;
 	phonePanel.key = key;
 	phonePanel.folder = folder;
@@ -532,7 +612,10 @@ async function openOnPhone() {
 		const panel = vscode.window.createWebviewPanel('handide.phone', 'Open on Phone', vscode.ViewColumn.Active, { enableScripts: true });
 		phonePanel = panel;
 		panel.iconPath = new vscode.ThemeIcon('device-mobile');
-		panel.webview.onDidReceiveMessage((m) => m?.copy && vscode.env.clipboard.writeText(String(m.copy)));
+		panel.webview.onDidReceiveMessage((m) => {
+			if (m?.copy) vscode.env.clipboard.writeText(String(m.copy));
+			if (m?.setupRemote) setupRemote();
+		});
 		// The away-from-home link comes after the LAN one (tunnels take a while), and a
 		// restarted handide may have other addresses.
 		const timer = setInterval(async () => {
@@ -578,6 +661,7 @@ function activate(context) {
 		vscode.workspace.onDidChangeWorkspaceFolders(togglePhone),
 		vscode.commands.registerCommand('handide.openOnPhone', openOnPhone),
 		vscode.commands.registerCommand('handide.stop', stopHandide),
+		vscode.commands.registerCommand('handide.setupRemote', setupRemote),
 		vscode.commands.registerCommand('handide.openOnPC', openOnPC),
 		vscode.commands.registerCommand('handide.switch', () => switchMenu(context)),
 	);

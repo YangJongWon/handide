@@ -62,7 +62,7 @@ async function serveConnect(req, res) {
 	if (pathname === CONNECT_JSON_PATH) {
 		const folder = new URLSearchParams(query).get('folder') || undefined;
 		res.writeHead(200, { ...headers, 'content-type': 'application/json; charset=utf-8' });
-		res.end(JSON.stringify(await connectJson(CONNECT.info, { selfSigned: CONNECT.selfSigned, folder })));
+		res.end(JSON.stringify(await connectJson(CONNECT.info, { selfSigned: CONNECT.selfSigned, folder, remote: CONNECT.remote })));
 		return;
 	}
 	res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8' });
@@ -729,8 +729,9 @@ async function main() {
 		process.exit(1); // the 'exit' handler stops the editor server
 	});
 	let stopRemote;
+	let remoteStatus = { code: opts.remote === 'off' ? 'off' : 'pending' };
 	const announce = (remote) => {
-		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls, remote }), selfSigned };
+		CONNECT = { info: accessInfo({ host, port: opts.port, token: opts.token, tls, remote }), selfSigned, remote: remoteStatus };
 		printAccess(CONNECT.info, { selfSigned, log }).catch((err) => log(`could not print access info: ${err.message}`));
 	};
 	// The connect page has no live updates, so it opens once the away-from-home link is settled.
@@ -743,6 +744,8 @@ async function main() {
 		const r = opts.remote === 'cloudflare'
 			? { ...(await startCloudflare({ port: opts.port, tls, dataDir: opts.dataDir, log })), public: true, changes: true }
 			: await startTailscale({ port: opts.port, tls, log, private: opts.remote === 'private' });
+		remoteStatus = r.url ? { code: 'ok' } : { code: r.code ?? 'failed', reason: r.reason, hint: r.hint };
+		CONNECT.remote = remoteStatus;
 		if (r.url) {
 			stopRemote = r.stop;
 			remoteUrl = r.url;

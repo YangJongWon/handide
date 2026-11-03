@@ -37,9 +37,11 @@ const folderParam = (folder) => (/^[a-zA-Z]:[\\/]/.test(folder) ? `/${folder.rep
 
 /**
  * The connect info for the desktop extension's QR panel (desktop/extension.js): the
- * links opening `folder` when given, each with its QR code as SVG.
+ * links opening `folder` when given, each with its QR code as SVG, and where the
+ * away-from-home link stands (`remote`: { code, reason?, hint? }, code ok, pending, off, or
+ * why there is none, from proxy/tailscale.mjs: startTailscale).
  */
-export async function connectJson(info, { selfSigned, folder } = {}) {
+export async function connectJson(info, { selfSigned, folder, remote } = {}) {
 	const withFolder = (url) => (folder ? `${url}&folder=${encodeURIComponent(folderParam(folder))}` : url);
 	const links = await Promise.all(
 		info.links.map(async (l) => {
@@ -47,7 +49,7 @@ export async function connectJson(info, { selfSigned, folder } = {}) {
 			return { ...l, url, svg: await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 2, color: { dark: '#000000', light: '#ffffff' } }) };
 		}),
 	);
-	return { ok: true, local: info.local, port: info.port, localUrl: withFolder(info.localUrl), links, selfSigned: selfSigned ?? null };
+	return { ok: true, local: info.local, port: info.port, localUrl: withFolder(info.localUrl), links, selfSigned: selfSigned ?? null, remote: remote ?? null };
 }
 
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
