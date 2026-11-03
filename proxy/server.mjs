@@ -85,6 +85,9 @@ const MIME = {
 const HOME_DIR = process.env.HANDIDE_HOME || join(os.homedir(), '.handide');
 const LEGACY_DATA_DIR = join(ROOT, '.handide-data'); // before handide became a global command
 
+/** The handide home without --data-dir: $HANDIDE_HOME as given, else the old in-repo data while ~/.handide does not exist yet. */
+const defaultDataDir = () => (process.env.HANDIDE_HOME || existsSync(HOME_DIR) || !existsSync(LEGACY_DATA_DIR) ? HOME_DIR : LEGACY_DATA_DIR);
+
 const USAGE = `handide — your VS Code on your phone
 
 Usage:  handide [folder] [options]      (folder defaults to the current directory)
@@ -206,16 +209,13 @@ function serviceRun(args, log) {
 		} else if (a.startsWith('-')) kept.push(a);
 		// a bare word is the folder, passed below
 	}
-	const dataDir = opts.dataDir ?? (!existsSync(HOME_DIR) && existsSync(LEGACY_DATA_DIR) ? LEGACY_DATA_DIR : HOME_DIR);
+	const dataDir = opts.dataDir ?? defaultDataDir();
 	return { run: [process.execPath, fileURLToPath(import.meta.url), opts.folder, ...kept], folder: opts.folder, dataDir };
 }
 
 /** Fills in the per-user defaults: handide home, persistent token, personal layout config. */
 async function resolveHome(opts) {
-	if (!opts.dataDir) {
-		const useLegacy = !existsSync(HOME_DIR) && existsSync(LEGACY_DATA_DIR);
-		opts.dataDir = useLegacy ? LEGACY_DATA_DIR : HOME_DIR;
-	}
+	if (!opts.dataDir) opts.dataDir = defaultDataDir();
 	await mkdir(opts.dataDir, { recursive: true });
 
 	// The token is kept so links saved on the phone keep working across restarts.
