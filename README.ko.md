@@ -215,6 +215,26 @@ flowchart LR
 - 터치 레이어(`layer/`)는 페이지에 주입되는 JS·CSS입니다. VS Code DOM에 의존하는 부분은 모두 `layer/selectors.json`에 모여 있어서, 업데이트로 뭔가 바뀌어도 한 줄 수정으로 고칠 수 있습니다.
 - 동반 확장(`extension/`)은 레이어 대신 공식 VS Code 명령(파일 열기, 폴더 전환, 뷰 표시)을 실행합니다.
 
+## 지원 범위
+
+| | |
+|---|---|
+| PC | **Windows 10/11**: 설치 파일과 데스크톱 확장, CI에서 검사. macOS·Linux는 소스로 실행(`npm i -g`)하며 CI 검사는 없습니다. |
+| 에디터 | **VS Code** stable (Insiders도 됨). Cursor·Windsurf 등 포크는 웹 화면을 띄울 수 없으니 VS Code를 함께 설치하세요. |
+| 폰의 VS Code | 데스크톱 VS Code 버전과 상관없이 `layer/selectors.json` → `testedWith`에 적힌 빌드 그대로입니다(serve-web이 한 번 내려받음). 새 VS Code는 검사를 통과한 뒤 handide 릴리스로 폰에 옵니다. 레이아웃 설정에 `"editorServer": "latest"`를 넣으면 고정을 끕니다. |
+| Android | **Chrome**: 모든 릴리스가 Pixel 7 에뮬레이션에서 전체 검사를 통과합니다. |
+| iPhone | **Safari**, 일부: 레이아웃은 WebKit 에뮬레이션(iPhone 14)에서 통과합니다. 실제 iPhone의 키보드, 인증서, 네트워크 전환은 어떤 검사도 다루지 않습니다. |
+
+## 문제가 생기면
+
+| 보이는 것 | 뜻 | 할 일 |
+|---|---|---|
+| 폰에 갈색 안내와 함께 순정 VS Code가 뜸 | 서빙 중인 VS Code가 레이어가 기대는 구조를 바꿔서, 그 폰에서 레이어가 스스로 꺼졌습니다. PC 로그에 이유가 남습니다. | handide를 업데이트하세요. 기여자는 `npm run check` 후 mobilize-editor 스킬. |
+| "editor server not reachable yet" | 에디터 서버가 시작 중이거나, 고정된 VS Code를 처음 한 번 내려받는 중입니다. | 1분쯤 기다리세요. 응답이 멈추면 handide가 알아서 다시 시작합니다. |
+| 집 밖 링크가 폰에서 안 열림 | 기본값은 내 tailnet에 로그인한 기기만 접속됩니다. | 폰의 Tailscale 앱을 PC와 같은 계정으로 켜 두세요. 아니면 `handide remote --public`. |
+| LAN 주소에서 인증서 경고 | handide가 이 PC용으로 만든 인증서입니다. | Android 크롬: *고급* → *계속*. iPhone Safari: *세부사항 보기* → *이 웹사이트 방문*. |
+| 링크나 QR이 유출됨 | 가진 사람은 이 PC를 쓸 수 있습니다. | `handide --new-token` (또는 데스크톱 패널의 *Replace access token*): 지금까지 나간 링크가 모두 막힙니다. |
+
 ## 자주 묻는 질문
 
 <details>

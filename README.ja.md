@@ -214,6 +214,26 @@ flowchart LR
 - タッチレイヤー（`layer/`）はページに注入される素の JS と CSS です。VS Code の DOM への依存はすべて `layer/selectors.json` にまとめてあり、アップデートで何かが動いても 1 行の修正で直せます。
 - コンパニオン拡張機能（`extension/`）がレイヤーの代わりに公式の VS Code コマンド（ファイルを開く、フォルダ切り替え、ビュー表示）を実行します。
 
+## サポート範囲
+
+| | |
+|---|---|
+| PC | **Windows 10/11**: インストーラーとデスクトップ拡張機能、CI で検査。macOS・Linux はソースから実行（`npm i -g`）し、CI 検査はありません。 |
+| エディター | **VS Code** stable（Insiders も可）。Cursor・Windsurf などのフォークは Web UI を配信できないため、VS Code を併せてインストールしてください。 |
+| スマホの VS Code | デスクトップの VS Code のバージョンに関係なく、`layer/selectors.json` → `testedWith` のビルドそのものです（serve-web が一度ダウンロード）。新しい VS Code は検査に通ったあと handide のリリースでスマホに届きます。レイアウト設定に `"editorServer": "latest"` を入れると固定を外せます。 |
+| Android | **Chrome**: すべてのリリースが Pixel 7 エミュレーションで全検査に通ります。 |
+| iPhone | **Safari**（一部）: レイアウトは WebKit エミュレーション（iPhone 14）で通ります。実機 iPhone のキーボード・証明書・ネットワーク切り替えはどの検査も扱いません。 |
+
+## 困ったときは
+
+| 見えるもの | 意味 | すること |
+|---|---|---|
+| スマホに茶色の案内と通常の VS Code | 配信中の VS Code がレイヤーの前提を変えたため、そのスマホでレイヤーが自動でオフになりました。PC のログに理由が出ます。 | handide を更新してください。開発者は `npm run check` のあと mobilize-editor スキル。 |
+| "editor server not reachable yet" | エディターサーバーの起動中、または固定された VS Code の初回ダウンロード中です。 | 1 分ほど待ってください。応答が止まると handide が自動で再起動します。 |
+| 外出先リンクがスマホで開かない | 既定では自分の tailnet にサインインした端末だけが接続できます。 | スマホの Tailscale アプリを PC と同じアカウントでオンに。または `handide remote --public`。 |
+| LAN アドレスで証明書の警告 | handide がこの PC 用に作った証明書です。 | Android Chrome: *詳細設定* → *続行*。iPhone Safari: *詳細を表示* → *このWebサイトを閲覧*。 |
+| リンクや QR コードが漏れた | 持っている人はこの PC を使えます。 | `handide --new-token`（またはデスクトップパネルの *Replace access token*）: これまでのリンクはすべて使えなくなります。 |
+
 ## よくある質問
 
 <details>

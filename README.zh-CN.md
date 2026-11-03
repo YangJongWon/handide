@@ -210,6 +210,26 @@ flowchart LR
 - 触控层（`layer/`）是注入页面的纯 JS 和 CSS。所有对 VS Code DOM 的依赖都列在 `layer/selectors.json` 中，即使更新改动了界面，也只需改一行。
 - 配套扩展（`extension/`）代替触控层执行 VS Code 官方命令（打开文件、切换文件夹、显示视图）。
 
+## 支持范围
+
+| | |
+|---|---|
+| 电脑 | **Windows 10/11**：安装程序和桌面扩展，在 CI 中检查。macOS 和 Linux 从源码运行（`npm i -g`），没有 CI 检查。 |
+| 编辑器 | **VS Code** stable（Insiders 也可）。Cursor、Windsurf 等分支无法提供 Web 界面，请同时安装 VS Code。 |
+| 手机上的 VS Code | 与桌面版 VS Code 的版本无关，正是 `layer/selectors.json` → `testedWith` 中的构建（serve-web 下载一次）。新的 VS Code 通过检查后随 handide 版本发布到手机。在布局配置中加入 `"editorServer": "latest"` 可取消固定。 |
+| Android | **Chrome**：每个版本都在 Pixel 7 模拟中通过完整检查。 |
+| iPhone | **Safari**（部分）：布局在 WebKit 模拟（iPhone 14）中通过。真机 iPhone 的软键盘、证书和网络切换不在任何检查范围内。 |
+
+## 出现问题时
+
+| 看到的情况 | 含义 | 怎么做 |
+|---|---|---|
+| 手机上出现棕色提示和原版 VS Code | 正在提供的 VS Code 改变了布局层依赖的结构，该手机上的布局层已自动关闭。电脑日志会写明原因。 | 更新 handide。贡献者：运行 `npm run check`，然后使用 mobilize-editor 技能。 |
+| "editor server not reachable yet" | 编辑器服务器正在启动，或正在首次下载固定的 VS Code。 | 等一分钟。服务器停止响应时 handide 会自动重启。 |
+| 外网链接在手机上打不开 | 默认只有登录了你 tailnet 的设备能访问。 | 在手机上用与电脑相同的账号打开 Tailscale 应用。或运行 `handide remote --public`。 |
+| 局域网地址出现证书警告 | 这是 handide 为这台电脑生成的证书。 | Android Chrome：*高级* → *继续*。iPhone Safari：*显示详细信息* → *访问此网站*。 |
+| 链接或二维码泄露 | 拿到的人可以使用这台电脑。 | `handide --new-token`（或桌面面板中的 *Replace access token*）：之前发出的所有链接都会失效。 |
+
 ## 常见问题
 
 <details>

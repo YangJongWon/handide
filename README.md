@@ -215,6 +215,26 @@ flowchart LR
 - The touch layer (`layer/`) is plain JS and CSS injected into the page. Every dependency on VS Code's DOM is listed in `layer/selectors.json`, so an update that moves something is a one-line fix.
 - The companion extension (`extension/`) runs official VS Code commands for the layer (open a file, switch folder, show a view).
 
+## What is supported
+
+| | |
+|---|---|
+| PC | **Windows 10/11**: installer and desktop extension, checked in CI. macOS and Linux run from source (`npm i -g`) and are not checked in CI. |
+| Editor | **VS Code** stable (Insiders works too). Cursor, Windsurf and other forks cannot serve a web UI; install VS Code next to them. |
+| VS Code on the phone | Exactly the build in `layer/selectors.json` → `testedWith`, whatever the desktop VS Code's version: serve-web downloads it once. A newer VS Code reaches the phone with a handide release, after it passed the checks. `"editorServer": "latest"` in your layout config opts out. |
+| Android | **Chrome**: every release passes the full check in Pixel 7 emulation. |
+| iPhone | **Safari**, partly: the layout passes in WebKit emulation (iPhone 14). The software keyboard, certificates and network changes of a physical iPhone are not covered by any check. |
+
+## When something goes wrong
+
+| What you see | What it means | What to do |
+|---|---|---|
+| Plain VS Code on the phone with a brown banner | The VS Code it serves changed something the layer relies on, so the layer turned itself off on that phone. The PC's log says what. | Update handide. Contributors: `npm run check`, then the mobilize-editor skill. |
+| "editor server not reachable yet" | The editor server is starting, or downloading the pinned VS Code once. | Wait a minute. handide restarts it by itself when it stops answering. |
+| The link from anywhere does not open on the phone | By default only devices signed in to your tailnet reach it. | Turn on the Tailscale app on the phone, signed in with the same account as the PC. Or `handide remote --public`. |
+| Certificate warning on a LAN address | handide made the certificate for this PC. | Android Chrome: *Advanced* → *Proceed*. iPhone Safari: *Show Details* → *visit this website*. |
+| A link or QR code got out | Whoever has it can use this PC. | `handide --new-token` (or *Replace access token* in the desktop panel): every link handed out so far stops working. |
+
 ## FAQ
 
 <details>
