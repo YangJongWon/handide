@@ -5,6 +5,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import { join } from 'node:path';
 import os from 'node:os';
 
@@ -135,11 +136,45 @@ export async function sameTailnetOwner(ip) {
 	}
 }
 
-async function publish(cli, verb, target, log) {
+/** What https://<dnsName> (port 443) forwards to now, e.g. "https+insecure://127.0.0.1:9000", or null. */
+function servedTarget(statusOut, dnsName) {
+	try {
+		return JSON.parse(statusOut).Web?.[`${dnsName}:443`]?.Handlers?.['/']?.Proxy ?? null;
+	} catch {
+		return null;
+	}
+}
+
+const listening = (port) =>
+	new Promise((resolve) => {
+		const s = net.connect(port, '127.0.0.1');
+		s.setTimeout(2000, () => (s.destroy(), resolve(false)));
+		s.once('connect', () => (s.destroy(), resolve(true)));
+		s.once('error', () => resolve(false));
+	});
+
+/**
+ * The PC has one ts.net address. Another handide (another --port) or another program may
+ * be serving it: that one keeps it while it answers. A target nobody answers on is left
+ * over from a run that was killed, and is taken over.
+ */
+async function addressTakenBy(cli, dnsName, target) {
+	const current = servedTarget((await run(cli, ['serve', 'status', '--json'], { timeout: 5000 })).out, dnsName);
+	if (!current || current === target) return null;
+	const port = /^https?(\+insecure)?:\/\/(127\.0\.0\.1|localhost):(\d+)\/?$/.exec(current)?.[3];
+	return port && !(await listening(Number(port))) ? null : current;
+}
+
+async function publish(cli, verb, target, log, dnsName) {
 	// First use: serve waits until HTTPS is allowed for the tailnet, funnel until Funnel is.
 	const what = verb === 'funnel' ? 'allow public access (Funnel) for this PC (once)' : 'allow HTTPS for your tailnet (once)';
 	const res = await runWithBrowserStep(cli, [verb, '--bg', '--yes', '--https=443', target], { log, what });
-	if (res.code === 0) return { stop: () => spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000, env: CLI_ENV }) };
+	// Turned off on exit only while it is still this handide's: another one may have it by then.
+	const stop = () => {
+		const now = spawnSync(cli, ['serve', 'status', '--json'], { windowsHide: true, timeout: 5000, env: CLI_ENV, encoding: 'utf8' });
+		if (servedTarget(now.stdout, dnsName) === target) spawnSync(cli, [verb, '--https=443', 'off'], { windowsHide: true, timeout: 5000, env: CLI_ENV });
+	};
+	if (res.code === 0) return { stop };
 	const hint = res.out.trim().split('\n').slice(-2).join(' ');
 	return { reason: res.timedOut ? `tailscale ${verb} timed out` : `tailscale ${verb} failed`, hint };
 }
@@ -159,12 +194,14 @@ export async function startTailscale({ port, tls, log, private: tailnetOnly }) {
 	// The LAN port speaks TLS with a self-signed certificate, hence https+insecure.
 	const target = `${tls ? 'https+insecure' : 'http'}://127.0.0.1:${port}`;
 	const url = `https://${dnsName}`;
+	const taken = await addressTakenBy(cli, dnsName, target);
+	if (taken) return { reason: `${url} already forwards to ${taken}`, hint: 'phones reach this handide on the LAN; stop the other one to give this one the address' };
 	if (!tailnetOnly) {
-		const pub = await publish(cli, 'funnel', target, log);
+		const pub = await publish(cli, 'funnel', target, log, dnsName);
 		if (pub.stop) return { url, public: true, stop: pub.stop };
 		log(`Tailscale Funnel not available (${pub.reason}${pub.hint ? `: ${pub.hint}` : ''}); using tailnet-only access.`);
 	}
-	const priv = await publish(cli, 'serve', target, log);
+	const priv = await publish(cli, 'serve', target, log, dnsName);
 	return priv.stop ? { url, public: false, stop: priv.stop } : priv;
 }
 
