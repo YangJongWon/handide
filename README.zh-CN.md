@@ -115,6 +115,10 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 **一个链接，打开开着的那台电脑。** 先用每台电脑的 `ts.net` 链接各打开一次。之后链接所属的电脑关机时，会自动打开另一台开着的电脑。仅适用于有正式证书的 `ts.net` 地址，自签名的局域网链接不行。
 
+## 在手机上用电脑的窗口 (handremote)
+
+独立项目 [handremote](https://github.com/YangJongWon/handremote) 会列出电脑上打开的窗口、小组件、托盘图标和服务器，点按的窗口会按手机尺寸重新排版后打开（不是缩小的画面），可以直接点按和输入。它在同一台电脑上运行时，handide 菜单会出现 **电脑画面**，通过 handide 的地址和令牌打开；网页应用在 handide 的预览中打开。没有 handremote 时不显示。通过公开链接（`--public`、`--cloudflare`）打开时，handremote 不使用 SYSTEM 助手（锁屏、UAC 提示）。
+
 ## 手机界面
 
 ```

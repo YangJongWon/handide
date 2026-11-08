@@ -119,6 +119,10 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 **링크 하나로, 켜져 있는 PC로.** 각 PC를 `ts.net` 링크로 한 번씩 열어 두세요. 그다음부터는 링크의 PC가 꺼져 있으면, 켜져 있는 다른 PC가 대신 열립니다. 정식 인증서인 `ts.net` 주소에서만 동작하고, 자체 서명 LAN 링크에서는 동작하지 않습니다.
 
+## PC 창을 폰에서 (handremote)
+
+별도 프로젝트인 [handremote](https://github.com/YangJongWon/handremote)는 PC에 열린 창, 위젯, 트레이 아이콘, 서버를 목록으로 보여 주고, 누른 창을 폰 크기로 다시 배치해 엽니다(줄인 화면이 아님). 그대로 탭하고 입력할 수 있습니다. 같은 PC에서 돌고 있으면 handide 메뉴에 **PC 화면** 칸이 생기고, handide의 주소와 토큰으로 열립니다. 웹 앱은 handide의 미리보기로 열립니다. handremote가 없으면 칸이 나오지 않습니다. 공개 링크(`--public`, `--cloudflare`)로 열었을 때는 handremote가 SYSTEM 도우미(잠금 화면, UAC 확인 창)를 쓰지 않습니다.
+
 ## 폰 화면 구성
 
 ```

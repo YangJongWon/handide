@@ -26,6 +26,7 @@ import { canServeWebviews, isWebviewAsset, isWebviewHost, patchWebviewHost, useL
 import { createBridge } from './bridge.mjs';
 import { serviceCommand } from './service.mjs';
 import { createPortForwarder } from './ports.mjs';
+import { createScreenLink } from './screen-link.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
 import { createPeerRelay, createProjectShare, rememberFolder, writeWorkspace } from './projects.mjs';
@@ -570,7 +571,7 @@ function injectLayer(html, version) {
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions }) {
+function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions, screen }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -597,6 +598,8 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 			res.writeHead(204, { 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
 			return res.end();
 		}
+		// The PC's windows and widgets, from handremote when it runs here (proxy/screen-link.mjs).
+		if (screen?.handle(req, res)) return;
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
 		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
@@ -652,6 +655,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 	server.on('upgrade', (req, socket, head) => {
 		if (devices?.upgrade(req, socket, head, clientBase(req).proto)) return;
 		if (ports?.upgrade(req, socket, head)) return;
+		if (screen?.upgrade(req, socket, head)) return;
 		// The page's connections to the editor server: extension hosts outlive a dropped
 		// page connection (proxy/sessions.mjs).
 		if (sessions?.upgrade(req, socket, head, toUpstreamHeaders(req))) return;
@@ -876,7 +880,12 @@ async function main() {
 	bridge.setAway(sessions.awayPids);
 	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents() }));
 	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
-	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share, sessions });
+	// handremote is told how this handide is reachable: it keeps its SYSTEM helper (lock
+	// screen, UAC) off behind a public link. Until the away-from-home link is up, the mode it
+	// was asked for (the stricter guess: a public link may already be on its way).
+	let remoteMode = opts.remote;
+	const screen = createScreenLink({ token: opts.token, remoteMode: () => remoteMode, log });
+	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share, sessions, screen });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);
@@ -899,6 +908,7 @@ async function main() {
 			? { ...(await startCloudflare({ port: opts.port, tls, dataDir: opts.dataDir, log })), public: true, changes: true }
 			: await startTailscale({ port: opts.port, tls, log, private: opts.remote !== 'public' });
 		remoteStatus = r.url ? { code: 'ok' } : { code: r.code ?? 'failed', reason: r.reason, hint: r.hint };
+		remoteMode = !r.url ? 'off' : opts.remote === 'cloudflare' ? 'cloudflare' : r.public ? 'public' : 'private';
 		CONNECT.remote = remoteStatus;
 		if (r.url) {
 			stopRemote = r.stop;

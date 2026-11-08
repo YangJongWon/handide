@@ -119,6 +119,10 @@ handide devices add laptop "https://192.168.0.12:9000/?tkn=..."
 
 **リンク 1 つで、オンの PC へ。** 各 PC を `ts.net` のリンクで一度ずつ開いておいてください。以後、リンクの PC がオフなら、オンのほかの PC が代わりに開きます。正式な証明書の `ts.net` アドレスでのみ動作し、自己署名の LAN リンクでは動作しません。
 
+## PC のウィンドウをスマホで (handremote)
+
+別プロジェクトの [handremote](https://github.com/YangJongWon/handremote) は、PC で開いているウィンドウ、ウィジェット、トレイアイコン、サーバーを一覧にし、タップしたウィンドウをスマホのサイズに並べ直して開きます（縮小表示ではありません）。そのままタップして入力できます。同じ PC で動いていると handide のメニューに **PC 画面** が現れ、handide のアドレスとトークンで開きます。Web アプリは handide のプレビューで開きます。handremote がなければ表示されません。公開リンク（`--public`、`--cloudflare`）から開いたときは、handremote は SYSTEM ヘルパー（ロック画面、UAC）を使いません。
+
 ## スマホの画面構成
 
 ```

@@ -119,6 +119,10 @@ The menu on the phone then shows a **PCs** row: tap one to open that PC's VS Cod
 
 **One link, whichever PC is on.** Open each PC once through its `ts.net` link. After that, when the PC a link belongs to is off, the page opens another PC that is on instead. This needs the trusted `ts.net` certificate; it does not work with the self-signed LAN link.
 
+## The PC's windows on the phone (handremote)
+
+[handremote](https://github.com/YangJongWon/handremote), a separate project, lists the PC's open windows, widgets, tray icons and servers, and opens a tapped window laid out again at the phone's size (not a shrunken desktop), to tap and type in. When it runs on the same PC, handide's menu gets a **PC** tile that opens it through handide's own address and token; its web apps open in handide's preview. Without handremote the tile does not show. Behind a public link (`--public`, `--cloudflare`) handremote keeps its SYSTEM helper (lock screen, UAC prompts) off.
+
 ## The phone layout
 
 ```

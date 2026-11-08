@@ -37,6 +37,9 @@ const STRINGS = {
 		'menu.undo': 'Undo',
 		'menu.redo': 'Redo',
 		'menu.find': 'Find',
+		'menu.pc': 'PC',
+		'pc.update': 'Update handremote on this PC to open it from here.',
+		'pc.preview': 'PC windows (handremote)',
 		'view.terminal': 'Terminal',
 		'view.ai': 'AI · Extensions',
 		'action.copy': 'Copy',
@@ -194,6 +197,9 @@ const STRINGS = {
 		'menu.undo': '실행 취소',
 		'menu.redo': '다시 실행',
 		'menu.find': '찾기',
+		'menu.pc': 'PC 화면',
+		'pc.update': '이 PC의 handremote를 업데이트하면 여기서 열 수 있습니다.',
+		'pc.preview': 'PC 창 (handremote)',
 		'view.terminal': '터미널',
 		'view.ai': 'AI·확장',
 		'action.copy': '복사',
@@ -351,6 +357,9 @@ const STRINGS = {
 		'menu.undo': '元に戻す',
 		'menu.redo': 'やり直す',
 		'menu.find': '検索',
+		'menu.pc': 'PC 画面',
+		'pc.update': 'この PC の handremote を更新するとここから開けます。',
+		'pc.preview': 'PC のウィンドウ (handremote)',
 		'view.terminal': 'ターミナル',
 		'view.ai': 'AI・拡張機能',
 		'action.copy': 'コピー',
@@ -508,6 +517,9 @@ const STRINGS = {
 		'menu.undo': '撤销',
 		'menu.redo': '重做',
 		'menu.find': '查找',
+		'menu.pc': '电脑画面',
+		'pc.update': '更新此电脑上的 handremote 后即可在这里打开。',
+		'pc.preview': '电脑窗口 (handremote)',
 		'view.terminal': '终端',
 		'view.ai': 'AI·扩展',
 		'action.copy': '复制',
@@ -727,6 +739,8 @@ const MENU_DEFS = {
 	redo: { icon: 'redo', label: 'menu.redo', action: 'redo' },
 	find: { icon: 'search', label: 'menu.find', action: 'find' },
 	extensions: { icon: 'extensions', label: 'menu.extensions', manage: true },
+	// handremote's windows, widgets and tray (a separate project): shown only while it runs on the PC.
+	pc: { icon: 'device-desktop', label: 'menu.pc', screen: true },
 };
 const DEFAULT_MENU = ['files', 'terminal', 'ai', 'quickOpen', 'palette', 'save', 'undo', 'redo'];
 
@@ -1281,6 +1295,7 @@ function pressMenu(name) {
 	closeMenu();
 	if (name === 'files') return openDrawer();
 	if (def.manage) return openExtensionManager();
+	if (def.screen) return openScreen();
 	if (def.view) return showView(state.view === def.view ? 'editor' : def.view);
 	if (def.action) runAction(def.action);
 }
@@ -1491,6 +1506,7 @@ function openMenu() {
 	document.documentElement.classList.add('hd-menu-open');
 	document.activeElement?.blur?.(); // no soft keyboard under the sheet
 	renderMenuHead();
+	addScreenTile(document.getElementById('hd-menu-grid')); // handremote may have started or stopped since
 	render();
 	loadDevices(); // their online state may have changed since
 }
@@ -2573,7 +2589,7 @@ function build() {
 	installFab(fab);
 
 	const tiles = el('div', { id: 'hd-menu-grid' });
-	for (const name of state.config.menu) {
+	for (const name of state.config.menu.filter((n) => n !== 'pc')) {
 		const def = MENU_DEFS[name];
 		if (!def) continue;
 		tiles.append(button({ class: 'hd-tile', 'data-item': name, 'aria-label': t(def.label), 'data-i18n-aria': def.label }, [icon(def.icon), el('span', { 'data-i18n': def.label }, t(def.label))], () => pressMenu(name)));
@@ -2597,6 +2613,7 @@ function build() {
 		buildSettings(),
 		tiles,
 	);
+	addScreenTile(tiles);
 	const menuScrim = el('div', { id: 'hd-menu-scrim', onclick: closeMenu });
 
 	const drawer = el(
@@ -3018,6 +3035,13 @@ const preview = { port: null };
 /** What the preview shows now, as a link that opens the same page in a tab. */
 function previewHref() {
 	const frame = document.querySelector('#hd-preview iframe');
+	if (!preview.port) {
+		try {
+			return frame.contentWindow.location.href; // handremote's page: same origin, its own path
+		} catch {
+			return frame.src;
+		}
+	}
 	let path = '/';
 	try {
 		const loc = frame.contentWindow.location;
@@ -3028,7 +3052,7 @@ function previewHref() {
 
 function setPreviewBar(href) {
 	const box = document.getElementById('hd-preview');
-	box.querySelector('.hd-preview-url').textContent = shownUrl(href);
+	box.querySelector('.hd-preview-url').textContent = href.startsWith(`${location.origin}${SCREEN_BASE}`) ? t('pc.preview') : shownUrl(href);
 	box.querySelector('.hd-preview-open').href = href;
 }
 
@@ -3057,6 +3081,40 @@ function showPreview(href) {
 	if (state.view === 'editor') render();
 	else showView('editor');
 }
+
+// ---------------------------------------------------------------- handremote
+//
+// handremote (a separate project) shows the PC's windows, widgets and tray at the phone's
+// size. When it runs on this PC, handide relays it (proxy/screen-link.mjs) and the menu
+// gets a PC tile that opens it in the preview, through handide's own address and token.
+const SCREEN_BASE = `${BASE}screen/`;
+const screenState = { available: false, compatible: false };
+
+async function addScreenTile(tiles) {
+	try {
+		const res = await fetch(`${BASE}screen-status`, { cache: 'no-store' });
+		Object.assign(screenState, await res.json());
+	} catch {
+		return;
+	}
+	const tile = tiles?.querySelector('[data-item="pc"]');
+	if (!screenState.available) return tile?.remove();
+	if (!tiles || tile) return;
+	const def = MENU_DEFS.pc;
+	tiles.append(button({ class: 'hd-tile', 'data-item': 'pc', 'aria-label': t(def.label), 'data-i18n-aria': def.label }, [icon(def.icon), el('span', { 'data-i18n': def.label }, t(def.label))], () => pressMenu('pc')));
+}
+
+function openScreen() {
+	if (!screenState.compatible) return toast(t('pc.update'));
+	showPreview(`${location.origin}${SCREEN_BASE}`);
+}
+
+// handremote's "web apps" open in this same preview, through handide's own forwarder.
+window.addEventListener('message', (e) => {
+	if (e.origin !== location.origin || e.data?.handremote !== 'openPort') return;
+	const port = Number(e.data.port);
+	if (Number.isInteger(port) && port > 0 && port < 65536) showPreview(`${location.origin}${PORT_BASE}${port}/`);
+});
 
 function closePreview() {
 	const box = document.getElementById('hd-preview');
