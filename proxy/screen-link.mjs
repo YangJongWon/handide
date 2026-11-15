@@ -120,5 +120,30 @@ export function createScreenLink({ token, remoteMode, log }) {
 		return true;
 	}
 
-	return { handle, upgrade };
+	/** handremote's /api/state (finished downloads among it), or null when it is not running. */
+	function state() {
+		const ep = endpoint();
+		if (!ep) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			const req = http.get(
+				{ host: '127.0.0.1', port: ep.port, path: '/api/state', headers: { 'x-handremote-secret': ep.secret, 'x-handremote-remote': remoteMode() }, timeout: 5000 },
+				(res) => {
+					let data = '';
+					res.setEncoding('utf8');
+					res.on('data', (c) => (data += c));
+					res.on('end', () => {
+						try {
+							resolve(res.statusCode === 200 ? JSON.parse(data) : null);
+						} catch {
+							resolve(null);
+						}
+					});
+				},
+			);
+			req.on('error', () => resolve(null));
+			req.on('timeout', () => req.destroy());
+		});
+	}
+
+	return { handle, upgrade, state };
 }

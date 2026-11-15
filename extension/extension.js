@@ -705,9 +705,55 @@ async function searchPeers() {
 	await vscode.window.showTextDocument(doc, { selection: new vscode.Range(at, at) });
 }
 
+// Mobile link navigation: only a native drag explicitly permits editor groups.
+let linkLayout = null;
+let editorReveal = 0;
+let revealTimer;
+let lastActiveTab;
+let droppingLink = false;
+function revealLinkedEditor() {
+	const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+	if (droppingLink || !linkLayout || !tab || tab === lastActiveTab) return;
+	lastActiveTab = tab;
+	clearTimeout(revealTimer);
+	revealTimer = setTimeout(async () => {
+		try {
+			const split = Date.now() < linkLayout.dragUntil;
+			if (vscode.window.tabGroups.all.length > 1) {
+				await run(split
+					? (linkLayout.portrait ? 'workbench.action.editorLayoutTwoRows' : 'workbench.action.editorLayoutTwoColumns')
+					: 'workbench.action.joinAllGroups');
+			}
+			await showView({ view: 'editor' });
+			editorReveal++;
+		} catch (err) {
+			console.warn('[handide] linked editor: ' + err.message);
+		}
+	}, 150);
+}
+
+async function dropLink({ href, portrait, side } = {}) {
+	if (!linkLayout || typeof href !== 'string' || !/^(file|vscode-remote):/i.test(href)) return { ok: false };
+	droppingLink = true;
+	clearTimeout(revealTimer);
+	try {
+		await showView({ view: 'editor' });
+		await run('workbench.action.joinAllGroups');
+		await run('vscode.open', vscode.Uri.parse(href), { viewColumn: vscode.ViewColumn.Beside, preview: false });
+		await run(portrait ? 'workbench.action.editorLayoutTwoRows' : 'workbench.action.editorLayoutTwoColumns');
+		if (side === 'top' || side === 'left') {
+			await run(portrait ? 'workbench.action.moveActiveEditorGroupUp' : 'workbench.action.moveActiveEditorGroupLeft');
+		}
+		lastActiveTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+		editorReveal++;
+		return { ok: true };
+	} finally { droppingLink = false; }
+}
+
 function state() {
 	const editor = vscode.window.activeTextEditor;
 	return {
+		editorReveal,
 		folders: (vscode.workspace.workspaceFolders ?? []).map((f) => ({ name: f.name, path: f.uri.fsPath, uri: f.uri.toString() })),
 		active: editor ? { path: editor.document.uri.fsPath, uri: editor.document.uri.toString(), dirty: editor.document.isDirty, cursor: { line: editor.selection.active.line, character: editor.selection.active.character } } : null,
 	};
@@ -818,6 +864,13 @@ async function activate(context) {
 		vscode.commands.registerCommand('handide.view', showView),
 		vscode.commands.registerCommand('handide.tab', showView),
 		vscode.commands.registerCommand('handide.state', state),
+		vscode.commands.registerCommand('handide.dropLink', dropLink),
+		vscode.commands.registerCommand('handide.linkLayout', (args = {}) => {
+			if (!linkLayout) lastActiveTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+			linkLayout = { portrait: !!args.portrait, dragUntil: args.drag ? Date.now() + 2000 : 0 };
+		}),
+		vscode.window.tabGroups.onDidChangeTabs(revealLinkedEditor),
+		vscode.window.tabGroups.onDidChangeTabGroups(revealLinkedEditor),
 		vscode.commands.registerCommand('handide.insertText', insertText),
 		vscode.commands.registerCommand('handide.setPeers', ({ peers }) => peersTree.set(peers)),
 		vscode.commands.registerCommand('handide.extensionViews', extensionViews),
@@ -844,7 +897,7 @@ async function activate(context) {
 	// While this editor is in front: the button on the desktop may be pressed at any time.
 	const handoffTimer = setInterval(() => vscode.window.state.focused && takeHandoff(), 5_000);
 	context.subscriptions.push(
-		{ dispose: () => clearInterval(handoffTimer) },
+		{ dispose: () => { clearInterval(handoffTimer); clearTimeout(revealTimer); } },
 		vscode.window.onDidChangeWindowState((s) => s.focused && takeHandoff()),
 	);
 	await moveViewsToPanel();

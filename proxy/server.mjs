@@ -27,12 +27,14 @@ import { createBridge } from './bridge.mjs';
 import { serviceCommand } from './service.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { createScreenLink } from './screen-link.mjs';
+import { createPush } from './push.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
 import { createPeerRelay, createProjectShare, rememberFolder, writeWorkspace } from './projects.mjs';
 import { peerCommand, peerLauncherEnv } from './peer.mjs';
 import { desktopCommand, sshCommand } from './desktop.mjs';
 import { switchAgent, switchCommand } from './switch.mjs';
+import { CAMERA_STATUS_PATH, CAMERA_WS_PATH, cameraCommand, createCamera } from './camera.mjs';
 import QRCode from 'qrcode';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -564,14 +566,100 @@ function disableWorkspaceTrust(html) {
 	return html.replace(/(&quot;|")enableWorkspaceTrust\1:true/, '$1enableWorkspaceTrust$1:false');
 }
 
+// ---------------------------------------------------------------- home screen and push
+//
+// "Add to Home Screen" makes handide an app of its own; on iPhone only such an app may get
+// notifications. A home-screen app keeps its own cookies, so it starts from the link with
+// the access token (given only to a browser that already has it).
+const tokenCookie = (req) => {
+	for (const part of (req.headers.cookie || '').split(';')) {
+		const [k, ...v] = part.trim().split('=');
+		if (k === 'vscode-tkn') return v.join('=');
+	}
+	return null;
+};
+
+function serveManifest(req, res, token) {
+	const authed = tokenCookie(req) === token;
+	res.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-store' });
+	res.end(
+		JSON.stringify({
+			name: 'handide',
+			short_name: 'handide',
+			id: '/',
+			start_url: authed ? `/?tkn=${encodeURIComponent(token)}` : '/',
+			scope: '/',
+			display: 'standalone',
+			background_color: '#1e1e1e',
+			theme_color: '#1e1e1e',
+			// The extension's icon (desktop/icon.svg), full bleed: the phone rounds it itself.
+			icons: [
+				{ src: `${LAYER_PREFIX}app-icon.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+				{ src: `${LAYER_PREFIX}app-icon.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+			],
+		}),
+	);
+}
+
+async function serveIcon(res) {
+	try {
+		const png = await readFile(join(ROOT, 'desktop', 'icon.png'));
+		res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
+		res.end(png);
+	} catch {
+		res.writeHead(404).end();
+	}
+}
+
+/**
+ * A download that finished on this PC (seen by handremote) goes to the phones that turned
+ * notifications on; tapping it opens handide on handremote with that download's choices.
+ */
+function watchDownloadsForPush({ screen, push, log }) {
+	const TEXT = {
+		ko: ['다운로드 완료', '눌러서 열기'],
+		en: ['Download finished', 'Tap to open it'],
+		ja: ['ダウンロード完了', 'タップして開く'],
+		zh: ['下载完成', '点按以打开'],
+	};
+	let seen = null;
+	setInterval(async () => {
+		if (!push.subscribed) return void (seen = null);
+		const s = await screen.state();
+		if (!s?.downloads || s.now == null) return;
+		if (seen == null) return void (seen = s.now);
+		const fresh = s.downloads.filter((d) => d.at > seen);
+		if (!fresh.length) return;
+		seen = Math.max(...fresh.map((d) => d.at));
+		for (const d of fresh) {
+			const sent = await push.send((lang) => {
+				const [title, hint] = TEXT[lang] || TEXT.en;
+				return { title: `⬇ ${title}`, body: `${d.name}\n${hint}`, tag: `download-${d.id}`, url: `/?hd-download=${d.id}` };
+			});
+			log(`push: "${d.name}" sent to ${sent} phone(s)`);
+		}
+	}, 4000).unref();
+}
+
 function injectLayer(html, version) {
 	const css = `<link rel="stylesheet" href="${LAYER_PREFIX}mobile.css?v=${version}">`;
 	const js = `<script type="module" src="${LAYER_PREFIX}mobile.js?v=${version}"></script>`;
-	const withCss = html.includes('</head>') ? html.replace('</head>', `\t${css}\n\t</head>`) : css + html;
+	const app = [
+		`<link rel="manifest" href="${LAYER_PREFIX}manifest.webmanifest">`,
+		`<link rel="apple-touch-icon" sizes="180x180" href="${LAYER_PREFIX}apple-touch-icon.png">`,
+		'<meta name="apple-mobile-web-app-capable" content="yes">',
+		'<meta name="mobile-web-app-capable" content="yes">',
+		'<meta name="apple-mobile-web-app-title" content="handide">',
+		'<meta name="apple-mobile-web-app-status-bar-style" content="default">',
+	].join('\n\t');
+	// VS Code's own (named "Code", with its icon): the home-screen app is handide.
+	html = html.replace(/<link[^>]+rel="(?:manifest|apple-touch-icon)"[^>]*>\s*/gi, '').replace(/<meta[^>]+name="apple-mobile-web-app-[^"]*"[^>]*>\s*/gi, '');
+	const head = `${app}\n\t${css}`;
+	const withCss = html.includes('</head>') ? html.replace('</head>', `\t${head}\n\t</head>`) : head + html;
 	return withCss.includes('</html>') ? withCss.replace('</html>', `${js}\n</html>`) : withCss + js;
 }
 
-function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions, screen }) {
+function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions, screen, camera, push }) {
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -587,6 +675,8 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 
 	const handler = async (req, res) => {
 		if (isConnectRequest(req)) return serveConnect(req, res);
+		// The phone as this PC's webcam (proxy/camera.mjs): always this PC's, like the upgrade below.
+		if (camera && req.url.split('?')[0] === CAMERA_STATUS_PATH) return camera.handle(req, res);
 		// This PC's project, asked for by handide on another PC (proxy/projects.mjs).
 		if (share?.handle(req, res)) return;
 		// Another PC picked on the phone: everything else is that PC's (proxy/devices.mjs).
@@ -600,6 +690,10 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		}
 		// The PC's windows and widgets, from handremote when it runs here (proxy/screen-link.mjs).
 		if (screen?.handle(req, res)) return;
+		// Notifications to the phone (proxy/push.mjs) and what a home-screen handide needs.
+		if (push?.handle(req, res)) return;
+		if (pathname === `${LAYER_PREFIX}manifest.webmanifest`) return serveManifest(req, res, token);
+		if (pathname === `${LAYER_PREFIX}icon.png`) return serveIcon(res);
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
 		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
@@ -653,6 +747,8 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 
 	// WebSockets (extension host, terminals, file system) are passed through byte for byte.
 	server.on('upgrade', (req, socket, head) => {
+		// The camera is always this PC's, even with another PC picked on the phone.
+		if (camera && req.url.split('?')[0] === CAMERA_WS_PATH) return void camera.upgrade(req, socket, head);
 		if (devices?.upgrade(req, socket, head, clientBase(req).proto)) return;
 		if (ports?.upgrade(req, socket, head)) return;
 		if (screen?.upgrade(req, socket, head)) return;
@@ -768,6 +864,7 @@ async function main() {
 	if (process.argv[2] === 'peer') return peerCommand(process.argv.slice(3));
 	if (process.argv[2] === 'service') return serviceCommand(process.argv.slice(3, 4), { ...serviceRun(process.argv.slice(4), log), log });
 	if (process.argv[2] === 'switch-agent') return switchAgent(process.argv.slice(3));
+	if (process.argv[2] === 'camera') return process.exit(await cameraCommand(process.argv.slice(3)));
 	const sub = { devices: devicesCommand, ssh: sshCommand, desktop: desktopCommand, switch: switchCommand }[process.argv[2]];
 	if (sub) {
 		const args = process.argv.slice(3);
@@ -877,6 +974,7 @@ async function main() {
 	}
 	const ports = createPortForwarder({ token: opts.token, log });
 	const sessions = createSessionKeeper({ upstreamPort, dataDir: opts.dataDir, log });
+	const camera = createCamera({ token: opts.token, log });
 	bridge.setAway(sessions.awayPids);
 	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents() }));
 	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
@@ -885,7 +983,9 @@ async function main() {
 	// was asked for (the stricter guess: a public link may already be on its way).
 	let remoteMode = opts.remote;
 	const screen = createScreenLink({ token: opts.token, remoteMode: () => remoteMode, log });
-	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share, sessions, screen });
+	const push = createPush({ dataDir: opts.dataDir, token: opts.token, log });
+	watchDownloadsForPush({ screen, push, log });
+	const server = createProxy({ upstreamPort, log, tls, selfSigned, token: opts.token, bridge, ports, devices, share, sessions, screen, camera, push });
 	server.on('error', (err) => {
 		if (err.code === 'EADDRINUSE') log(`port ${opts.port} is already in use (another handide?). Stop it or pass --port <n>.`);
 		else log(`server error: ${err.message}`);

@@ -143,3 +143,39 @@ document.getElementById('retry').addEventListener('click', (e) => { e.preventDef
 if (all.length) choose();
 </script>`;
 }
+
+// ---------------------------------------------------------------- notifications
+// Pushes from this PC's handide (proxy/push.mjs): shown as they come; a tap brings handide
+// to the front (or opens it) on what the notification is about.
+self.addEventListener('push', (event) => {
+	let m = {};
+	try {
+		m = event.data ? event.data.json() : {};
+	} catch {
+		m = { body: event.data ? event.data.text() : '' };
+	}
+	event.waitUntil(
+		self.registration.showNotification(m.title || 'handide', {
+			body: m.body || '',
+			tag: m.tag || undefined,
+			icon: '/__handide/app-icon.png',
+			data: { url: m.url || '/' },
+		}),
+	);
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+	event.waitUntil(
+		(async () => {
+			const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+			const mine = open.find((c) => new URL(c.url).origin === self.location.origin);
+			if (mine) {
+				mine.postMessage({ handide: 'notification', url });
+				return mine.focus();
+			}
+			return self.clients.openWindow(url);
+		})(),
+	);
+});

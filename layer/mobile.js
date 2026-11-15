@@ -31,6 +31,20 @@ const STRINGS = {
 		'menu.terminal': 'Terminal',
 		'menu.ai': 'AI · Extensions',
 		'menu.extensions': 'Extensions',
+		'menu.camera': 'PC webcam',
+		'aria.camera': 'Use as PC webcam',
+		'camera.title': 'PC webcam',
+		'camera.connecting': 'Connecting to the PC…',
+		'camera.live': 'Live · {1} fps — pick "handide Camera" in the PC app',
+		'camera.switch': 'Switch camera',
+		'camera.stop': 'Stop',
+		'camera.denied': 'Camera access was denied. Allow it in the browser settings.',
+		'camera.noCamera': 'No camera available.',
+		'camera.notInstalled': 'Not installed on the PC yet. Run on the PC: handide camera install',
+		'camera.missing': 'The PC webcam is not built on the PC (node native/build.mjs).',
+		'camera.unsupported': 'The PC webcam works on Windows PCs only for now.',
+		'camera.replaced': 'Another phone took over the webcam.',
+		'camera.lost': 'Connection lost — reconnecting…',
 		'menu.quickOpen': 'Go to File',
 		'menu.palette': 'Command',
 		'menu.save': 'Save',
@@ -40,6 +54,30 @@ const STRINGS = {
 		'menu.pc': 'PC',
 		'pc.update': 'Update handremote on this PC to open it from here.',
 		'pc.preview': 'PC windows (handremote)',
+		'pc.open': "Open this PC's screen",
+		'pc.noticeTitle': 'Open the PC screen',
+		'pc.notice': "Shows this PC's windows on the phone with handremote. What you tap and type here happens on the PC.",
+		'pc.noticeAgain': 'Show this next time',
+		'pc.noticeOpen': 'Open',
+		'pc.guideTitle': 'PC screen (handremote)',
+		'pc.guide': "Opens this PC's windows at the phone's size, to use them from here. It needs handremote running on this PC, and it is not running now. Run these in a terminal on the PC:",
+		'pc.guideAfter': 'Once it runs, this icon opens it.',
+		'pc.copy': 'Copy commands',
+		'pc.copied': 'Commands copied',
+		'pc.never': "Don't use",
+		'pc.hidden': 'Turn the icon back on in Settings.',
+		'action.ok': 'OK',
+		'settings.remote': 'PC remote icon',
+		'settings.camera': 'PC webcam icon',
+		'settings.push': 'Notifications (finished downloads…)',
+		'push.on': 'Notifications on',
+		'push.off': 'Notifications off',
+		'push.denied': 'Notifications are blocked. Allow them in Settings → Notifications → handide.',
+		'push.failed': 'Could not turn notifications on.',
+		'push.homeTitle': 'Add handide to the Home Screen first',
+		'push.home': 'On iPhone, only an app on the Home Screen may notify. In Safari tap Share (□↑) → "Add to Home Screen", open handide from that icon, and turn notifications on here again.',
+		'settings.on': 'On',
+		'settings.off': 'Off',
 		'view.terminal': 'Terminal',
 		'view.ai': 'AI · Extensions',
 		'action.copy': 'Copy',
@@ -179,7 +217,6 @@ const STRINGS = {
 		'trust.manage': 'Manage trust',
 		'settings.language': 'Language',
 		'settings.title': 'Settings',
-		'devices.label': 'PCs',
 		'devices.offline': 'Offline',
 		'devices.switching': 'Opening {1}…',
 		'devices.unreachable': '{1} is offline. Start handide on that PC.',
@@ -191,6 +228,20 @@ const STRINGS = {
 		'menu.terminal': '터미널',
 		'menu.ai': 'AI·확장',
 		'menu.extensions': '확장 관리',
+		'menu.camera': 'PC 웹캠',
+		'aria.camera': 'PC 웹캠으로 사용',
+		'camera.title': 'PC 웹캠',
+		'camera.connecting': 'PC에 연결 중…',
+		'camera.live': '송출 중 · {1} fps — PC 앱에서 "handide Camera"를 선택하세요',
+		'camera.switch': '카메라 전환',
+		'camera.stop': '중지',
+		'camera.denied': '카메라 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.',
+		'camera.noCamera': '사용할 수 있는 카메라가 없습니다.',
+		'camera.notInstalled': 'PC에 아직 설치되지 않았습니다. PC에서 실행: handide camera install',
+		'camera.missing': 'PC에 웹캠 구성 요소가 빌드되지 않았습니다 (node native/build.mjs).',
+		'camera.unsupported': 'PC 웹캠은 현재 Windows PC에서만 동작합니다.',
+		'camera.replaced': '다른 휴대폰이 웹캠을 이어받았습니다.',
+		'camera.lost': '연결이 끊겼습니다. 다시 연결하는 중…',
 		'menu.quickOpen': '파일 찾기',
 		'menu.palette': '명령',
 		'menu.save': '저장',
@@ -200,6 +251,30 @@ const STRINGS = {
 		'menu.pc': 'PC 화면',
 		'pc.update': '이 PC의 handremote를 업데이트하면 여기서 열 수 있습니다.',
 		'pc.preview': 'PC 창 (handremote)',
+		'pc.open': '이 PC 화면 열기',
+		'pc.noticeTitle': 'PC 화면 열기',
+		'pc.notice': 'handremote로 이 PC의 창을 휴대폰에서 엽니다. 여기서 누르고 입력한 것은 PC에서 그대로 실행됩니다.',
+		'pc.noticeAgain': '다음에도 이 알림 보기',
+		'pc.noticeOpen': '열기',
+		'pc.guideTitle': 'PC 원격 화면 (handremote)',
+		'pc.guide': '이 PC의 창을 휴대폰 크기로 열어 여기서 조작하는 기능입니다. 이 PC에서 handremote가 실행 중이어야 하는데 지금은 꺼져 있습니다. PC의 터미널에서 아래 명령을 실행하세요.',
+		'pc.guideAfter': '실행되면 이 아이콘으로 바로 열립니다.',
+		'pc.copy': '명령 복사',
+		'pc.copied': '명령을 복사했습니다',
+		'pc.never': '사용 안 함',
+		'pc.hidden': '설정에서 아이콘을 다시 켤 수 있습니다.',
+		'action.ok': '확인',
+		'settings.remote': 'PC 원격 아이콘',
+		'settings.camera': 'PC 웹캠 아이콘',
+		'settings.push': '알림 (다운로드 완료 등)',
+		'push.on': '알림이 켜졌습니다',
+		'push.off': '알림을 껐습니다',
+		'push.denied': '알림이 차단되어 있습니다. 설정 → 알림 → handide에서 허용하세요.',
+		'push.failed': '알림을 켜지 못했습니다.',
+		'push.homeTitle': '먼저 handide를 홈 화면에 추가하세요',
+		'push.home': 'iPhone에서는 홈 화면에 추가한 앱만 알림을 받을 수 있습니다. Safari에서 공유(□↑) → "홈 화면에 추가"를 누르고, 홈 화면의 handide 아이콘으로 연 다음 여기서 알림을 다시 켜세요.',
+		'settings.on': '켬',
+		'settings.off': '끔',
 		'view.terminal': '터미널',
 		'view.ai': 'AI·확장',
 		'action.copy': '복사',
@@ -339,7 +414,6 @@ const STRINGS = {
 		'trust.manage': '신뢰 설정',
 		'settings.language': '언어',
 		'settings.title': '설정',
-		'devices.label': 'PC',
 		'devices.offline': '꺼짐',
 		'devices.switching': '{1} 여는 중…',
 		'devices.unreachable': '{1}이(가) 꺼져 있습니다. 그 PC에서 handide를 실행하세요.',
@@ -351,6 +425,20 @@ const STRINGS = {
 		'menu.terminal': 'ターミナル',
 		'menu.ai': 'AI・拡張機能',
 		'menu.extensions': '拡張機能管理',
+		'menu.camera': 'PCウェブカメラ',
+		'aria.camera': 'PCのウェブカメラとして使う',
+		'camera.title': 'PCウェブカメラ',
+		'camera.connecting': 'PCに接続中…',
+		'camera.live': '配信中 · {1} fps — PCのアプリで「handide Camera」を選んでください',
+		'camera.switch': 'カメラ切替',
+		'camera.stop': '停止',
+		'camera.denied': 'カメラの使用が拒否されました。ブラウザの設定で許可してください。',
+		'camera.noCamera': '使えるカメラがありません。',
+		'camera.notInstalled': 'PCにまだインストールされていません。PCで実行: handide camera install',
+		'camera.missing': 'PCでウェブカメラ部品がビルドされていません (node native/build.mjs)。',
+		'camera.unsupported': 'PCウェブカメラは現在Windows PCのみ対応です。',
+		'camera.replaced': '別のスマホがウェブカメラを引き継ぎました。',
+		'camera.lost': '接続が切れました。再接続中…',
 		'menu.quickOpen': 'ファイルへ移動',
 		'menu.palette': 'コマンド',
 		'menu.save': '保存',
@@ -360,6 +448,30 @@ const STRINGS = {
 		'menu.pc': 'PC 画面',
 		'pc.update': 'この PC の handremote を更新するとここから開けます。',
 		'pc.preview': 'PC のウィンドウ (handremote)',
+		'pc.open': 'この PC の画面を開く',
+		'pc.noticeTitle': 'PC の画面を開く',
+		'pc.notice': 'handremote でこの PC のウィンドウをスマホで開きます。ここでのタップや入力は PC でそのまま実行されます。',
+		'pc.noticeAgain': '次回もこの案内を表示',
+		'pc.noticeOpen': '開く',
+		'pc.guideTitle': 'PC の画面 (handremote)',
+		'pc.guide': 'この PC のウィンドウをスマホのサイズで開いて、ここから操作する機能です。この PC で handremote が動いている必要がありますが、今は止まっています。PC のターミナルで次を実行してください。',
+		'pc.guideAfter': '起動すると、このアイコンで開けます。',
+		'pc.copy': 'コマンドをコピー',
+		'pc.copied': 'コマンドをコピーしました',
+		'pc.never': '使わない',
+		'pc.hidden': '設定でアイコンを再び表示できます。',
+		'action.ok': 'OK',
+		'settings.remote': 'PC リモートアイコン',
+		'settings.camera': 'PC ウェブカメラアイコン',
+		'settings.push': '通知 (ダウンロード完了など)',
+		'push.on': '通知をオンにしました',
+		'push.off': '通知をオフにしました',
+		'push.denied': '通知がブロックされています。設定 → 通知 → handide で許可してください。',
+		'push.failed': '通知をオンにできませんでした。',
+		'push.homeTitle': 'まず handide をホーム画面に追加してください',
+		'push.home': 'iPhone ではホーム画面に追加したアプリだけが通知を受け取れます。Safari で共有(□↑) →「ホーム画面に追加」、そのアイコンから handide を開き、ここで通知をもう一度オンにしてください。',
+		'settings.on': 'オン',
+		'settings.off': 'オフ',
 		'view.terminal': 'ターミナル',
 		'view.ai': 'AI・拡張機能',
 		'action.copy': 'コピー',
@@ -499,7 +611,6 @@ const STRINGS = {
 		'trust.manage': '信頼の設定',
 		'settings.language': '言語',
 		'settings.title': '設定',
-		'devices.label': 'PC',
 		'devices.offline': 'オフライン',
 		'devices.switching': '{1} を開いています…',
 		'devices.unreachable': '{1} はオフラインです。その PC で handide を起動してください。',
@@ -511,6 +622,20 @@ const STRINGS = {
 		'menu.terminal': '终端',
 		'menu.ai': 'AI·扩展',
 		'menu.extensions': '扩展管理',
+		'menu.camera': 'PC 摄像头',
+		'aria.camera': '用作 PC 摄像头',
+		'camera.title': 'PC 摄像头',
+		'camera.connecting': '正在连接 PC…',
+		'camera.live': '正在传输 · {1} fps — 在 PC 应用中选择 "handide Camera"',
+		'camera.switch': '切换摄像头',
+		'camera.stop': '停止',
+		'camera.denied': '摄像头权限被拒绝，请在浏览器设置中允许。',
+		'camera.noCamera': '没有可用的摄像头。',
+		'camera.notInstalled': 'PC 上尚未安装。请在 PC 上运行: handide camera install',
+		'camera.missing': 'PC 上尚未构建摄像头组件 (node native/build.mjs)。',
+		'camera.unsupported': 'PC 摄像头目前仅支持 Windows PC。',
+		'camera.replaced': '另一台手机接管了摄像头。',
+		'camera.lost': '连接已断开，正在重新连接…',
 		'menu.quickOpen': '转到文件',
 		'menu.palette': '命令',
 		'menu.save': '保存',
@@ -520,6 +645,30 @@ const STRINGS = {
 		'menu.pc': '电脑画面',
 		'pc.update': '更新此电脑上的 handremote 后即可在这里打开。',
 		'pc.preview': '电脑窗口 (handremote)',
+		'pc.open': '打开这台电脑的画面',
+		'pc.noticeTitle': '打开电脑画面',
+		'pc.notice': '用 handremote 在手机上打开这台电脑的窗口。在这里的点按和输入会直接在电脑上执行。',
+		'pc.noticeAgain': '下次仍显示此提示',
+		'pc.noticeOpen': '打开',
+		'pc.guideTitle': '电脑画面 (handremote)',
+		'pc.guide': '以手机尺寸打开这台电脑的窗口并在这里操作。需要这台电脑上运行 handremote，但它现在没有运行。请在电脑的终端里运行以下命令：',
+		'pc.guideAfter': '运行后，点这个图标即可打开。',
+		'pc.copy': '复制命令',
+		'pc.copied': '命令已复制',
+		'pc.never': '不使用',
+		'pc.hidden': '可在设置中重新打开此图标。',
+		'action.ok': '确定',
+		'settings.remote': '电脑远程图标',
+		'settings.camera': '电脑摄像头图标',
+		'settings.push': '通知（下载完成等）',
+		'push.on': '通知已开启',
+		'push.off': '通知已关闭',
+		'push.denied': '通知被阻止。请在 设置 → 通知 → handide 中允许。',
+		'push.failed': '无法开启通知。',
+		'push.homeTitle': '请先把 handide 添加到主屏幕',
+		'push.home': '在 iPhone 上，只有添加到主屏幕的应用才能接收通知。在 Safari 中点分享(□↑) →「添加到主屏幕」，从该图标打开 handide，然后在这里重新开启通知。',
+		'settings.on': '开',
+		'settings.off': '关',
 		'view.terminal': '终端',
 		'view.ai': 'AI·扩展',
 		'action.copy': '复制',
@@ -659,7 +808,6 @@ const STRINGS = {
 		'trust.manage': '管理信任',
 		'settings.language': '语言',
 		'settings.title': '设置',
-		'devices.label': '电脑',
 		'devices.offline': '离线',
 		'devices.switching': '正在打开 {1}…',
 		'devices.unreachable': '{1} 离线。请在那台电脑上启动 handide。',
@@ -741,6 +889,7 @@ const MENU_DEFS = {
 	extensions: { icon: 'extensions', label: 'menu.extensions', manage: true },
 	// handremote's windows, widgets and tray (a separate project): shown only while it runs on the PC.
 	pc: { icon: 'device-desktop', label: 'menu.pc', screen: true },
+	camera: { icon: 'device-camera', label: 'menu.camera', camera: true },
 };
 const DEFAULT_MENU = ['files', 'terminal', 'ai', 'quickOpen', 'palette', 'save', 'undo', 'redo'];
 
@@ -1048,6 +1197,11 @@ async function waitForBridge() {
 async function refreshState() {
 	const s = await bridgeCall('handide.state');
 	if (!s) return;
+	if (state.editorReveal !== undefined && s.editorReveal !== state.editorReveal) {
+		state.previewOpen = false;
+		showView('editor');
+	}
+	state.editorReveal = s.editorReveal;
 	const folder = s.folders?.[0] ?? null;
 	const changed = folder?.path !== state.folder?.path;
 	state.folder = folder;
@@ -1271,6 +1425,12 @@ function syncViewFromLayout() {
 	if (Date.now() < (state.settlingUntil || 0)) return syncLater(state.settlingUntil);
 	const shown = visibleParts();
 	let view = state.view;
+	// A file/image opened by an extension restores the editor beside its maximized
+	// sidebar. Follow that reveal instead of maximizing the chat over the new page.
+	// This also works with a companion that predates the editorReveal notification.
+	if (view === 'ai' && shown.includes('editor') && shown.includes('auxiliarybar')) {
+		return showView('editor');
+	}
 	if (view === 'terminalDock' && !shown.includes('panel') && shown.includes('editor')) view = 'editor';
 	if (view === 'ai' && !shown.includes('auxiliarybar') && shown.includes('editor')) view = 'editor';
 	const stray = shown.filter((p) => !VIEW_PARTS[view].includes(p) && CLOSE_PART_KEYS[p]);
@@ -1290,12 +1450,18 @@ function syncViewFromLayout() {
 	for (const part of stray) sendKey({ ...CLOSE_PART_KEYS[part], target: document.querySelector(state.selectors.workbench) });
 }
 
+// The phone as the PC's webcam (layer/camera.js, loaded on first use).
+function openCameraScreen() {
+	import('./camera.js').then((m) => m.openCamera({ t, icon, el }), (err) => console.warn('[handide] camera: ' + err.message));
+}
+
 function pressMenu(name) {
 	const def = MENU_DEFS[name];
 	closeMenu();
 	if (name === 'files') return openDrawer();
 	if (def.manage) return openExtensionManager();
 	if (def.screen) return openScreen();
+	if (def.camera) return openCameraScreen();
 	if (def.view) return showView(state.view === def.view ? 'editor' : def.view);
 	if (def.action) runAction(def.action);
 }
@@ -1506,7 +1672,7 @@ function openMenu() {
 	document.documentElement.classList.add('hd-menu-open');
 	document.activeElement?.blur?.(); // no soft keyboard under the sheet
 	renderMenuHead();
-	addScreenTile(document.getElementById('hd-menu-grid')); // handremote may have started or stopped since
+	loadScreenStatus(); // handremote may have started or stopped since
 	render();
 	loadDevices(); // their online state may have changed since
 }
@@ -1557,7 +1723,145 @@ function buildSettings() {
 		{ id: 'hd-settings', hidden: true },
 		el('span', { class: 'hd-settings-label', 'data-i18n': 'settings.language' }, t('settings.language')),
 		el('div', { class: 'hd-lang-list' }, langs),
+		onOffRow('remote'),
+		onOffRow('camera'),
+		pushRow(),
 	);
+}
+
+// ---------------------------------------------------------------- notifications (web push)
+//
+// Notifications from this PC's handide (proxy/push.mjs), such as a finished download. On
+// iPhone only handide added to the Home Screen may have them (Safari tabs have no push).
+const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+
+async function pushSubscription() {
+	try {
+		const reg = await navigator.serviceWorker?.getRegistration('/');
+		return (await reg?.pushManager?.getSubscription()) || null;
+	} catch {
+		return null;
+	}
+}
+
+function pushRow() {
+	const row = [
+		el('span', { class: 'hd-settings-label hd-settings-next', 'data-i18n': 'settings.push' }, t('settings.push')),
+		el(
+			'div',
+			{ class: 'hd-lang-list' },
+			['on', 'off'].map((v) =>
+				button({ class: 'hd-lang', 'data-push': v, 'aria-pressed': String(v === 'off') }, el('span', { 'data-i18n': `settings.${v}` }, t(`settings.${v}`)), () => setPush(v === 'on')),
+			),
+		),
+	];
+	pushSubscription().then(showPush);
+	return row;
+}
+
+function showPush(sub) {
+	for (const b of document.querySelectorAll('#hd-settings [data-push]')) b.setAttribute('aria-pressed', String((b.dataset.push === 'on') === !!sub));
+}
+
+async function setPush(on) {
+	if (!on) {
+		const sub = await pushSubscription();
+		if (sub) {
+			api(`${BASE}push/unsubscribe`, { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
+			await sub.unsubscribe().catch(() => {});
+		}
+		showPush(null);
+		return toast(t('push.off'));
+	}
+	// Safari tabs on iPhone have no PushManager: only the home-screen app does.
+	if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+		const close = showNotice(el('strong', {}, t('push.homeTitle')), el('p', {}, t('push.home')), el('div', { class: 'hd-sheet-actions' }, el('button', { type: 'button', class: 'hd-notice-open', onclick: () => close() }, t('action.ok'))));
+		return;
+	}
+	// Asked first, while the tap still counts (iPhone asks only from a tap).
+	const permission = await Notification.requestPermission();
+	if (permission !== 'granted') return toast(t('push.denied'));
+	try {
+		const reg = await navigator.serviceWorker.register(`${BASE}sw.js`, { scope: '/' });
+		await navigator.serviceWorker.ready;
+		const { key } = await api(`${BASE}push/key`);
+		const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) }));
+		await api(`${BASE}push/subscribe`, { method: 'POST', body: { subscription: sub.toJSON(), lang } });
+		showPush(sub);
+		toast(t('push.on'));
+	} catch (err) {
+		console.warn('[handide] push:', err);
+		toast(t('push.failed'));
+	}
+}
+
+// A tapped notification: handide opened (or was brought to the front) on what it is about.
+function followNotification(href) {
+	let u;
+	try {
+		u = new URL(href, location.href);
+	} catch {
+		return;
+	}
+	const download = u.searchParams.get('hd-download');
+	if (!download) return;
+	closeMenu();
+	loadScreenStatus().then(() => showPreview(`${location.origin}${SCREEN_BASE}?download=${encodeURIComponent(download)}`));
+}
+navigator.serviceWorker?.addEventListener('message', (e) => e.data?.handide === 'notification' && followNotification(e.data.url));
+if (new URL(location.href).searchParams.has('hd-download')) {
+	const href = location.href;
+	const clean = new URL(location.href);
+	clean.searchParams.delete('hd-download');
+	history.replaceState(history.state, '', clean.pathname + clean.search + clean.hash);
+	setTimeout(() => followNotification(href), 2500); // after the layer is up
+}
+
+// Icons the phone can hide (Settings): the PC remote icon (handremote) on the current PC's
+// chip, also turned off by "Don't use" in its guide, and the PC webcam in the menu head.
+const ICON_PREFS = {
+	remote: { key: 'handide.remoteIcon', label: 'settings.remote', apply: () => renderDevices() },
+	camera: { key: 'handide.cameraIcon', label: 'settings.camera', apply: applyCameraIcon },
+};
+
+function iconOn(name) {
+	try {
+		return localStorage.getItem(ICON_PREFS[name].key) !== '0';
+	} catch {
+		return true;
+	}
+}
+
+function setIcon(name, on) {
+	try {
+		localStorage.setItem(ICON_PREFS[name].key, on ? '1' : '0');
+	} catch {}
+	for (const b of document.querySelectorAll(`#hd-settings [data-pref="${name}"]`)) b.setAttribute('aria-pressed', String((b.dataset.value === 'on') === on));
+	ICON_PREFS[name].apply();
+}
+
+function onOffRow(name) {
+	const { label } = ICON_PREFS[name];
+	return [
+		el('span', { class: 'hd-settings-label hd-settings-next', 'data-i18n': label }, t(label)),
+		el(
+			'div',
+			{ class: 'hd-lang-list' },
+			['on', 'off'].map((v) =>
+				button({ class: 'hd-lang', 'data-pref': name, 'data-value': v, 'aria-pressed': String(iconOn(name) === (v === 'on')) }, el('span', { 'data-i18n': `settings.${v}` }, t(`settings.${v}`)), () =>
+					setIcon(name, v === 'on'),
+				),
+			),
+		),
+	];
+}
+
+const remoteIconOn = () => iconOn('remote');
+const setRemoteIcon = (on) => setIcon('remote', on);
+
+function applyCameraIcon() {
+	const b = document.querySelector('#hd-menu [data-act="camera"]');
+	if (b) b.hidden = !iconOn('camera');
 }
 
 function renderMenuHead() {
@@ -1606,21 +1910,33 @@ function renderDevices() {
 	const box = document.getElementById('hd-devices');
 	if (!box) return;
 	const list = state.devices?.devices ?? [];
-	box.hidden = list.length < 2;
+	// One PC alone is listed too while the remote icon is on: its chip carries the icon.
+	box.hidden = list.length < 2 && !(list.length && remoteIconOn());
 	box.replaceChildren(
-		el('span', { class: 'hd-settings-label', 'data-i18n': 'devices.label' }, t('devices.label')),
 		el(
 			'div',
 			{ class: 'hd-device-list' },
 			list.map((d) =>
 				button(
 					{ class: 'hd-device', 'aria-pressed': String(d.id === state.devices.current), 'data-online': String(d.online) },
-					[icon('vm'), el('span', {}, d.name), d.online ? null : el('small', {}, t('devices.offline'))],
+					[icon('vm'), el('span', {}, d.name), d.online ? null : el('small', {}, t('devices.offline')), d.id === state.devices.current ? remoteIcon() : null],
 					() => useDevice(d),
 				),
 			),
 		),
 	);
+}
+
+// The PC's screen (handremote) from a small icon right of the current PC's name. Only a tap
+// on the icon itself opens it; the rest of the chip still picks the PC.
+function remoteIcon() {
+	if (!remoteIconOn()) return null;
+	const b = el('span', { class: 'hd-device-remote', role: 'button', 'data-ready': String(screenState.available), 'aria-label': t('pc.open'), 'data-i18n-aria': 'pc.open' }, icon('remote'));
+	onTap(b, (e) => {
+		e.stopPropagation(); // the chip's own tap (pick this PC) must not run too
+		pressMenu('pc');
+	});
+	return b;
 }
 
 async function useDevice(d) {
@@ -1970,8 +2286,14 @@ function loadFab() {
 }
 
 /** The band the button may sit in: between the top inset and our bottom bars. */
+// Pages in the preview keep their own bar at the top (handremote's back to the list): the
+// button stays below it while the preview is open.
+const PAGE_BAR = 56;
+
 function fabBand() {
-	const top = (vv?.offsetTop || 0) + reservedTop + FAB_MARGIN;
+	let top = (vv?.offsetTop || 0) + reservedTop + FAB_MARGIN;
+	const frame = state.previewOpen && document.querySelector('#hd-preview iframe');
+	if (frame) top = Math.max(top, frame.getBoundingClientRect().top + PAGE_BAR + FAB_MARGIN);
 	let bottom = (vv?.offsetTop || 0) + realViewportHeight() - reservedBottom - FAB_SIZE - FAB_MARGIN;
 	// Above the terminal drawer, off its grab bar.
 	const bar = document.getElementById('hd-viewbar');
@@ -2551,6 +2873,73 @@ function onFocusOut() {
 	setTimeout(updateKeys, 50);
 }
 
+// ---------------------------------------------------------------- keyboard on return
+//
+// iOS gives the focus back to the field that had it when the app went to the home screen,
+// and a panel (Claude Code's input) focuses its own field when it loads: either way the
+// keyboard comes up. That is only wanted while writing: a field with text in it, or a
+// cursor in a file. Otherwise the focus is let go on leaving, and a field focused by
+// itself right after coming back (or a fresh start) is let go once.
+const EDITABLE =
+	'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]):not([type=file]), textarea, [contenteditable]:not([contenteditable="false"])';
+
+function deepFocus() {
+	const frames = [];
+	let a = document.activeElement;
+	while (a?.tagName === 'IFRAME') {
+		frames.push(a);
+		let inner = null;
+		try {
+			inner = a.contentDocument?.activeElement; // webviews served by handide are same-origin
+		} catch {}
+		if (!inner || inner === a.contentDocument.body) break;
+		a = inner;
+	}
+	return { el: a, frames };
+}
+
+function idleField(a) {
+	if (!a || a.tagName === 'IFRAME' || !a.matches?.(EDITABLE)) return false;
+	if (a.id === 'hd-term-text') return !a.value.trim();
+	// The code editor: a cursor in a file counts as writing.
+	if (a.closest('.part.editor') && a.closest('.monaco-editor') && !a.closest('.monaco-inputbox')) return false;
+	const editor = a.closest('.monaco-editor'); // chat inputs are editors too: their text is in the view
+	if (editor) return !editor.querySelector('.view-lines')?.textContent.trim();
+	if ('value' in a && typeof a.value === 'string') return !a.value.trim();
+	return !a.textContent.trim();
+}
+
+function letGoOfIdleField() {
+	const { el: a, frames } = deepFocus();
+	if (!idleField(a)) return false;
+	a.blur?.();
+	for (const f of frames.reverse()) f.blur?.();
+	document.activeElement?.blur?.();
+	return true;
+}
+
+let returnGuard = 0;
+function guardReturn(ms) {
+	clearInterval(returnGuard);
+	const until = Date.now() + ms;
+	const stop = () => clearInterval(returnGuard);
+	document.addEventListener('pointerdown', stop, { once: true, capture: true }); // the user's own tap wins
+	returnGuard = setInterval(() => {
+		if (Date.now() > until || letGoOfIdleField()) stop(); // once: a tap into a webview is not seen here
+	}, 250);
+}
+
+function installReturnFocus() {
+	const leave = () => {
+		clearInterval(returnGuard);
+		letGoOfIdleField();
+	};
+	document.addEventListener('visibilitychange', () => (document.hidden ? leave() : guardReturn(1500)));
+	window.addEventListener('pagehide', leave);
+	window.addEventListener('pageshow', (e) => e.persisted && guardReturn(1500));
+	guardReturn(8000); // a fresh start from the home screen: panels load and focus for a while
+}
+
 // ---------------------------------------------------------------- UI
 
 function button(attrs, children, onPress) {
@@ -2605,6 +2994,10 @@ function build() {
 				closeMenu();
 				runAction('quickOpen');
 			}),
+			button({ class: 'hd-icon-btn', 'aria-label': t('aria.camera'), 'data-i18n-aria': 'aria.camera', 'data-act': 'camera', hidden: !iconOn('camera') }, icon('device-camera'), () => {
+				closeMenu();
+				openCameraScreen();
+			}),
 			button({ class: 'hd-icon-btn', 'aria-label': t('aria.settings'), 'data-i18n-aria': 'aria.settings', 'data-act': 'settings', 'aria-expanded': 'false' }, icon('gear'), toggleSettings),
 			button({ class: 'hd-icon-btn', 'aria-label': t('aria.save'), 'data-i18n-aria': 'aria.save', 'data-act': 'save' }, icon('save'), () => runAction('save')),
 			button({ class: 'hd-icon-btn', 'aria-label': t('aria.close'), 'data-i18n-aria': 'aria.close', 'data-act': 'close' }, icon('close'), closeMenu),
@@ -2613,7 +3006,7 @@ function build() {
 		buildSettings(),
 		tiles,
 	);
-	addScreenTile(tiles);
+	loadScreenStatus();
 	const menuScrim = el('div', { id: 'hd-menu-scrim', onclick: closeMenu });
 
 	const drawer = el(
@@ -2851,7 +3244,13 @@ function render() {
 		b.classList.toggle('active', !!(def?.sticky && state.sticky[def.sticky]));
 	}
 	const preview = document.getElementById('hd-preview');
-	if (preview) preview.hidden = !state.previewOpen || state.view !== 'editor';
+	if (preview) {
+		const hidden = !state.previewOpen || state.view !== 'editor';
+		// A hidden preview keeps its page loaded: it is told, so handremote can let go of a
+		// PC window it laid out for the phone (and take it again when shown).
+		if (preview.hidden !== hidden) preview.querySelector('iframe')?.contentWindow?.postMessage({ handide: 'preview', visible: !hidden }, location.origin);
+		preview.hidden = hidden;
+	}
 	renderViewbar();
 	if (state.view !== 'ai') {
 		stopVoice();
@@ -3080,33 +3479,99 @@ function showPreview(href) {
 	state.previewOpen = true;
 	if (state.view === 'editor') render();
 	else showView('editor');
+	requestAnimationFrame(placeFab); // below the page's own top bar
 }
 
 // ---------------------------------------------------------------- handremote
 //
 // handremote (a separate project) shows the PC's windows, widgets and tray at the phone's
-// size. When it runs on this PC, handide relays it (proxy/screen-link.mjs) and the menu
-// gets a PC tile that opens it in the preview, through handide's own address and token.
+// size. When it runs on this PC, handide relays it (proxy/screen-link.mjs) and the current
+// PC's chip in the menu gets a small icon that opens it in the preview, through handide's
+// own address and token.
 const SCREEN_BASE = `${BASE}screen/`;
 const screenState = { available: false, compatible: false };
 
-async function addScreenTile(tiles) {
+async function loadScreenStatus() {
 	try {
 		const res = await fetch(`${BASE}screen-status`, { cache: 'no-store' });
 		Object.assign(screenState, await res.json());
 	} catch {
 		return;
 	}
-	const tile = tiles?.querySelector('[data-item="pc"]');
-	if (!screenState.available) return tile?.remove();
-	if (!tiles || tile) return;
-	const def = MENU_DEFS.pc;
-	tiles.append(button({ class: 'hd-tile', 'data-item': 'pc', 'aria-label': t(def.label), 'data-i18n-aria': def.label }, [icon(def.icon), el('span', { 'data-i18n': def.label }, t(def.label))], () => pressMenu('pc')));
+	renderDevices(); // the PC list may have been drawn before this answer: its remote icon follows it
 }
 
 function openScreen() {
+	if (!screenState.available) return showRemoteGuide();
 	if (!screenState.compatible) return toast(t('pc.update'));
+	let ask = true;
+	try {
+		ask = localStorage.getItem('handide.screenNotice') !== '0';
+	} catch {}
+	if (ask) return showScreenNotice();
 	showPreview(`${location.origin}${SCREEN_BASE}`);
+}
+
+/** A small card over the page; a tap outside it closes it. */
+function showNotice(...children) {
+	document.getElementById('hd-notice')?.remove();
+	const box = el('div', { id: 'hd-notice', role: 'dialog', 'aria-modal': 'true' }, el('div', { class: 'hd-notice-card' }, ...children));
+	box.addEventListener('pointerdown', (e) => e.target === box && box.remove());
+	document.body.append(box);
+	return () => box.remove();
+}
+
+// Shown before the PC's screen opens, until "Show this next time" is unticked there.
+function showScreenNotice() {
+	const again = el('input', { type: 'checkbox', checked: true });
+	const open = () => {
+		try {
+			localStorage.setItem('handide.screenNotice', again.checked ? '1' : '0');
+		} catch {}
+		close();
+		showPreview(`${location.origin}${SCREEN_BASE}`);
+	};
+	const close = showNotice(
+		el('strong', {}, icon('remote'), ' ', t('pc.noticeTitle')),
+		el('p', {}, t('pc.notice')),
+		el('label', { class: 'hd-notice-again' }, again, el('span', {}, t('pc.noticeAgain'))),
+		el(
+			'div',
+			{ class: 'hd-sheet-actions' },
+			el('button', { type: 'button', onclick: () => close() }, t('action.cancel')),
+			el('button', { type: 'button', class: 'hd-notice-open', onclick: open }, t('pc.noticeOpen')),
+		),
+	);
+}
+
+// handremote is not running on this PC: what it is and how to start it, or turn the icon off.
+const HANDREMOTE_INSTALL = 'npm install -g github:YangJongWon/handremote\nhandremote';
+function showRemoteGuide() {
+	const close = showNotice(
+		el('strong', {}, icon('remote'), ' ', t('pc.guideTitle')),
+		el('p', {}, t('pc.guide')),
+		el('pre', { class: 'hd-notice-code' }, HANDREMOTE_INSTALL),
+		el('p', {}, t('pc.guideAfter')),
+		el(
+			'div',
+			{ class: 'hd-sheet-actions' },
+			el(
+				'button',
+				{
+					type: 'button',
+					class: 'hd-notice-never',
+					onclick: () => {
+						close();
+						setRemoteIcon(false);
+						toast(t('pc.hidden'));
+					},
+				},
+				t('pc.never'),
+			),
+			el('button', { type: 'button', onclick: () => copyText(HANDREMOTE_INSTALL, t('pc.copied')) }, t('pc.copy')),
+			el('button', { type: 'button', class: 'hd-notice-open', onclick: () => close() }, t('action.ok')),
+		),
+	);
 }
 
 // handremote's "web apps" open in this same preview, through handide's own forwarder.
@@ -3116,12 +3581,92 @@ window.addEventListener('message', (e) => {
 	if (Number.isInteger(port) && port > 0 && port < 65536) showPreview(`${location.origin}${PORT_BASE}${port}/`);
 });
 
+// A pointer-transparent overlay leaves native editor drag handling available.
+function installLinkDropPreview() {
+	const portrait = () => matchMedia('(orientation: portrait)').matches;
+	const configure = (drag = false) => bridgeCall('handide.linkLayout', { portrait: portrait(), drag });
+	let box, expiry, reported = 0, dropped = false;
+	const clear = () => { clearTimeout(expiry); if (box) box.hidden = true; };
+	const linkDrag = (e) => [...(e.dataTransfer?.types || [])].some((type) =>
+		['text/uri-list', 'text/plain', 'application/vnd.code.uri-list'].includes(type));
+	const destination = (e) => portrait()
+		? (e.clientY < innerHeight / 2 ? 'top' : 'bottom')
+		: (e.clientX < innerWidth / 2 ? 'left' : 'right');
+	configure();
+	document.addEventListener('dragstart', () => { dropped = false; }, true);
+	window.addEventListener('orientationchange', () => { clear(); configure(); });
+	document.addEventListener('dragover', (e) => {
+		if (!linkDrag(e)) return clear();
+		e.preventDefault();
+		if (!box) {
+			box = el('div', { id: 'hd-link-drop-preview', 'aria-hidden': 'true' });
+			document.body.append(box);
+		}
+		box.dataset.side = destination(e);
+		box.hidden = false;
+		clearTimeout(expiry);
+		expiry = setTimeout(clear, 900);
+		if (Date.now() - reported > 500) { reported = Date.now(); configure(true); }
+	}, true);
+	document.addEventListener('drop', async (e) => {
+		const side = destination(e);
+		clear();
+		if (!linkDrag(e)) return;
+		dropped = true;
+		const raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+		const href = raw.split(/\r?\n/).find((line) => line.trim() && !line.startsWith('#'))?.trim();
+		if (href && /^(file|vscode-remote):/i.test(href)) {
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			const result = await bridgeCall('handide.dropLink', { href, portrait: portrait(), side });
+			if (result?.ok) { state.previewOpen = false; showView('editor'); }
+		} else configure(true);
+	}, true);
+	document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) clear(); }, true);
+	document.addEventListener('dragend', () => { clear(); if (!dropped) configure(); dropped = false; }, true);
+	window.addEventListener('blur', clear);
+	document.addEventListener('visibilitychange', () => document.hidden && clear());
+	// Locally hosted extension webviews are nested documents. DOM drag events do not
+	// bubble out of iframes, so relay accessible frames into the same drop handler.
+	const watched = new WeakSet();
+	const watchFrames = (doc, frame) => {
+		if (watched.has(doc)) return;
+		watched.add(doc);
+		if (frame) for (const type of ['dragstart', 'dragover', 'drop', 'dragend', 'dragleave']) {
+			doc.addEventListener(type, (e) => {
+				let x = e.clientX, y = e.clientY, current = frame;
+				while (current) {
+					const rect = current.getBoundingClientRect();
+					x += rect.left; y += rect.top;
+					current = current.ownerDocument.defaultView.frameElement;
+				}
+				const relay = new DragEvent(type, { cancelable: true, clientX: x, clientY: y, dataTransfer: e.dataTransfer });
+				document.dispatchEvent(relay);
+				if (relay.defaultPrevented) {
+					e.preventDefault();
+					if (type === 'drop') e.stopImmediatePropagation();
+				}
+			}, true);
+		}
+		const scan = () => {
+			for (const child of doc.querySelectorAll('iframe')) {
+				try { if (child.contentDocument) watchFrames(child.contentDocument, child); } catch {}
+			}
+		};
+		doc.addEventListener('load', scan, true);
+		new MutationObserver(scan).observe(doc, { childList: true, subtree: true });
+		scan();
+	};
+	watchFrames(document);
+}
+
 function closePreview() {
 	const box = document.getElementById('hd-preview');
 	if (!box || !state.previewOpen) return;
 	state.previewOpen = false;
 	box.querySelector('iframe').src = 'about:blank';
 	render();
+	placeFab();
 }
 
 /** Opens a link as described above; `openTab` opens a real tab (only while tapped). */
@@ -3219,6 +3764,7 @@ async function main() {
 	build();
 	render();
 	installGestures();
+	installReturnFocus();
 	watchNetwork();
 	setTimeout(watchAwayWork, 4000);
 	document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && watchAwayWork());
@@ -3257,7 +3803,8 @@ async function main() {
 		await refreshState();
 		restoreView();
 		// Keep the drawer's active file and folder current.
-		setInterval(() => state.drawerOpen || refreshState(), 5000);
+		setInterval(() => state.drawerOpen || refreshState(), 1000);
+		installLinkDropPreview();
 	} else {
 		setTimeout(restoreView, 2500);
 	}

@@ -3,3 +3,8 @@ node_modules/
 check-output/
 installer/out/
 desktop/out/
+
+# PC webcam build (node native/build.mjs)
+native/third_party/
+native/build/
+native/bin/
