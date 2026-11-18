@@ -57,6 +57,13 @@ jobs:
       - name: Check (the build handide serves)
         if: env.LATEST != 'true'
         run: npm run check -- --pinned
+      # One extension host per phone, the webview host patch (iPhone panels) on the VS Code
+      # server the check just installed, and the CDN files relayed for the ts.net link.
+      - name: Sessions, webview host, CDN relay
+        run: |
+          npm run check:sessions
+          npm run check:webview
+          npm run check:cdn
       - uses: actions/upload-artifact@v4
         if: always()
         with:

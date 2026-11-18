@@ -1,6 +1,6 @@
 {
   "name": "handide",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "license": "MIT",
   "description": "Your real VS Code on your phone: run handide in a folder, scan the QR code, and code from the phone with your own extensions and AI agents.",
