@@ -93,7 +93,7 @@ export function createBridge({ token, log }) {
 				return sendJson(res, 200, await call(command, Array.isArray(args) ? args : [], wait));
 			}
 			const extra = layerRoutes.get(pathname);
-			if (extra) return sendJson(res, 200, await extra(req.method === 'POST' ? JSON.parse((await readBody(req)) || '{}') : null));
+			if (extra) return sendJson(res, 200, await extra(req.method === 'POST' ? JSON.parse((await readBody(req)) || '{}') : null, req));
 			if (pathname === '/__handide/bridge/status') return sendJson(res, 200, { ok: true, connected: extensionConnected() });
 			if (pathname === '/__handide/fs' && req.method === 'GET') {
 				const url = new URL(req.url, 'http://x');

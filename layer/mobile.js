@@ -114,6 +114,10 @@ const STRINGS = {
 		'away.done': '{1} finished in the previous page · View',
 		'away.waiting': '{1} is waiting for you in the previous page · View',
 		'away.stillBusy': 'Still working. It opens here when it is done.',
+		'away.askTitle': '{1} is still working in the page you had open before',
+		'away.askBody': 'Take it over here now: the step it is on is cut off, and you continue the conversation here. Or let it finish there: it opens here when it is done.',
+		'away.takeNow': 'Take over now',
+		'away.whenDone': 'When it is done',
 		'away.opened': 'Opened what {1} did while you were away',
 		'away.openFailed': 'Could not open the session ({1}).',
 		'left.pill': 'Still running from the previous page · {1}',
@@ -319,6 +323,10 @@ const STRINGS = {
 		'away.done': '이전 화면의 {1} 작업 완료 · 보기',
 		'away.waiting': '이전 화면의 {1}이(가) 확인을 기다림 · 보기',
 		'away.stillBusy': '아직 작업 중입니다. 끝나면 여기에 열립니다.',
+		'away.askTitle': '전에 열어 둔 페이지에서 {1}이(가) 아직 작업 중입니다',
+		'away.askBody': '지금 여기로 가져오면 하던 단계는 끊기고, 대화는 여기서 이어집니다. 그대로 두면 끝난 뒤 여기에 열립니다.',
+		'away.takeNow': '지금 가져오기',
+		'away.whenDone': '끝나면 열기',
 		'away.opened': '자리를 비운 동안 {1}이(가) 한 작업을 열었습니다',
 		'away.openFailed': '세션을 열지 못했습니다 ({1}).',
 		'left.pill': '이전 화면의 작업이 아직 실행 중 · {1}개',
@@ -524,6 +532,10 @@ const STRINGS = {
 		'away.done': '前の画面の {1} の作業が完了 · 表示',
 		'away.waiting': '前の画面の {1} が確認を待っています · 表示',
 		'away.stillBusy': 'まだ作業中です。終わるとここに開きます。',
+		'away.askTitle': '前に開いていたページで {1} がまだ作業中です',
+		'away.askBody': '今ここに移すと、作業中のステップは中断され、会話はここで続きます。そのままにすると、終わってからここに開きます。',
+		'away.takeNow': '今すぐ移す',
+		'away.whenDone': '終わったら開く',
 		'away.opened': '離れている間の {1} の作業を開きました',
 		'away.openFailed': 'セッションを開けませんでした（{1}）。',
 		'left.pill': '前の画面の作業がまだ実行中 · {1}件',
@@ -729,6 +741,10 @@ const STRINGS = {
 		'away.done': '之前页面中的 {1} 已完成 · 查看',
 		'away.waiting': '之前页面中的 {1} 正在等待确认 · 查看',
 		'away.stillBusy': '仍在工作，完成后会在这里打开。',
+		'away.askTitle': '之前打开的页面中，{1} 仍在工作',
+		'away.askBody': '现在移到这里：正在进行的步骤会中断，对话在这里继续。保持不动：完成后会在这里打开。',
+		'away.takeNow': '现在移过来',
+		'away.whenDone': '完成后打开',
 		'away.opened': '已打开离开期间 {1} 完成的工作',
 		'away.openFailed': '无法打开会话（{1}）。',
 		'left.pill': '上一个页面的任务仍在运行 · {1} 个',
@@ -3168,7 +3184,27 @@ function watchNetwork() {
 // instead, this new page has new extension hosts: it lists the agents still working in
 // the old one, and once one is done (or needs an answer) opens that session here, so
 // what it did is on screen, and the old extension host is let go.
-const awayWork = { status: new Map(), opened: new Set(), timer: 0 };
+const awayWork = { status: new Map(), opened: new Set(), asked: new Set(), timer: 0 };
+
+/**
+ * A Claude agent still working in a page this phone replaced (`mine`): take it over now
+ * (the step it is on is cut off; proxy/sessions.mjs ends the old CLI first) or once it is done.
+ */
+function askTakeOver(a) {
+	awayWork.asked.add(a.sessionId);
+	const name = a.kind === 'claude' ? 'Claude' : a.kind;
+	const close = showNotice(
+		el('strong', {}, t('away.askTitle', name)),
+		a.name ? el('p', {}, el('small', {}, a.name)) : '',
+		el('p', {}, t('away.askBody')),
+		el(
+			'div',
+			{ class: 'hd-sheet-actions' },
+			el('button', { type: 'button', onclick: () => close() }, t('away.whenDone')),
+			el('button', { type: 'button', class: 'hd-notice-open', onclick: () => { close(); openAwayWork(a); } }, t('away.takeNow')),
+		),
+	);
+}
 
 async function watchAwayWork() {
 	clearTimeout(awayWork.timer);
@@ -3187,7 +3223,7 @@ async function watchAwayWork() {
 		const key = shown.status === 'busy' ? 'away.busy' : shown.status === 'idle' ? 'away.done' : 'away.waiting';
 		pill.replaceChildren(el('strong', {}, t(key, name(shown))), shown.name ? el('small', {}, shown.name) : '');
 		pill.hidden = false;
-		pill.onclick = () => (shown.status === 'busy' ? toast(t('away.stillBusy')) : openAwayWork(shown));
+		pill.onclick = () => (shown.status !== 'busy' ? openAwayWork(shown) : shown.mine ? askTakeOver(shown) : toast(t('away.stillBusy')));
 	}
 	// Done (or waiting for an answer the old page can no longer show): open it here,
 	// unless the user is typing.
@@ -3195,6 +3231,9 @@ async function watchAwayWork() {
 		awayWork.status.set(a.sessionId, a.status);
 		if (a === ready && !state.keysOn) openAwayWork(a);
 	}
+	// Still working in a page this phone replaced: ask once, now or when it is done.
+	const working = agents.find((a) => a.mine && a.status === 'busy' && !awayWork.asked.has(a.sessionId));
+	if (working && !state.keysOn && !document.getElementById('hd-notice')) askTakeOver(working);
 	awayWork.timer = setTimeout(watchAwayWork, agents.length ? 5000 : 30_000);
 }
 

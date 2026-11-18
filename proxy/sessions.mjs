@@ -34,6 +34,34 @@ const MSG = { Control: 2, ReplayRequest: 6, Pause: 7, Resume: 8 };
 const EXTENSION_HOST = 2; // desiredConnectionType
 const DEFAULT_HOLD_MS = 3 * 60 * 60_000; // what VS Code itself waits elsewhere (ProtocolConstants.ReconnectionGraceTime)
 
+// One phone, one extension host. A page cannot take over another page's extension host
+// (the protocol state is the page's), so every page the phone opens (a new tab, a reload,
+// the browser bringing back a page it discarded) starts its own, and holding each old one
+// for 3 hours piled them up: on 2026-11-18 nine of them held 1.5 GB. Each phone carries an
+// id cookie; once it has a newer extension host, its older ones that are away end. One
+// without an agent ends at once. One with a Claude agent is handed over to the new page,
+// which opens that conversation and so releases the old one (layer/mobile.js
+// watchAwayWork, `mine`): at once when the agent is done; while it is still working the
+// page asks, take it over now (that step is cut off) or once it is done. A done agent no
+// page takes over in a short while (the phone closed it) ends anyway; the conversation
+// stays on disk. A working one is never ended without that choice.
+export const PHONE_COOKIE = '__handide_phone';
+const HANDOVER_MS = 2 * 60_000;
+const BUSY_RECHECK_MS = 30_000;
+const PHONE_ID = /^[A-Za-z0-9_-]{16,64}$/;
+
+/** The phone's id from its cookie, or null (pages from before the cookie existed). */
+export function phoneOf(req) {
+	const m = /(?:^|;\s*)__handide_phone=([^;]*)/.exec(req.headers.cookie || '');
+	return m && PHONE_ID.test(m[1]) ? m[1] : null;
+}
+
+/** A Set-Cookie giving this phone an id, or null when it has one. */
+export function phoneCookie(req, secure) {
+	if (phoneOf(req)) return null;
+	return `${PHONE_COOKIE}=${randomBytes(18).toString('base64url')}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+}
+
 // Work an agent started in the background outlives the session that started it. A
 // training run started with "nohup ... &" (or start /b, or a detached shell) has no
 // living parent once its shell exits, so ending the agent's process tree does not reach
@@ -281,8 +309,9 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 	};
 
 	class Session {
-		constructor(token) {
+		constructor(token, phone) {
 			this.token = token;
+			this.phone = phone;
 			this.short = token.slice(0, 8);
 			this.upstream = null;
 			this.client = null;
@@ -363,8 +392,10 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 						if (m.type !== MSG.Control || this.kept || this.raw) continue;
 						const control = controlJson(m);
 						if (control?.type !== 'connectionType') continue;
-						if (control.desiredConnectionType === EXTENSION_HOST) this.kept = true;
-						else this.raw = true;
+						if (control.desiredConnectionType === EXTENSION_HOST) {
+							this.kept = true;
+							for (const old of olderOfPhone(this)) if (!old.client) retire(old);
+						} else this.raw = true;
 					}
 					// Only whole messages go upstream, so a page lost mid-message leaves the
 					// extension host's reader at a boundary for the next page socket.
@@ -386,6 +417,10 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			const gone = () => (this.kept ? this.#away(client) : this.close());
 			client.on('error', gone);
 			client.on('close', gone);
+			// A page that went without a close frame (tab killed, page discarded) only ends
+			// its side: the HTTP server keeps upgraded sockets half-open, so 'close' never
+			// came and the session counted as connected for good, never even timing out.
+			client.on('end', gone);
 			if (head?.length) onData(head);
 		}
 
@@ -395,9 +430,10 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			this.client = null;
 			if (this.closed) return;
 			this.awaySince = Date.now();
+			clearTimeout(this.holdTimer);
+			if (newerOfPhone(this)) return retire(this);
 			log(`page connection of extension host session ${this.short} dropped; keeping the extension host for up to ${Math.round(holdMs / 60_000)} min`);
 			extensionHostPid(dataDir, this.token).then((pid) => (this.pid = pid));
-			clearTimeout(this.holdTimer);
 			this.holdTimer = setTimeout(() => {
 				log(`extension host session ${this.short} was away for ${Math.round(holdMs / 60_000)} min; letting it end`);
 				noteLeftWork(this);
@@ -480,6 +516,7 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			handshake.on('close', fail);
 			client.on('error', fail);
 			client.on('close', fail);
+			client.on('end', fail);
 		}
 	}
 
@@ -494,10 +531,50 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			kept.rejoin(req, headers, socket, head);
 			return true;
 		}
-		const session = new Session(token);
+		const session = new Session(token, phoneOf(req));
 		if (!kept || kept.closed) sessions.set(token, session);
 		session.start(req, headers, socket, head);
 		return true;
+	}
+
+	// ---- one phone, one extension host (see PHONE_COOKIE)
+	const ofPhone = (s) => [...sessions.values()].filter((x) => x !== s && x.kept && !x.closed && s.phone && x.phone === s.phone);
+	const olderOfPhone = (s) => ofPhone(s).filter((x) => x.createdAt < s.createdAt);
+	const newerOfPhone = (s) => ofPhone(s).some((x) => x.createdAt > s.createdAt);
+
+	/** Ends an away extension host the phone has replaced, once no agent in it is working. */
+	async function retire(s) {
+		if (s.closed || s.client || s.retiring) return;
+		s.retiring = true;
+		clearTimeout(s.holdTimer);
+		s.pid ??= await extensionHostPid(dataDir, s.token);
+		s.retiring = false;
+		if (s.closed || s.client) return;
+		agentCache.at = 0;
+		const agents = (await awayAgents()).filter((a) => a.session === s.short);
+		const end = (why) => {
+			log(`extension host session ${s.short} ended: this phone opened a newer page${why}`);
+			noteLeftWork(s);
+			s.close();
+		};
+		if (!agents.length) return end('');
+		if (agents.some((a) => a.status === 'busy')) {
+			// The new page asks whether to take it over now (that step is cut off) or once
+			// it is done; until then it keeps working here.
+			if (!s.announced) log(`extension host session ${s.short} replaced by a newer page; its agent is working, the new page asks to take it over now or when done`);
+			s.announced = true;
+			s.holdTimer = setTimeout(() => retire(s), BUSY_RECHECK_MS);
+			s.holdTimer.unref?.();
+			return;
+		}
+		log(`extension host session ${s.short} replaced by a newer page; handing its agent over to it`);
+		// The new page takes it over within seconds (release); this is for when none does.
+		s.holdTimer = setTimeout(() => {
+			if (s.closed || s.client) return;
+			log(`extension host session ${s.short}: no page took its agent over in ${Math.round(HANDOVER_MS / 60_000)} min; ending it`);
+			release(s.short);
+		}, HANDOVER_MS);
+		s.holdTimer.unref?.();
 	}
 
 	// ---- work left running by sessions that ended (see strayWork)
@@ -546,7 +623,20 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 	 * ~/.claude/sessions/<pid>.json (session id, status busy/idle/...).
 	 */
 	let agentCache = { at: 0, value: [] };
-	async function awayAgents() {
+	/**
+	 * With the asking page's phone: each agent says whether it is `mine`, in an extension
+	 * host that phone has replaced with a newer one (handed over at once, even mid-run).
+	 */
+	async function awayAgents(phone = null) {
+		const list = await awayAgentsAll();
+		const replaced = (short) => {
+			const s = [...sessions.values()].find((x) => x.short === short);
+			return !!(phone && s?.phone === phone && newerOfPhone(s));
+		};
+		return list.map((a) => ({ ...a, mine: replaced(a.session) }));
+	}
+
+	async function awayAgentsAll() {
 		const away = [...sessions.values()].filter((s) => s.kept && !s.client && s.pid);
 		if (!away.length) return [];
 		if (Date.now() - agentCache.at < 4000) return agentCache.value;

@@ -16,7 +16,7 @@ import { readFile, readdir, writeFile, stat, mkdir, copyFile, access, cp, rm } f
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createSessionKeeper } from './sessions.mjs';
+import { createSessionKeeper, phoneCookie, phoneOf } from './sessions.mjs';
 import { detectEditorCli, editorVersion, servedBuild, serverBuild, startReaper, startServeWeb, stopOrphanedServers, watchServeWeb } from './editor.mjs';
 import { ensureCert, lanAddresses } from './tls.mjs';
 import { accessInfo, connectJson, isConnectAllowed, renderConnectPage } from './connect.mjs';
@@ -728,6 +728,9 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 				noteServedBuild(html, log);
 				if (!(await workspaceTrustWanted())) html = disableWorkspaceTrust(html);
 				html = injectLayer(localWebviews ? useLocalWebviews(html, `${proto}://${host}`) : html, await layerVersion());
+				// Which phone this page is on: one extension host per phone (proxy/sessions.mjs).
+				const phone = phoneCookie(req, proto === 'https');
+				if (phone) out['set-cookie'] = [...[].concat(out['set-cookie'] || []), phone];
 			}
 			if (upRes.statusCode === 200 && webviewHost) html = patchWebviewHost(html);
 			delete out['content-length'];
@@ -978,7 +981,8 @@ async function main() {
 	bridge.setAway(sessions.awayPids);
 	// agents: still working in an away page's extension host; left: background work an
 	// ended session left running (proxy/sessions.mjs: strayWork).
-	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents(), left: sessions.leftovers() }));
+	// mine: in an extension host this phone replaced, so this page takes it over at once.
+	bridge.layerRoute('/__handide/sessions', async (_, req) => ({ ok: true, agents: await sessions.awayAgents(phoneOf(req)), left: sessions.leftovers() }));
 	bridge.layerRoute('/__handide/sessions/dismiss', async (body) => ({ ok: sessions.dismissLeft(Number(body?.pid)) }));
 	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
 	// handremote is told how this handide is reachable: it keeps its SYSTEM helper (lock
