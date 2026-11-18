@@ -599,6 +599,51 @@ async function checkDevice(target, ctx) {
 		});
 	}
 
+	// Background work an ended session left running (proxy/sessions.mjs: strayWork) is
+	// offered on the new page: a pill, a notice naming the program and its PID, a sentence
+	// to paste to the agent, and Hide, which tells the proxy. The proxy's answer is stood
+	// in for here (making a real orphan needs a page discarded mid-run).
+	if (!builtinMode) {
+		await step('left-work', async () => {
+			const fake = { root: 4242, rootStart: 1, pid: 4243, start: Date.now() - 10 * 60_000, cmd: '"C:\\venv\\Scripts\\python.exe" run_train.py --init model_s4000.pt', session: 'checkrun', endedAt: Date.now() };
+			let dismissed = null;
+			await page.route('**/__handide/sessions', async (route) => {
+				const res = await route.fetch();
+				const json = await res.json().catch(() => ({ ok: true, agents: [] }));
+				route.fulfill({ response: res, json: { ...json, left: dismissed === null ? [fake] : [] } });
+			});
+			await page.route('**/__handide/sessions/dismiss', (route) => {
+				dismissed = JSON.parse(route.request().postData() || '{}').pid ?? -1;
+				route.fulfill({ json: { ok: true } });
+			});
+			await page.evaluate(() => {
+				window.__hdCopied = '';
+				Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => void (window.__hdCopied = text), readText: async () => '' } });
+				document.dispatchEvent(new Event('visibilitychange')); // the layer looks again when the page shows
+			});
+			try {
+				await page.locator('#hd-left:not([hidden])').waitFor({ timeout: 20_000 });
+				const pill = (await page.locator('#hd-left').innerText()).replace(/\s+/g, ' ');
+				await tap('#hd-left');
+				const item = page.locator('#hd-notice[data-left] .hd-left-item').first();
+				await item.waitFor({ timeout: 5000 });
+				const shown = (await item.innerText()).replace(/\s+/g, ' ');
+				await tap(item.locator('.hd-notice-open'));
+				await page.waitForTimeout(300);
+				const copied = await page.evaluate(() => window.__hdCopied);
+				await tap(item.locator('.hd-sheet-actions button').first()); // Hide
+				await page.waitForTimeout(500);
+				const gone = (await page.locator('#hd-notice[data-left]').count()) === 0 && (await page.locator('#hd-left').isHidden());
+				const ok = /python\.exe run_train\.py/.test(pill) && /PID 4243/.test(shown) && /4243/.test(copied) && /run_train\.py/.test(copied) && dismissed === 4243 && gone;
+				return { ok, detail: `pill "${pill.slice(0, 60)}", notice "${shown.slice(0, 60)}", copied ${copied ? 'yes' : 'no'}, hidden ${dismissed === 4243 && gone}` };
+			} finally {
+				await page.unroute('**/__handide/sessions').catch(() => {});
+				await page.unroute('**/__handide/sessions/dismiss').catch(() => {});
+				await page.evaluate(() => delete navigator.clipboard).catch(() => {});
+			}
+		});
+	}
+
 	if (!builtinMode && subFolder) {
 		await step('folder-change', async () => {
 			await menu('files');

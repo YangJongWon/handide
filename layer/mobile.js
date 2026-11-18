@@ -116,6 +116,14 @@ const STRINGS = {
 		'away.stillBusy': 'Still working. It opens here when it is done.',
 		'away.opened': 'Opened what {1} did while you were away',
 		'away.openFailed': 'Could not open the session ({1}).',
+		'left.pill': 'Still running from the previous page · {1}',
+		'left.title': 'Still running after the previous page ended',
+		'left.body': 'The previous page\'s session has ended, but these background processes, started while it was alive, are still running on the PC. An agent opened again here cannot see them: tell it before it starts the same work again.',
+		'left.started': 'started {1}',
+		'left.copy': 'Copy for the agent',
+		'left.copied': 'Copied. Paste it to the agent.',
+		'left.message': 'A background process from the previous session is still running on the PC: PID {1}, started {2}, command: {3}. Do not start it again; check this process and its log first.',
+		'left.hide': 'Hide',
 		'network.retrying': 'Reconnecting…',
 		'img.copied': 'Copied. Paste it into the agent input box.',
 		'sheet.terminal': 'Long-press here to paste → send to the terminal',
@@ -313,6 +321,14 @@ const STRINGS = {
 		'away.stillBusy': '아직 작업 중입니다. 끝나면 여기에 열립니다.',
 		'away.opened': '자리를 비운 동안 {1}이(가) 한 작업을 열었습니다',
 		'away.openFailed': '세션을 열지 못했습니다 ({1}).',
+		'left.pill': '이전 화면의 작업이 아직 실행 중 · {1}개',
+		'left.title': '이전 화면이 끝난 뒤에도 실행 중인 작업',
+		'left.body': '이전 화면의 세션은 끝났지만, 그 세션이 살아 있는 동안 시작된 아래 백그라운드 작업은 PC에서 아직 돌고 있습니다. 여기서 다시 열린 에이전트는 이 작업을 볼 수 없으니, 같은 작업을 다시 시작하기 전에 알려 주세요.',
+		'left.started': '{1} 시작',
+		'left.copy': '에이전트에게 알릴 문장 복사',
+		'left.copied': '복사했습니다. 에이전트에게 붙여 넣으세요.',
+		'left.message': '이전 세션에서 시작된 백그라운드 작업이 PC에서 아직 실행 중입니다: PID {1}, {2} 시작, 명령: {3}. 다시 시작하지 말고 먼저 이 프로세스와 로그를 확인하세요.',
+		'left.hide': '숨기기',
 		'network.retrying': '다시 연결하는 중…',
 		'img.copied': '복사했습니다. 에이전트 입력창에 붙여넣으세요.',
 		'sheet.terminal': '여기에 길게 눌러 붙여넣기 → 터미널로 보내기',
@@ -510,6 +526,14 @@ const STRINGS = {
 		'away.stillBusy': 'まだ作業中です。終わるとここに開きます。',
 		'away.opened': '離れている間の {1} の作業を開きました',
 		'away.openFailed': 'セッションを開けませんでした（{1}）。',
+		'left.pill': '前の画面の作業がまだ実行中 · {1}件',
+		'left.title': '前の画面が終わった後も実行中の作業',
+		'left.body': '前の画面のセッションは終了しましたが、そのセッションの間に始まった次のバックグラウンド処理は PC でまだ動いています。ここで開き直したエージェントからは見えないため、同じ作業を始め直す前に伝えてください。',
+		'left.started': '{1} 開始',
+		'left.copy': 'エージェントに伝える文をコピー',
+		'left.copied': 'コピーしました。エージェントに貼り付けてください。',
+		'left.message': '前のセッションで始めたバックグラウンド処理が PC でまだ実行中です: PID {1}、{2} 開始、コマンド: {3}。始め直さず、まずこのプロセスとログを確認してください。',
+		'left.hide': '非表示',
 		'network.retrying': '再接続中…',
 		'img.copied': 'コピーしました。エージェントの入力欄に貼り付けてください。',
 		'sheet.terminal': 'ここを長押しで貼り付け → ターミナルへ送信',
@@ -707,6 +731,14 @@ const STRINGS = {
 		'away.stillBusy': '仍在工作，完成后会在这里打开。',
 		'away.opened': '已打开离开期间 {1} 完成的工作',
 		'away.openFailed': '无法打开会话（{1}）。',
+		'left.pill': '上一个页面的任务仍在运行 · {1} 个',
+		'left.title': '上一个页面结束后仍在运行的任务',
+		'left.body': '上一个页面的会话已结束，但它运行期间启动的以下后台进程仍在电脑上运行。在这里重新打开的代理看不到它们，请在它重新开始同样的工作之前告诉它。',
+		'left.started': '{1} 启动',
+		'left.copy': '复制给代理的说明',
+		'left.copied': '已复制，请粘贴给代理。',
+		'left.message': '上一个会话启动的后台进程仍在电脑上运行：PID {1}，{2} 启动，命令：{3}。不要重新启动，请先检查这个进程和它的日志。',
+		'left.hide': '隐藏',
 		'network.retrying': '正在重新连接…',
 		'img.copied': '已复制。请粘贴到智能体输入框。',
 		'sheet.terminal': '长按此处粘贴 → 发送到终端',
@@ -3077,10 +3109,11 @@ function build() {
 	const voicePill = el('div', { id: 'hd-voice', hidden: true, role: 'status', 'aria-live': 'polite', onclick: stopVoice });
 	const uploadPill = el('button', { id: 'hd-upload', type: 'button', hidden: true, 'aria-live': 'polite' });
 	const awayPill = el('button', { id: 'hd-away', type: 'button', hidden: true, 'aria-live': 'polite' });
+	const leftPill = el('button', { id: 'hd-left', type: 'button', hidden: true, 'aria-live': 'polite', onclick: () => showLeftWork() });
 	const agents = el('div', { id: 'hd-agents', hidden: true, role: 'menu', 'aria-label': t('aria.agents'), 'data-i18n-aria': 'aria.agents' });
 	const safe = el('div', { id: 'hd-safe', 'aria-hidden': 'true' });
 
-	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, galleryBox, toastEl, voicePill, uploadPill, awayPill);
+	document.body.append(safe, viewbar, agents, root, fab, menuScrim, menu, scrim, drawer, sheet, imageInput, galleryBox, toastEl, voicePill, uploadPill, awayPill, leftPill);
 	renderDrawer();
 }
 
@@ -3143,6 +3176,7 @@ async function watchAwayWork() {
 	if (document.visibilityState === 'visible' && state.bridge) {
 		const r = await api(`${BASE}sessions`).catch(() => null);
 		agents = (r?.agents ?? []).filter((a) => !awayWork.opened.has(a.sessionId));
+		renderLeftWork(r?.left ?? []);
 	}
 	const pill = document.getElementById('hd-away');
 	const name = (a) => (a.kind === 'claude' ? 'Claude' : a.kind);
@@ -3162,6 +3196,63 @@ async function watchAwayWork() {
 		if (a === ready && !state.keysOn) openAwayWork(a);
 	}
 	awayWork.timer = setTimeout(watchAwayWork, agents.length ? 5000 : 30_000);
+}
+
+// Background work (a training run started with nohup, ...) that an ended session left
+// running: the agent reopened here cannot see it and may start it again, as happened on
+// 2026-11-18. The proxy notes it when the old session ends (proxy/sessions.mjs).
+const leftWork = { list: [] };
+
+function renderLeftWork(list) {
+	leftWork.list = list;
+	const pill = document.getElementById('hd-left');
+	if (!pill) return;
+	pill.hidden = !list.length;
+	if (list.length) pill.replaceChildren(el('strong', {}, t('left.pill', list.length)), el('small', {}, shortCommand(list[0].cmd)));
+	else document.querySelector('#hd-notice[data-left]')?.remove();
+}
+
+/** "python.exe run_train.py --init model_tilt_s4000.pt" from a full command line. */
+function shortCommand(cmd) {
+	const m = /^\s*"([^"]+)"(.*)$|^\s*(\S+)(.*)$/.exec(cmd || '') || [];
+	const exe = (m[1] || m[3] || '').split(/[\\/]/).pop();
+	return `${exe}${m[2] ?? m[4] ?? ''}`.trim().slice(0, 160);
+}
+
+function leftTime(ms) {
+	const d = new Date(ms);
+	const today = new Date().toDateString() === d.toDateString();
+	return today ? d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString(lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function showLeftWork() {
+	let close = () => {};
+	const items = leftWork.list.map((w) => {
+		const when = leftTime(w.start);
+		const item = el(
+			'div',
+			{ class: 'hd-left-item' },
+			el('code', {}, shortCommand(w.cmd)),
+			el('small', {}, `PID ${w.pid} · ${t('left.started', when)}`),
+			el(
+				'div',
+				{ class: 'hd-sheet-actions' },
+				el('button', {
+					type: 'button',
+					onclick: async () => {
+						await api(`${BASE}sessions/dismiss`, { method: 'POST', body: { pid: w.pid } }).catch(() => null);
+						renderLeftWork(leftWork.list.filter((x) => x !== w));
+						item.remove();
+						if (!leftWork.list.length) close();
+					},
+				}, t('left.hide')),
+				el('button', { type: 'button', class: 'hd-notice-open', onclick: () => copyText(t('left.message', w.pid, when, shortCommand(w.cmd)), t('left.copied')) }, t('left.copy')),
+			),
+		);
+		return item;
+	});
+	close = showNotice(el('strong', {}, t('left.title')), el('p', {}, t('left.body')), ...items, el('div', { class: 'hd-sheet-actions' }, el('button', { type: 'button', onclick: () => close() }, t('action.ok'))));
+	document.getElementById('hd-notice')?.setAttribute('data-left', '');
 }
 
 async function openAwayWork(a) {

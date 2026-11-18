@@ -34,6 +34,55 @@ const MSG = { Control: 2, ReplayRequest: 6, Pause: 7, Resume: 8 };
 const EXTENSION_HOST = 2; // desiredConnectionType
 const DEFAULT_HOLD_MS = 3 * 60 * 60_000; // what VS Code itself waits elsewhere (ProtocolConstants.ReconnectionGraceTime)
 
+// Work an agent started in the background outlives the session that started it. A
+// training run started with "nohup ... &" (or start /b, or a detached shell) has no
+// living parent once its shell exits, so ending the agent's process tree does not reach
+// it, and the agent opened again on the new page cannot see it either: on 2026-11-18
+// Claude Code reported "1 background shell command(s) orphaned", took a run still
+// writing its log for stopped, and started a second one; both died of memory 4 min later.
+// So when a kept session ends, the processes still running without a parent that started
+// while it was alive are written down, and the new page says so.
+const FILETIME_EPOCH_MS = 11644473600000;
+const startMs = (p) => (p?.start ? p.start / 1e4 - FILETIME_EPOCH_MS : 0);
+// Processes that are the editor, its servers, the agents themselves or Windows plumbing:
+// never "left-over work".
+const HOST_PROCESS = /handide|handremote|[\\/]\.vscode[\\/]|serve-web|server-main\.js|extensionHost|[\\/]claude(?:\.exe)?["\s]|[\\/]ClaudeCode[\\/]|\bconhost\.exe|\bWerFault\.exe|\bgit-credential/i;
+// Launchers between a background command and the program doing the work.
+const WRAPPER = /^(nohup|uv|uvx|cmd|bash|sh|env|powershell|pwsh|wscript|cscript|timeout|start)(\.exe)?$/i;
+const exeName = (cmd) => (/^\s*"([^"]+)"|^\s*(\S+)/.exec(cmd || '') || []).slice(1).find(Boolean)?.split(/[\\/]/).pop() || '';
+
+/**
+ * Parentless processes that started inside [since, until]: what a session left behind.
+ * Each is reported as the program doing the work (the first process under the
+ * nohup/uv/shell launchers), keyed by the parentless root so it can be checked later.
+ */
+export function strayWork(procs, since, until) {
+	const byPid = new Map(procs.map((p) => [p.pid, p]));
+	const children = new Map();
+	for (const p of procs) {
+		if (!children.has(p.ppid)) children.set(p.ppid, []);
+		children.get(p.ppid).push(p);
+	}
+	const parentAlive = (p) => {
+		const parent = p.ppid > 4 && byPid.get(p.ppid);
+		return !!parent && parent.pid !== p.pid && (!p.start || !parent.start || parent.start <= p.start);
+	};
+	const out = [];
+	for (const root of procs) {
+		const t = startMs(root);
+		if (!t || t < since || t > until || !root.cmd || parentAlive(root) || HOST_PROCESS.test(root.cmd)) continue;
+		let work = root;
+		for (let hops = 0; hops < 6 && WRAPPER.test(exeName(work.cmd)); hops++) {
+			const next = (children.get(work.pid) || []).filter((c) => !c.start || !work.start || c.start >= work.start).sort((a, b) => a.start - b.start)[0];
+			if (!next) break;
+			work = next;
+		}
+		if (HOST_PROCESS.test(work.cmd || '')) continue;
+		out.push({ root: root.pid, rootStart: root.start, pid: work.pid, start: startMs(work) || t, cmd: String(work.cmd).slice(0, 400) });
+	}
+	return out;
+}
+
 /** Complete WebSocket frames out of a byte stream; `raw` is the frame as received. */
 class FrameReader {
 	chunks = [];
@@ -246,6 +295,7 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			this.upMessages = new MessageReader();
 			this.dropUntilBoundary = false;
 			this.closed = false;
+			this.createdAt = Date.now(); // the extension host starts with its first connection
 		}
 
 		// ---- upstream (editor server) side, for the whole life of the session
@@ -350,6 +400,7 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 			clearTimeout(this.holdTimer);
 			this.holdTimer = setTimeout(() => {
 				log(`extension host session ${this.short} was away for ${Math.round(holdMs / 60_000)} min; letting it end`);
+				noteLeftWork(this);
 				this.close();
 			}, holdMs);
 			this.holdTimer.unref?.();
@@ -449,6 +500,42 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 		return true;
 	}
 
+	// ---- work left running by sessions that ended (see strayWork)
+	const leftWork = new Map(); // root pid -> { ...stray, session, endedAt }
+	/** Looks, a moment after the session ends (its agents' trees are gone by then), for work it left. */
+	function noteLeftWork(s) {
+		const since = s.createdAt;
+		// Up to the next page's first connection: what its own agents start is theirs.
+		const next = [...sessions.values()].filter((x) => x !== s && x.createdAt > (s.awaySince || since)).map((x) => x.createdAt);
+		const until = next.length ? Math.min(Date.now(), ...next) : Date.now();
+		setTimeout(() => {
+			if (process.platform !== 'win32') return; // start times come from Win32_Process
+			const found = strayWork(listProcesses(), since, until);
+			for (const w of found) leftWork.set(w.root, { ...w, session: s.short, endedAt: Date.now() });
+			if (found.length) log(`extension host session ${s.short} left ${found.length} background process(es) running: ${found.map((w) => w.pid).join(', ')}`);
+		}, 2500).unref?.();
+	}
+	let leftCache = { at: 0, value: [] };
+	/** The noted work still running (same pid, same start), newest first. */
+	function leftovers() {
+		if (!leftWork.size) return [];
+		if (Date.now() - leftCache.at < 4000) return leftCache.value;
+		const alive = new Map(listProcesses().map((p) => [p.pid, p]));
+		for (const [root, w] of leftWork) {
+			const r = alive.get(root);
+			const p = alive.get(w.pid);
+			if (!r || r.start !== w.rootStart || !p) leftWork.delete(root);
+		}
+		leftCache = { at: Date.now(), value: [...leftWork.values()].sort((a, b) => b.start - a.start) };
+		return leftCache.value;
+	}
+	/** The page has shown it; it stays noted only until it ends anyway. */
+	function dismissLeft(pid) {
+		for (const [root, w] of leftWork) if (w.pid === pid || root === pid) leftWork.delete(root);
+		leftCache.at = 0;
+		return true;
+	}
+
 	/** Extension host processes whose page is away (their companions should not take the phone's calls). */
 	const awayPids = () => new Set([...sessions.values()].filter((s) => s.kept && !s.client && s.pid).map((s) => s.pid));
 
@@ -496,11 +583,12 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 		for (const a of await awayAgents()) if (a.session === short) killTree(a.pid);
 		agentCache.at = 0;
 		log(`extension host session ${short} released: its work was opened on another page`);
+		noteLeftWork(s);
 		s.close();
 		return true;
 	}
 
 	const stats = () => [...sessions.values()].filter((s) => s.kept).map((s) => ({ token: s.short, pid: s.pid, away: !s.client, awaySince: s.awaySince || null }));
 
-	return { upgrade, awayPids, awayAgents, release, stats, close: () => sessions.forEach((s) => s.close()) };
+	return { upgrade, awayPids, awayAgents, release, leftovers, dismissLeft, stats, close: () => sessions.forEach((s) => s.close()) };
 }

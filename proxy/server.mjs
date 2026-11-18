@@ -696,7 +696,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		if (pathname === `${LAYER_PREFIX}icon.png`) return serveIcon(res);
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
-		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
+		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/sessions/dismiss', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
 		const { host, proto } = clientBase(req);
@@ -976,7 +976,10 @@ async function main() {
 	const sessions = createSessionKeeper({ upstreamPort, dataDir: opts.dataDir, log });
 	const camera = createCamera({ token: opts.token, log });
 	bridge.setAway(sessions.awayPids);
-	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents() }));
+	// agents: still working in an away page's extension host; left: background work an
+	// ended session left running (proxy/sessions.mjs: strayWork).
+	bridge.layerRoute('/__handide/sessions', async () => ({ ok: true, agents: await sessions.awayAgents(), left: sessions.leftovers() }));
+	bridge.layerRoute('/__handide/sessions/dismiss', async (body) => ({ ok: sessions.dismissLeft(Number(body?.pid)) }));
 	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
 	// handremote is told how this handide is reachable: it keeps its SYSTEM helper (lock
 	// screen, UAC) off behind a public link. Until the away-from-home link is up, the mode it

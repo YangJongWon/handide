@@ -1208,7 +1208,8 @@ html.hd-mobile #hd-voice[hidden] {
 
 /* A saved phone image: tap to copy its path for an extension agent's input. */
 html.hd-mobile #hd-upload,
-html.hd-mobile #hd-away {
+html.hd-mobile #hd-away,
+html.hd-mobile #hd-left {
 	position: fixed;
 	left: 50%;
 	top: calc(env(safe-area-inset-top) + 56px);
@@ -1229,7 +1230,8 @@ html.hd-mobile #hd-away {
 	-webkit-tap-highlight-color: transparent;
 }
 html.hd-mobile #hd-upload small,
-html.hd-mobile #hd-away small {
+html.hd-mobile #hd-away small,
+html.hd-mobile #hd-left small {
 	font-size: 12px;
 	opacity: 0.75;
 	overflow-wrap: anywhere;
@@ -1237,8 +1239,29 @@ html.hd-mobile #hd-away small {
 html.hd-mobile #hd-away {
 	top: calc(env(safe-area-inset-top) + 110px);
 }
+/* Background work an ended session left running (see showLeftWork): below the away pill. */
+html.hd-mobile #hd-left {
+	top: calc(env(safe-area-inset-top) + 164px);
+}
+html.hd-mobile .hd-left-item {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 12px 0 0;
+	padding: 10px 0 0;
+	border-top: 1px solid var(--hd-border, rgba(127, 127, 127, 0.3));
+}
+html.hd-mobile .hd-left-item code {
+	font: 13px/1.4 var(--vscode-editor-font-family, ui-monospace, monospace);
+	overflow-wrap: anywhere;
+}
+html.hd-mobile .hd-left-item small {
+	font-size: 12px;
+	opacity: 0.75;
+}
 html.hd-mobile #hd-upload[hidden],
-html.hd-mobile #hd-away[hidden] {
+html.hd-mobile #hd-away[hidden],
+html.hd-mobile #hd-left[hidden] {
 	display: none;
 }
 
