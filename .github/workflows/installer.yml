@@ -1,7 +1,8 @@
 # Builds the Windows installer and the desktop extension, after the phone layout passed on
 # the VS Code build handide serves (check.yml). On a v* tag both are attached to that tag's
 # GitHub release (created if needed) and the extension goes to the Marketplace; otherwise
-# they are kept as a workflow artifact.
+# they are kept as a workflow artifact. The extension also goes to Open VSX when the
+# OVSX_PAT secret is set.
 name: Release
 
 on:
@@ -24,6 +25,7 @@ jobs:
     env:
       HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX != '' }}
       HAS_VSCE: ${{ secrets.VSCE_PAT != '' }}
+      HAS_OVSX: ${{ secrets.OVSX_PAT != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -82,3 +84,13 @@ jobs:
         run: |
           $vsix = Get-ChildItem desktop/out/handide-*.vsix | Select-Object -First 1
           npx --yes @vscode/vsce@latest publish --packagePath $vsix.FullName
+      # And to Open VSX (Cursor, VSCodium...), when its token is set up (secret OVSX_PAT).
+      # A version already there (a re-run of the same tag) is skipped, not an error.
+      - name: Publish to Open VSX
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_OVSX == 'true'
+        shell: pwsh
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          $vsix = Get-ChildItem desktop/out/handide-*.vsix | Select-Object -First 1
+          npx --yes ovsx publish $vsix.FullName --skip-duplicate
