@@ -732,7 +732,11 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 				const phone = phoneCookie(req, proto === 'https');
 				if (phone) out['set-cookie'] = [...[].concat(out['set-cookie'] || []), phone];
 			}
-			if (upRes.statusCode === 200 && webviewHost) html = patchWebviewHost(html);
+			if (upRes.statusCode === 200 && webviewHost) {
+				html = patchWebviewHost(html);
+				// Served for a year as a static file, but what handide adds to it changes.
+				out['cache-control'] = 'no-cache';
+			}
 			delete out['content-length'];
 			delete out['transfer-encoding'];
 			out['content-length'] = Buffer.byteLength(html);

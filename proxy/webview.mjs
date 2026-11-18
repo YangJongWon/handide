@@ -73,6 +73,23 @@ const POLYFILL = `(() => {
 })();
 `;
 
+// The host page waits for its service worker (`await workerReady`) before it creates the
+// frame for the webview's content. On iOS Safari (26.6.1, through the ts.net link) that
+// promise never settled although the page was already controlled by the webview's own
+// worker: every webview stayed blank below its header (marks: content/started, never
+// content/workerReady). So the wait also ends once the page is controlled by that worker.
+// Not at once: elsewhere the promise settles within a moment, after its update check.
+const WORKER_READY = `const hdWorkerReady = (ready) => new Promise((resolve, reject) => {
+	let timer;
+	const done = (fn) => (v) => { clearInterval(timer); fn(v); };
+	ready.then(done(resolve), done(reject));
+	const controlled = () => /\\/service-worker\\.js(\\?|$)/.test(navigator.serviceWorker?.controller?.scriptURL || '');
+	setTimeout(() => {
+		timer = setInterval(() => controlled() && done(resolve)(), 250);
+	}, 2000);
+});
+`;
+
 // Of the script as the HTML parser hands it over: line breaks normalized to \n (the editor
 // server's copy has \r\n on Windows).
 const sha256 = (text) => `sha256-${createHash('sha256').update(text.replace(/\r\n?/g, '\n'), 'utf8').digest('base64')}`;
@@ -134,8 +151,9 @@ export function patchWebviewHost(html) {
 	// stays blank. Same origin as the parent is accepted too, as code-server does.
 	const originCheck = 'if (hostname === parentOriginHash || hostname.startsWith(parentOriginHash + \'.\')) {';
 	if (!html.includes(oldHash) || !script.includes(hook) || !script.includes(originCheck)) return html;
-	const patched = script
+	let patched = script
 		.replace(hook, `defaultScript.textContent = ${JSON.stringify(POLYFILL)} + getVsCodeApiScript(`)
 		.replace(originCheck, 'if (location.origin === parentOrigin || hostname === parentOriginHash || hostname.startsWith(parentOriginHash + \'.\')) {');
+	if (patched.includes('await workerReady;')) patched = WORKER_READY + patched.replace('await workerReady;', 'await hdWorkerReady(workerReady);');
 	return html.replace(m[0], m[1] + patched + m[3]).replace(oldHash, sha256(patched));
 }
