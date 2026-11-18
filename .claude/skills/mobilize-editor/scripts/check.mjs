@@ -608,9 +608,12 @@ async function checkDevice(target, ctx) {
 			const fake = { root: 4242, rootStart: 1, pid: 4243, start: Date.now() - 10 * 60_000, cmd: '"C:\\venv\\Scripts\\python.exe" run_train.py --init model_s4000.pt', session: 'checkrun', endedAt: Date.now() };
 			let dismissed = null;
 			await page.route('**/__handide/sessions', async (route) => {
-				const res = await route.fetch();
-				const json = await res.json().catch(() => ({ ok: true, agents: [] }));
-				route.fulfill({ response: res, json: { ...json, left: dismissed === null ? [fake] : [] } });
+				// A request still in flight when the step unroutes it ends up handled twice: harmless.
+				try {
+					const res = await route.fetch();
+					const json = await res.json().catch(() => ({ ok: true, agents: [] }));
+					await route.fulfill({ response: res, json: { ...json, left: dismissed === null ? [fake] : [] } });
+				} catch {}
 			});
 			await page.route('**/__handide/sessions/dismiss', (route) => {
 				dismissed = JSON.parse(route.request().postData() || '{}').pid ?? -1;

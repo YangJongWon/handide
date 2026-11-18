@@ -991,7 +991,7 @@ async function main() {
 	// agents: still working in an away page's extension host; left: background work an
 	// ended session left running (proxy/sessions.mjs: strayWork).
 	// mine: in an extension host this phone replaced, so this page takes it over at once.
-	bridge.layerRoute('/__handide/sessions', async (_, req) => ({ ok: true, agents: await sessions.awayAgents(phoneOf(req)), left: sessions.leftovers() }));
+	bridge.layerRoute('/__handide/sessions', async (_, req) => ({ ok: true, agents: await sessions.awayAgents(phoneOf(req)), left: sessions.leftovers(phoneOf(req)) }));
 	bridge.layerRoute('/__handide/sessions/dismiss', async (body) => ({ ok: sessions.dismissLeft(Number(body?.pid)) }));
 	bridge.layerRoute('/__handide/sessions/release', async (body) => ({ ok: await sessions.release(String(body?.session ?? '')) }));
 	// handremote is told how this handide is reachable: it keeps its SYSTEM helper (lock

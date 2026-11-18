@@ -554,7 +554,9 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 		const agents = (await awayAgents()).filter((a) => a.session === s.short);
 		const end = (why) => {
 			log(`extension host session ${s.short} ended: this phone opened a newer page${why}`);
-			noteLeftWork(s);
+			// No agent in it, so no agent's background work to look for: what strayWork would
+			// find is whatever else on this PC lost its parent meanwhile (a page reload in the
+			// phone check found another program's grep.exe and covered the screen with it).
 			s.close();
 		};
 		if (!agents.length) return end('');
@@ -588,13 +590,20 @@ export function createSessionKeeper({ upstreamPort, dataDir, log, holdMs = Numbe
 		setTimeout(() => {
 			if (process.platform !== 'win32') return; // start times come from Win32_Process
 			const found = strayWork(listProcesses(), since, until);
-			for (const w of found) leftWork.set(w.root, { ...w, session: s.short, endedAt: Date.now() });
+			for (const w of found) leftWork.set(w.root, { ...w, session: s.short, phone: s.phone, endedAt: Date.now() });
 			if (found.length) log(`extension host session ${s.short} left ${found.length} background process(es) running: ${found.map((w) => w.pid).join(', ')}`);
 		}, 2500).unref?.();
 	}
 	let leftCache = { at: 0, value: [] };
-	/** The noted work still running (same pid, same start), newest first. */
-	function leftovers() {
+	/**
+	 * The noted work still running (same pid, same start), newest first: for the phone whose
+	 * session left it (and work of pages from before the phone cookie, for any phone).
+	 */
+	function leftovers(phone = null) {
+		const mine = (w) => !w.phone || w.phone === phone;
+		return allLeftovers().filter(mine).map(({ phone: _, ...w }) => w);
+	}
+	function allLeftovers() {
 		if (!leftWork.size) return [];
 		if (Date.now() - leftCache.at < 4000) return leftCache.value;
 		const alive = new Map(listProcesses().map((p) => [p.pid, p]));
