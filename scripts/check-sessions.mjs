@@ -18,7 +18,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSessionKeeper, phoneCookie, phoneOf } from '../proxy/sessions.mjs';
+import { createSessionKeeper, phoneCookie, phoneOf, strayWork } from '../proxy/sessions.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -127,6 +127,23 @@ try {
 	assert.ok(!kept().includes(c1.token), 'taking it over now ends the old extension host');
 	c2.socket.destroy();
 	console.log('PASS: a working agent waits for the choice (mine for the same phone only); taking it over now ends the old one');
+
+	// Left-over work: a nohup'd training run counts, Edge's startup boost and Windows' own do not.
+	{
+		const ft = (ms) => (ms + 11644473600000) * 1e4;
+		const at = Date.now();
+		const procs = [
+			{ pid: 101, ppid: 9999, start: ft(at), cmd: 'nohup python train.py' },
+			{ pid: 102, ppid: 101, start: ft(at + 5), cmd: 'python.exe train.py --epochs 10' },
+			...[201, 202, 203].map((pid) => ({ pid, ppid: 9998, start: ft(at), cmd: '"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" --no-startup-window /prefetch:5' })),
+			{ pid: 204, ppid: 9997, start: ft(at), cmd: '"C:\\Users\\x\\AppData\\Local\\Naver\\Naver Whale\\Application\\whale.exe" --type=renderer' },
+			{ pid: 205, ppid: 9996, start: ft(at), cmd: 'C:\\Windows\\system32\\svchost.exe -k netsvcs' },
+			{ pid: 206, ppid: 9995, start: ft(at), cmd: 'C:\\Windows\\system32\\OpenWith.exe -Embedding' },
+		];
+		const found = strayWork(procs, at - 1000, at + 1000);
+		assert.deepEqual(found.map((w) => w.pid), [102], JSON.stringify(found));
+		console.log('PASS: left-over work is the training run, not browsers or Windows processes');
+	}
 
 	const fresh = phoneCookie({ headers: {} }, true);
 	assert.match(fresh, /^__handide_phone=[A-Za-z0-9_-]{24}; Path=\/; Max-Age=31536000; HttpOnly; SameSite=Lax; Secure$/);

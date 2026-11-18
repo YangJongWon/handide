@@ -75,6 +75,15 @@ const startMs = (p) => (p?.start ? p.start / 1e4 - FILETIME_EPOCH_MS : 0);
 // Processes that are the editor, its servers, the agents themselves or Windows plumbing:
 // never "left-over work".
 const HOST_PROCESS = /handide|handremote|[\\/]\.vscode[\\/]|serve-web|server-main\.js|extensionHost|[\\/]claude(?:\.exe)?["\s]|[\\/]ClaudeCode[\\/]|\bconhost\.exe|\bWerFault\.exe|\bgit-credential/i;
+// What Windows and the user's own apps start by themselves, parentless too: browsers and
+// their background helpers (Edge's startup boost, "msedge.exe --no-startup-window
+// /prefetch:5", was reported as 7 left-over processes on 2026-11-19), updaters, Windows'
+// own hosts. Never an agent's background work.
+const NOT_WORK_EXE = /^(msedge|msedgewebview2|chrome|whale|firefox|brave|opera|vivaldi|iexplore|explorer|svchost|dllhost|runtimebroker|backgroundtaskhost|taskhostw|sihost|ctfmon|smartscreen|searchprotocolhost|searchfilterhost|searchindexer|searchapp|startmenuexperiencehost|shellexperiencehost|textinputhost|applicationframehost|systemsettings|lockapp|widgets|widgetservice|phoneexperiencehost|yourphone|gamebar\w*|onedrive|filecoauth|teams|ms-teams|msteams|outlook|olk|wmiprvse|audiodg|compattelrunner|musnotification\w*|usocoreworker|tiworker|trustedinstaller|wuauclt|\w*update\w*|\w*updater\w*|crashpad_handler|openwith|rundll32|wermgr)(\.exe)?$/i;
+// Chromium and Electron child processes and launch modes.
+const NOT_WORK_ARGS = /\s--type=|\s--no-startup-window\b|\s\/prefetch:\d|\s--from-installer\b|\s-ServerName:|\s-Embedding\b/i;
+const notWork = (cmd) => NOT_WORK_EXE.test(exeName(cmd)) || NOT_WORK_ARGS.test(` ${cmd || ''}`);
+
 // Launchers between a background command and the program doing the work.
 const WRAPPER = /^(nohup|uv|uvx|cmd|bash|sh|env|powershell|pwsh|wscript|cscript|timeout|start)(\.exe)?$/i;
 const exeName = (cmd) => (/^\s*"([^"]+)"|^\s*(\S+)/.exec(cmd || '') || []).slice(1).find(Boolean)?.split(/[\\/]/).pop() || '';
@@ -98,14 +107,14 @@ export function strayWork(procs, since, until) {
 	const out = [];
 	for (const root of procs) {
 		const t = startMs(root);
-		if (!t || t < since || t > until || !root.cmd || parentAlive(root) || HOST_PROCESS.test(root.cmd)) continue;
+		if (!t || t < since || t > until || !root.cmd || parentAlive(root) || HOST_PROCESS.test(root.cmd) || notWork(root.cmd)) continue;
 		let work = root;
 		for (let hops = 0; hops < 6 && WRAPPER.test(exeName(work.cmd)); hops++) {
 			const next = (children.get(work.pid) || []).filter((c) => !c.start || !work.start || c.start >= work.start).sort((a, b) => a.start - b.start)[0];
 			if (!next) break;
 			work = next;
 		}
-		if (HOST_PROCESS.test(work.cmd || '')) continue;
+		if (HOST_PROCESS.test(work.cmd || '') || notWork(work.cmd)) continue;
 		out.push({ root: root.pid, rootStart: root.start, pid: work.pid, start: startMs(work) || t, cmd: String(work.cmd).slice(0, 400) });
 	}
 	return out;

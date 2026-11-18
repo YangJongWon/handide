@@ -128,6 +128,7 @@ const STRINGS = {
 		'left.copied': 'Copied. Paste it to the agent.',
 		'left.message': 'A background process from the previous session is still running on the PC: PID {1}, started {2}, command: {3}. Do not start it again; check this process and its log first.',
 		'left.hide': 'Hide',
+		'left.hideAll': 'Hide all',
 		'network.retrying': 'Reconnecting…',
 		'img.copied': 'Copied. Paste it into the agent input box.',
 		'sheet.terminal': 'Long-press here to paste → send to the terminal',
@@ -337,6 +338,7 @@ const STRINGS = {
 		'left.copied': '복사했습니다. 에이전트에게 붙여 넣으세요.',
 		'left.message': '이전 세션에서 시작된 백그라운드 작업이 PC에서 아직 실행 중입니다: PID {1}, {2} 시작, 명령: {3}. 다시 시작하지 말고 먼저 이 프로세스와 로그를 확인하세요.',
 		'left.hide': '숨기기',
+		'left.hideAll': '모두 숨기기',
 		'network.retrying': '다시 연결하는 중…',
 		'img.copied': '복사했습니다. 에이전트 입력창에 붙여넣으세요.',
 		'sheet.terminal': '여기에 길게 눌러 붙여넣기 → 터미널로 보내기',
@@ -546,6 +548,7 @@ const STRINGS = {
 		'left.copied': 'コピーしました。エージェントに貼り付けてください。',
 		'left.message': '前のセッションで始めたバックグラウンド処理が PC でまだ実行中です: PID {1}、{2} 開始、コマンド: {3}。始め直さず、まずこのプロセスとログを確認してください。',
 		'left.hide': '非表示',
+		'left.hideAll': 'すべて非表示',
 		'network.retrying': '再接続中…',
 		'img.copied': 'コピーしました。エージェントの入力欄に貼り付けてください。',
 		'sheet.terminal': 'ここを長押しで貼り付け → ターミナルへ送信',
@@ -755,6 +758,7 @@ const STRINGS = {
 		'left.copied': '已复制，请粘贴给代理。',
 		'left.message': '上一个会话启动的后台进程仍在电脑上运行：PID {1}，{2} 启动，命令：{3}。不要重新启动，请先检查这个进程和它的日志。',
 		'left.hide': '隐藏',
+		'left.hideAll': '全部隐藏',
 		'network.retrying': '正在重新连接…',
 		'img.copied': '已复制。请粘贴到智能体输入框。',
 		'sheet.terminal': '长按此处粘贴 → 发送到终端',
@@ -3290,7 +3294,24 @@ function showLeftWork() {
 		);
 		return item;
 	});
-	close = showNotice(el('strong', {}, t('left.title')), el('p', {}, t('left.body')), ...items, el('div', { class: 'hd-sheet-actions' }, el('button', { type: 'button', onclick: () => close() }, t('action.ok'))));
+	// Several at once: one tap hides them all (they stay noted only until they end anyway).
+	const hideAll = async () => {
+		const all = leftWork.list;
+		await Promise.all(all.map((w) => api(`${BASE}sessions/dismiss`, { method: 'POST', body: { pid: w.pid } }).catch(() => null)));
+		renderLeftWork([]);
+		close();
+	};
+	close = showNotice(
+		el('strong', {}, t('left.title')),
+		el('p', {}, t('left.body')),
+		...items,
+		el(
+			'div',
+			{ class: 'hd-sheet-actions' },
+			leftWork.list.length > 1 ? el('button', { type: 'button', onclick: hideAll }, t('left.hideAll')) : null,
+			el('button', { type: 'button', onclick: () => close() }, t('action.ok')),
+		),
+	);
 	document.getElementById('hd-notice')?.setAttribute('data-left', '');
 }
 
