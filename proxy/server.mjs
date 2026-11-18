@@ -27,6 +27,7 @@ import { createBridge } from './bridge.mjs';
 import { serviceCommand } from './service.mjs';
 import { createPortForwarder } from './ports.mjs';
 import { createScreenLink } from './screen-link.mjs';
+import { CDN_PREFIX, createCdnProxy, useCdnProxy } from './cdn.mjs';
 import { createPush } from './push.mjs';
 import { importDesktopExtensions, removeImportedExtensions } from './extensions.mjs';
 import { createDeviceRouter, devicesCommand } from './devices.mjs';
@@ -660,6 +661,7 @@ function injectLayer(html, version) {
 }
 
 function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports, devices, share, sessions, screen, camera, push }) {
+	const cdn = createCdnProxy({ token, log });
 	const upHost = `localhost:${upstreamPort}`;
 
 	const clientBase = (req) => {
@@ -696,6 +698,8 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 		if (pathname === `${LAYER_PREFIX}icon.png`) return serveIcon(res);
 		// localhost:<port> links opened on the phone (dev servers on the PC).
 		if (ports?.handle(req, res)) return;
+		// VS Code's marketplace control list and the like, which the CDN serves to localhost pages only.
+		if (req.url.startsWith(CDN_PREFIX)) return void cdn.handle(req, res);
 		if (bridge && (pathname.startsWith('/__handide/bridge/') || ['/__handide/fs', '/__handide/git', '/__handide/sessions', '/__handide/sessions/release', '/__handide/sessions/dismiss', '/__handide/editor', '/__handide/editor/report'].includes(pathname))) return bridge.handleLayer(req, res, pathname);
 		if (req.url.startsWith(LAYER_PREFIX)) return serveLayer(req, res);
 
@@ -727,6 +731,7 @@ function createProxy({ upstreamPort, log, tls, selfSigned, token, bridge, ports,
 			if (upRes.statusCode === 200 && html.includes('vscode-workbench-web-configuration')) {
 				noteServedBuild(html, log);
 				if (!(await workspaceTrustWanted())) html = disableWorkspaceTrust(html);
+				html = useCdnProxy(html, `${proto}://${host}`);
 				html = injectLayer(localWebviews ? useLocalWebviews(html, `${proto}://${host}`) : html, await layerVersion());
 				// Which phone this page is on: one extension host per phone (proxy/sessions.mjs).
 				const phone = phoneCookie(req, proto === 'https');

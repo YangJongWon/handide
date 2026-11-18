@@ -17,6 +17,7 @@
     "check": "node .claude/skills/mobilize-editor/scripts/check.mjs",
     "check:sessions": "node scripts/check-sessions.mjs",
     "check:webview": "node scripts/check-webview-host.mjs",
+    "check:cdn": "node scripts/check-cdn.mjs",
     "compat":"node .claude/skills/mobilize-editor/scripts/compat.mjs",
     "installer": "node installer/build.mjs",
     "vsix": "node desktop/build.mjs",
